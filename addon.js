@@ -7,6 +7,7 @@
 
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 
@@ -19,6 +20,24 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Headers", "*");
   next();
 });
+
+// --- Analytics ---
+const STATS_FILE = path.join(__dirname, "stats.json");
+let stats = { installs: 0, configures: 0, streams: 0, searches: 0, users: new Set(), startedAt: new Date().toISOString() };
+
+try {
+  const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
+  stats = { ...saved, users: new Set(saved.users || []) };
+} catch (_) {}
+
+function saveStats() {
+  const toSave = { ...stats, users: [...stats.users] };
+  fs.writeFileSync(STATS_FILE, JSON.stringify(toSave, null, 2));
+}
+
+setInterval(saveStats, 60000);
+process.on("SIGTERM", saveStats);
+process.on("SIGINT", () => { saveStats(); process.exit(0); });
 
 // --- In-memory cache for M3U playlists (keyed by URL, TTL 10 min) ---
 const m3uCache = new Map();
@@ -129,6 +148,7 @@ function extractConfig(req, res, next) {
 
 // --- Serve configuration page for Stremio ---
 app.get("/configure", (req, res) => {
+  stats.configures++;
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 
@@ -148,11 +168,32 @@ app.get("/manifest.json", (req, res) => {
   res.json(BASE_MANIFEST);
 });
 
-// Configured manifest
+// Configured manifest (user completed install)
 app.get("/:config/manifest.json", extractConfig, (req, res) => {
-  // Return the same manifest but without configurationRequired
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  if (!stats.users.has(ip)) {
+    stats.users.add(ip);
+    stats.installs++;
+  }
   const manifest = { ...BASE_MANIFEST, behaviorHints: { configurable: true } };
   res.json(manifest);
+});
+
+// --- Stats dashboard ---
+app.get("/stats", (req, res) => {
+  const uptime = process.uptime();
+  const h = Math.floor(uptime / 3600);
+  const m = Math.floor((uptime % 3600) / 60);
+  res.json({
+    addon: "StreamVault IPTV",
+    installs: stats.installs,
+    uniqueUsers: stats.users.size,
+    configures: stats.configures,
+    streamsPlayed: stats.streams,
+    searches: stats.searches,
+    uptime: `${h}h ${m}m`,
+    startedAt: stats.startedAt,
+  });
 });
 
 // Catalog handler (with extra params like search=X)
@@ -177,6 +218,7 @@ async function catalogHandler(req, res) {
 
     // Filter by search query if provided
     if (search) {
+      stats.searches++;
       metas = metas.filter(m => m.name.toLowerCase().includes(search));
     }
 
@@ -226,6 +268,7 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
       streams = await getM3UStreams(config, id);
     }
 
+    stats.streams++;
     res.json({ streams });
   } catch (e) {
     console.error("Stream error:", e.message);
