@@ -1,0 +1,121 @@
+/**
+ * xtream.js — Xtream Codes API helper functions.
+ */
+
+const axios = require("axios");
+
+/**
+ * Build the base API URL for Xtream Codes.
+ * @param {Object} config - { server, username, password }
+ * @returns {string}
+ */
+function baseUrl(config) {
+  // Remove trailing slash from server URL
+  const server = config.server.replace(/\/+$/, "");
+  return `${server}/player_api.php?username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`;
+}
+
+/**
+ * Fetch live TV categories.
+ */
+async function getLiveCategories(config) {
+  const url = `${baseUrl(config)}&action=get_live_categories`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch live streams for a given category.
+ * @param {Object} config
+ * @param {string|number} categoryId
+ */
+async function getLiveStreams(config, categoryId) {
+  let url = `${baseUrl(config)}&action=get_live_streams`;
+  if (categoryId) url += `&category_id=${categoryId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch VOD categories.
+ */
+async function getVodCategories(config) {
+  const url = `${baseUrl(config)}&action=get_vod_categories`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch VOD streams, optionally filtered by category.
+ */
+async function getVodStreams(config, categoryId) {
+  let url = `${baseUrl(config)}&action=get_vod_streams`;
+  if (categoryId) url += `&category_id=${categoryId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch series categories.
+ */
+async function getSeriesCategories(config) {
+  const url = `${baseUrl(config)}&action=get_series_categories`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch series list, optionally filtered by category.
+ */
+async function getSeries(config, categoryId) {
+  let url = `${baseUrl(config)}&action=get_series`;
+  if (categoryId) url += `&category_id=${categoryId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || [];
+}
+
+/**
+ * Fetch series info (episodes).
+ */
+async function getSeriesInfo(config, seriesId) {
+  const url = `${baseUrl(config)}&action=get_series_info&series_id=${seriesId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return data || {};
+}
+
+/**
+ * Build stream URL for live channel.
+ */
+function buildLiveStreamUrl(config, streamId) {
+  const server = config.server.replace(/\/+$/, "");
+  return `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
+}
+
+/**
+ * Build stream URL for VOD.
+ */
+function buildVodStreamUrl(config, streamId) {
+  const server = config.server.replace(/\/+$/, "");
+  return `${server}/movie/${config.username}/${config.password}/${streamId}.mp4`;
+}
+
+/**
+ * Build stream URL for series episode.
+ */
+function buildSeriesStreamUrl(config, streamId) {
+  const server = config.server.replace(/\/+$/, "");
+  return `${server}/series/${config.username}/${config.password}/${streamId}.mkv`;
+}
+
+module.exports = {
+  getLiveCategories,
+  getLiveStreams,
+  getVodCategories,
+  getVodStreams,
+  getSeriesCategories,
+  getSeries,
+  getSeriesInfo,
+  buildLiveStreamUrl,
+  buildVodStreamUrl,
+  buildSeriesStreamUrl,
+};

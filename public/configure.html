@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0a0a16" />
+  <title>StreamVault — Configure</title>
+  <style>
+    :root {
+      --bg: #0a0a16;
+      --card: #13132b;
+      --card-glow: rgba(123, 91, 245, 0.04);
+      --border: #252547;
+      --accent: #7c5cfc;
+      --accent-glow: rgba(124, 92, 252, 0.25);
+      --accent-hover: #9b7fff;
+      --green: #34d399;
+      --green-bg: rgba(52, 211, 153, 0.08);
+      --red: #f87171;
+      --text: #f0f0f5;
+      --muted: #7a7a9e;
+      --input-bg: #0e0e20;
+      --input-focus: #191938;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      padding: 16px env(safe-area-inset-right) 16px env(safe-area-inset-left);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 92, 252, 0.12), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(52, 211, 153, 0.06), transparent);
+    }
+
+    /* Animated background dots */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    .wrapper {
+      width: 100%;
+      max-width: 420px;
+      animation: fadeUp 0.5s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo area */
+    .brand {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .brand-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 14px;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px var(--accent-glow);
+    }
+    .brand-icon svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+    }
+    .brand h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+    .brand p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 6px;
+    }
+
+    /* Card */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow:
+        0 24px 48px rgba(0,0,0,0.4),
+        inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--input-bg);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 9px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+    .tab-btn:not(.active):active {
+      background: rgba(255,255,255,0.04);
+    }
+    .tab-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Form */
+    .panel {
+      display: none;
+      animation: fadeIn 0.25s ease;
+    }
+    .panel.active { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap svg {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      color: var(--muted);
+      pointer-events: none;
+      transition: color 0.2s;
+    }
+    .input-wrap input {
+      width: 100%;
+      padding: 14px 14px 14px 44px;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s;
+      -webkit-appearance: none;
+    }
+    .input-wrap input:focus {
+      border-color: var(--accent);
+      background: var(--input-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .input-wrap input:focus + svg,
+    .input-wrap:focus-within svg {
+      color: var(--accent);
+    }
+    .input-wrap input::placeholder {
+      color: #444466;
+    }
+
+    /* Button */
+    .btn-install {
+      width: 100%;
+      padding: 16px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, var(--accent), #6345e0);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 6px 20px var(--accent-glow);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-install:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px var(--accent-glow);
+    }
+    .btn-install:active {
+      transform: translateY(0) scale(0.98);
+    }
+    .btn-install svg {
+      width: 20px;
+      height: 20px;
+    }
+    .btn-install.loading {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    /* Success message */
+    .result {
+      margin-top: 20px;
+      padding: 18px;
+      background: var(--green-bg);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      border-radius: 14px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .result-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: var(--green);
+      margin-bottom: 12px;
+    }
+    .result-title svg {
+      width: 18px;
+      height: 18px;
+    }
+    .result-url {
+      width: 100%;
+      padding: 11px 12px;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.78rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      outline: none;
+      margin-bottom: 12px;
+    }
+    .result-btns {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-sm {
+      flex: 1;
+      padding: 11px 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-sm svg { width: 15px; height: 15px; }
+    .btn-copy {
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+    }
+    .btn-copy:active { background: rgba(255,255,255,0.14); }
+    .btn-open {
+      background: var(--green);
+      color: #000;
+    }
+    .btn-open:active { opacity: 0.8; }
+
+    .result-hint {
+      margin-top: 12px;
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Error toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--red);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 100;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .card { padding: 24px 18px; border-radius: 18px; }
+      .brand h1 { font-size: 1.35rem; }
+      .input-wrap input { font-size: 16px; } /* prevents iOS zoom */
+    }
+
+    @media (prefers-color-scheme: light) {
+      /* Keep dark theme regardless — it's a streaming app */
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+        </svg>
+      </div>
+      <h1>StreamVault</h1>
+      <p>Your personal streaming vault. All channels, one place.</p>
+    </div>
+
+    <div class="card">
+      <!-- Tab switcher -->
+      <div class="tabs">
+        <button class="tab-btn active" id="tabXtream" onclick="setTab('xtream')">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7" />
+          </svg>
+          Xtream Codes
+        </button>
+        <button class="tab-btn" id="tabM3u" onclick="setTab('m3u')">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+          </svg>
+          M3U Link
+        </button>
+      </div>
+
+      <!-- Xtream panel -->
+      <div class="panel active" id="panelXtream">
+        <div class="field">
+          <label>Server URL</label>
+          <div class="input-wrap">
+            <input type="url" id="server" placeholder="http://provider.com:8080" inputmode="url" autocapitalize="off" autocorrect="off" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+            </svg>
+          </div>
+        </div>
+        <div class="field">
+          <label>Username</label>
+          <div class="input-wrap">
+            <input type="text" id="username" placeholder="Your username" autocapitalize="off" autocorrect="off" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+            </svg>
+          </div>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <div class="input-wrap">
+            <input type="password" id="password" placeholder="Your password" autocapitalize="off" autocorrect="off" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- M3U panel -->
+      <div class="panel" id="panelM3u">
+        <div class="field">
+          <label>Playlist URL</label>
+          <div class="input-wrap">
+            <input type="url" id="m3uUrl" placeholder="http://example.com/playlist.m3u8" inputmode="url" autocapitalize="off" autocorrect="off" />
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Install button -->
+      <button class="btn-install" id="btnInstall" onclick="install()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+        </svg>
+        Install to Stremio
+      </button>
+
+      <!-- Result -->
+      <div class="result" id="result">
+        <div class="result-title">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          Ready to install
+        </div>
+        <input type="text" class="result-url" id="installUrl" readonly />
+        <div class="result-btns">
+          <button class="btn-sm btn-copy" onclick="copyUrl()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
+            </svg>
+            Copy
+          </button>
+          <a class="btn-sm btn-open" id="stremioLink" href="#">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+            </svg>
+            Open Stremio
+          </a>
+        </div>
+        <p class="result-hint">If Stremio didn't open, copy the URL and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let source = 'xtream';
+
+    function setTab(t) {
+      source = t;
+      document.getElementById('tabXtream').classList.toggle('active', t === 'xtream');
+      document.getElementById('tabM3u').classList.toggle('active', t === 'm3u');
+      document.getElementById('panelXtream').classList.toggle('active', t === 'xtream');
+      document.getElementById('panelM3u').classList.toggle('active', t === 'm3u');
+      document.getElementById('result').style.display = 'none';
+    }
+
+    function install() {
+      let params = '';
+
+      if (source === 'xtream') {
+        const server = document.getElementById('server').value.trim();
+        const user = document.getElementById('username').value.trim();
+        const pass = document.getElementById('password').value.trim();
+        if (!server || !user || !pass) {
+          showToast('Please fill in all fields');
+          return;
+        }
+        params = `sourceType=xtream&server=${enc(server)}&username=${enc(user)}&password=${enc(pass)}&m3uUrl=`;
+      } else {
+        const url = document.getElementById('m3uUrl').value.trim();
+        if (!url) {
+          showToast('Please enter an M3U URL');
+          return;
+        }
+        params = `sourceType=m3u&server=&username=&password=&m3uUrl=${enc(url)}`;
+      }
+
+      const base = window.location.origin;
+      const manifestUrl = `${base}/${encodeURIComponent(params)}/manifest.json`;
+      const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${encodeURIComponent(params)}/manifest.json`;
+
+      document.getElementById('installUrl').value = manifestUrl;
+      document.getElementById('stremioLink').href = stremioUrl;
+      document.getElementById('result').style.display = 'block';
+
+      // Auto-redirect to Stremio
+      setTimeout(() => { window.location.href = stremioUrl; }, 300);
+    }
+
+    function copyUrl() {
+      const input = document.getElementById('installUrl');
+      input.select();
+      input.setSelectionRange(0, 99999); // mobile
+      navigator.clipboard.writeText(input.value).then(() => {
+        showToast('Copied!', true);
+      }).catch(() => {
+        document.execCommand('copy');
+        showToast('Copied!', true);
+      });
+    }
+
+    function showToast(msg, success) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.background = success ? 'var(--green)' : 'var(--red)';
+      t.style.color = success ? '#000' : '#fff';
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    function enc(s) { return encodeURIComponent(s); }
+  </script>
+</body>
+</html>
