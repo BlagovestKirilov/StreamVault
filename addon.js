@@ -21,6 +21,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Serve static files (logo, images) ---
+app.use("/public", express.static(path.join(__dirname, "public")));
+
 // --- Analytics ---
 const STATS_FILE = path.join(__dirname, "stats.json");
 let stats = { installs: 0, configures: 0, streams: 0, searches: 0, users: new Set(), startedAt: new Date().toISOString() };
@@ -59,7 +62,7 @@ const BASE_MANIFEST = {
   version: "1.0.0",
   name: "StreamVault IPTV",
   description: "Your personal streaming vault. All channels, one place.",
-  logo: "https://img.icons8.com/color/512/tv.png",
+  logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "movie", "series"],
   idPrefixes: ["iptv_"],
@@ -148,6 +151,10 @@ function extractConfig(req, res, next) {
 
 // --- Serve configuration page for Stremio ---
 app.get("/configure", (req, res) => {
+  stats.configures++;
+  res.sendFile(path.join(__dirname, "public", "configure.html"));
+});
+app.get("/:config/configure", (req, res) => {
   stats.configures++;
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
