@@ -131,25 +131,36 @@ try {
 
 const MAX_TRACKED_USERS = 10000;
 
-function saveStats() {
+function saveStatsData() {
   // Cap users Set to prevent unbounded growth
   if (stats.users.size > MAX_TRACKED_USERS) {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
-  const toSave = { ...stats, users: [...stats.users] };
+  return { ...stats, users: [...stats.users] };
+}
+
+function saveStats() {
+  const toSave = saveStatsData();
   fs.promises.writeFile(STATS_FILE, JSON.stringify(toSave, null, 2)).catch(() => {});
 }
 
+function saveStatsSync() {
+  try {
+    const toSave = saveStatsData();
+    fs.writeFileSync(STATS_FILE, JSON.stringify(toSave, null, 2));
+  } catch (_) {}
+}
+
 setInterval(saveStats, 60000);
-process.on("SIGTERM", saveStats);
-process.on("SIGINT", () => { saveStats(); process.exit(0); });
+process.on("SIGTERM", () => { saveStatsSync(); process.exit(0); });
+process.on("SIGINT", () => { saveStatsSync(); process.exit(0); });
 process.on("unhandledRejection", (err) => {
   console.error("[FATAL] Unhandled rejection:", err);
 });
 process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught exception:", err);
-  saveStats();
+  saveStatsSync();
   process.exit(1);
 });
 
