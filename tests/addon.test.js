@@ -1,5 +1,5 @@
 const request = require("supertest");
-const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig } = require("../addon");
+const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError } = require("../addon");
 const { parseM3UContent } = require("../m3u");
 
 // ─── parseConfigPath ───
@@ -302,5 +302,183 @@ describe("encryptConfig / decryptConfig", () => {
     // Flip a character in the ciphertext portion
     const tampered = encrypted.slice(0, -2) + "ff";
     expect(() => decryptConfig(tampered)).toThrow();
+  });
+});
+
+// ─── SSRF protection ───
+
+describe("isPrivateIp", () => {
+  test("blocks 127.x.x.x (loopback)", () => {
+    expect(isPrivateIp("127.0.0.1")).toBe(true);
+    expect(isPrivateIp("127.99.99.99")).toBe(true);
+  });
+
+  test("blocks 10.x.x.x (private)", () => {
+    expect(isPrivateIp("10.0.0.1")).toBe(true);
+    expect(isPrivateIp("10.255.255.255")).toBe(true);
+  });
+
+  test("blocks 192.168.x.x (private)", () => {
+    expect(isPrivateIp("192.168.0.1")).toBe(true);
+    expect(isPrivateIp("192.168.255.255")).toBe(true);
+  });
+
+  test("blocks 172.16-31.x.x (private)", () => {
+    expect(isPrivateIp("172.16.0.1")).toBe(true);
+    expect(isPrivateIp("172.31.255.255")).toBe(true);
+  });
+
+  test("blocks 169.254.x.x (link-local)", () => {
+    expect(isPrivateIp("169.254.169.254")).toBe(true);
+  });
+
+  test("blocks IPv6 loopback and private", () => {
+    expect(isPrivateIp("::1")).toBe(true);
+    expect(isPrivateIp("fd00:")).toBe(true);
+    expect(isPrivateIp("fe80:")).toBe(true);
+  });
+
+  test("allows public IPs", () => {
+    expect(isPrivateIp("8.8.8.8")).toBe(false);
+    expect(isPrivateIp("1.1.1.1")).toBe(false);
+    expect(isPrivateIp("203.0.113.1")).toBe(false);
+  });
+});
+
+describe("validateExternalUrl", () => {
+  test("rejects non-string input", async () => {
+    expect(await validateExternalUrl(null)).toBe(false);
+    expect(await validateExternalUrl(undefined)).toBe(false);
+    expect(await validateExternalUrl(123)).toBe(false);
+  });
+
+  test("rejects URLs longer than 2048 chars", async () => {
+    const longUrl = "http://example.com/" + "a".repeat(2040);
+    expect(await validateExternalUrl(longUrl)).toBe(false);
+  });
+
+  test("rejects non-http protocols", async () => {
+    expect(await validateExternalUrl("ftp://example.com")).toBe(false);
+    expect(await validateExternalUrl("file:///etc/passwd")).toBe(false);
+  });
+
+  test("rejects localhost", async () => {
+    expect(await validateExternalUrl("http://localhost:8080")).toBe(false);
+    expect(await validateExternalUrl("http://127.0.0.1:8080")).toBe(false);
+  });
+
+  test("rejects private IP addresses", async () => {
+    expect(await validateExternalUrl("http://10.0.0.1/api")).toBe(false);
+    expect(await validateExternalUrl("http://192.168.1.1/api")).toBe(false);
+    expect(await validateExternalUrl("http://172.16.0.1/api")).toBe(false);
+  });
+
+  test("rejects .local and .internal hostnames", async () => {
+    expect(await validateExternalUrl("http://myserver.local")).toBe(false);
+    expect(await validateExternalUrl("http://service.internal")).toBe(false);
+  });
+
+  test("rejects cloud metadata endpoints", async () => {
+    expect(await validateExternalUrl("http://169.254.169.254/latest/meta-data/")).toBe(false);
+  });
+
+  test("accepts valid external URLs", async () => {
+    expect(await validateExternalUrl("http://example.com")).toBe(true);
+    expect(await validateExternalUrl("https://google.com")).toBe(true);
+  });
+});
+
+// ─── safeError ───
+
+describe("safeError", () => {
+  test("strips URLs from error messages", () => {
+    const err = new Error("connect ECONNREFUSED http://192.168.1.1:8080/api");
+    expect(safeError(err)).toBe("Connection failed");
+  });
+
+  test("truncates long error messages", () => {
+    const err = new Error("A".repeat(200));
+    expect(safeError(err).length).toBeLessThanOrEqual(100);
+  });
+
+  test("passes through short safe messages", () => {
+    const err = new Error("timeout");
+    expect(safeError(err)).toBe("timeout");
+  });
+
+  test("handles missing message", () => {
+    const err = {};
+    expect(safeError(err)).toBe("Unknown error");
+  });
+});
+
+// ─── SSRF-blocking API tests ───
+
+describe("API SSRF protection", () => {
+  test("POST /api/test blocks private server URL", async () => {
+    const res = await request(app)
+      .post("/api/test")
+      .send({ type: "xtream", server: "http://127.0.0.1:8080", username: "user", password: "pass" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/blocked/i);
+  });
+
+  test("POST /api/test blocks private M3U URL", async () => {
+    const res = await request(app)
+      .post("/api/test")
+      .send({ type: "m3u", m3uUrl: "http://192.168.1.1/playlist.m3u" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/blocked/i);
+  });
+
+  test("POST /api/categories blocks private server URL", async () => {
+    const res = await request(app)
+      .post("/api/categories")
+      .send({ server: "http://10.0.0.1", username: "user", password: "pass" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/blocked/i);
+  });
+
+  test("POST /api/test blocks metadata endpoint", async () => {
+    const res = await request(app)
+      .post("/api/test")
+      .send({ type: "xtream", server: "http://169.254.169.254/latest/meta-data/", username: "u", password: "p" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/blocked/i);
+  });
+});
+
+// ─── Encrypt input validation ───
+
+describe("/api/encrypt input validation", () => {
+  test("rejects invalid type", async () => {
+    const res = await request(app)
+      .post("/api/encrypt")
+      .send({ t: "malicious", payload: "evil" });
+    expect(res.status).toBe(400);
+  });
+
+  test("strips unknown fields from config", async () => {
+    const res = await request(app)
+      .post("/api/encrypt")
+      .send({ t: "xtream", s: "http://example.com", u: "user", p: "pass", c: "", evil: "payload", __proto__: { admin: true } });
+    expect(res.status).toBe(200);
+    // Decrypt and verify no extra fields
+    const encStr = res.body.config.slice(2);
+    const decrypted = decryptConfig(encStr);
+    expect(decrypted.evil).toBeUndefined();
+    expect(decrypted.admin).toBeUndefined();
+    expect(decrypted.t).toBe("xtream");
+  });
+
+  test("truncates excessively long field values", async () => {
+    const longValue = "A".repeat(5000);
+    const res = await request(app)
+      .post("/api/encrypt")
+      .send({ t: "m3u", m: longValue, c: "" });
+    expect(res.status).toBe(200);
+    const encStr = res.body.config.slice(2);
+    const decrypted = decryptConfig(encStr);
+    expect(decrypted.m.length).toBe(2048);
   });
 });

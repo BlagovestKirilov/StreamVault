@@ -37,6 +37,11 @@ function decryptConfig(encStr) {
   return JSON.parse(decrypted);
 }
 
+const { URL } = require("url");
+const dns = require("dns");
+const { promisify } = require("util");
+const dnsLookup = promisify(dns.lookup);
+
 const app = express();
 const PORT = process.env.PORT || 7000;
 
@@ -49,9 +54,61 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- JSON body parser (with size limit) ---
+app.use(express.json({ limit: "16kb" }));
+
 // --- Helper: extract client IP ---
 function getIp(req) {
   return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+}
+
+// --- Helper: sanitize error messages (never leak URLs/credentials) ---
+function safeError(e) {
+  const msg = e.message || "Unknown error";
+  if (msg.includes("://")) return "Connection failed";
+  if (msg.length > 100) return msg.slice(0, 100);
+  return msg;
+}
+
+// --- SSRF protection: block private/internal IPs ---
+const PRIVATE_IP_RANGES = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2[0-9]|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\./,
+  /^::1$/,
+  /^fd[0-9a-f]{2}:/i,
+  /^fe80:/i,
+  /^fc[0-9a-f]{2}:/i,
+  /^::$/,
+];
+
+function isPrivateIp(ip) {
+  return PRIVATE_IP_RANGES.some(r => r.test(ip));
+}
+
+async function validateExternalUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== "string") return false;
+  if (urlStr.length > 2048) return false;
+  let parsed;
+  try {
+    parsed = new URL(urlStr);
+  } catch (_) {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  const hostname = parsed.hostname;
+  if (isPrivateIp(hostname)) return false;
+  if (hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
+  try {
+    const { address } = await dnsLookup(hostname);
+    if (isPrivateIp(address)) return false;
+  } catch (_) {
+    return false;
+  }
+  return true;
 }
 
 // --- Serve static files (logo, images) ---
@@ -67,9 +124,16 @@ try {
   stats = { ...saved, users: new Set(saved.users || []) };
 } catch (_) {}
 
+const MAX_TRACKED_USERS = 10000;
+
 function saveStats() {
+  // Cap users Set to prevent unbounded growth
+  if (stats.users.size > MAX_TRACKED_USERS) {
+    const arr = [...stats.users];
+    stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
+  }
   const toSave = { ...stats, users: [...stats.users] };
-  fs.writeFileSync(STATS_FILE, JSON.stringify(toSave, null, 2));
+  fs.promises.writeFile(STATS_FILE, JSON.stringify(toSave, null, 2)).catch(() => {});
 }
 
 setInterval(saveStats, 60000);
@@ -245,12 +309,14 @@ app.get("/:config/configure", (req, res) => {
 });
 
 // --- API: Fetch categories from provider ---
-app.use(express.json());
 app.post("/api/categories", async (req, res) => {
   try {
     const { server, username, password } = req.body;
     if (!server || !username || !password) {
       return res.status(400).json({ error: "Missing credentials" });
+    }
+    if (!(await validateExternalUrl(server))) {
+      return res.status(400).json({ error: "Invalid or blocked server URL" });
     }
     const config = { server: server.replace(/\/+$/, ""), username, password };
     const [live, vod, series] = await Promise.all([
@@ -260,18 +326,26 @@ app.post("/api/categories", async (req, res) => {
     ]);
     res.json({ live, vod, series });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: safeError(e) });
   }
 });
 
 // --- API: Encrypt config for secure URL ---
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c"]);
 app.post("/api/encrypt", (req, res) => {
   try {
     const configObj = req.body;
-    if (!configObj || !configObj.t) {
+    if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
       return res.status(400).json({ error: "Invalid config" });
     }
-    const encrypted = encryptConfig(configObj);
+    // Only allow known fields
+    const sanitized = {};
+    for (const key of Object.keys(configObj)) {
+      if (ALLOWED_CONFIG_KEYS.has(key)) {
+        sanitized[key] = String(configObj[key]).slice(0, 2048);
+      }
+    }
+    const encrypted = encryptConfig(sanitized);
     res.json({ config: "e-" + encrypted });
   } catch (e) {
     res.status(500).json({ error: "Encryption failed" });
@@ -286,6 +360,9 @@ app.post("/api/test", async (req, res) => {
       if (!server || !username || !password) {
         return res.status(400).json({ ok: false, error: "Missing credentials" });
       }
+      if (!(await validateExternalUrl(server))) {
+        return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
+      }
       const config = { server: server.replace(/\/+$/, ""), username, password };
       const cats = await xtream.getLiveCategories(config);
       if (!Array.isArray(cats)) {
@@ -296,13 +373,16 @@ app.post("/api/test", async (req, res) => {
       if (!m3uUrl) {
         return res.status(400).json({ ok: false, error: "Missing M3U URL" });
       }
+      if (!(await validateExternalUrl(m3uUrl))) {
+        return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
+      }
       const { channels } = await m3u.parseM3U(m3uUrl);
       res.json({ ok: true, message: `Connected! Found ${channels.length} channels.` });
     } else {
       res.status(400).json({ ok: false, error: "Unknown source type" });
     }
   } catch (e) {
-    res.json({ ok: false, error: e.message || "Connection failed" });
+    res.json({ ok: false, error: safeError(e) });
   }
 });
 
@@ -673,4 +753,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig };
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError };
