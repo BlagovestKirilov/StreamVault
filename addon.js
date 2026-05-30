@@ -63,7 +63,7 @@ const BASE_MANIFEST = {
   id: "community.streamvault.addon",
   version: "1.0.0",
   name: "StreamVault IPTV",
-  description: "Your personal streaming vault. All channels, one place.",
+  description: "Stream IPTV via Xtream Codes or M3U playlist — live TV, VOD & series.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "movie", "series"],
@@ -171,10 +171,14 @@ function extractConfig(req, res, next) {
 // --- Serve configuration page for Stremio ---
 app.get("/configure", (req, res) => {
   stats.configures++;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  console.log(`[CONFIGURE] ${ip} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 app.get("/:config/configure", (req, res) => {
   stats.configures++;
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  console.log(`[CONFIGURE] ${ip} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 
@@ -217,10 +221,12 @@ app.get("/manifest.json", (req, res) => {
 // Configured manifest (user completed install)
 app.get("/:config/manifest.json", extractConfig, (req, res) => {
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-  if (!stats.users.has(ip)) {
+  const isNew = !stats.users.has(ip);
+  if (isNew) {
     stats.users.add(ip);
     stats.installs++;
   }
+  console.log(`[INSTALL] ${ip} ${isNew ? 'NEW install' : 'existing user'} — type: ${req.userConfig.type}`);
   const manifest = { ...BASE_MANIFEST, behaviorHints: { configurable: true } };
   res.json(manifest);
 });
@@ -547,10 +553,5 @@ function parseExtra(extraStr) {
 
 // --- Start server ---
 app.listen(PORT, () => {
-  console.log(`\n  StreamVault IPTV running at http://localhost:${PORT}`);
-  console.log(`  ─────────────────────────────────────────────`);
-  console.log(`  PC:    http://localhost:${PORT}/manifest.json`);
-  console.log(`  Phone: http://192.168.100.14:${PORT}/manifest.json`);
-  console.log(`  ─────────────────────────────────────────────`);
-  console.log(`  Open Stremio → Addons → paste the URL above\n`);
+  console.log(`StreamVault IPTV running on port ${PORT}`);
 });
