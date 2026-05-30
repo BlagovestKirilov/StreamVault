@@ -42,9 +42,11 @@ setInterval(saveStats, 60000);
 process.on("SIGTERM", saveStats);
 process.on("SIGINT", () => { saveStats(); process.exit(0); });
 
-// --- In-memory cache for M3U playlists (keyed by URL, TTL 10 min) ---
+// --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
+const xtreamCache = new Map();
+const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 
 async function getCachedM3U(url) {
   const cached = m3uCache.get(url);
@@ -127,14 +129,16 @@ function parseConfigPath(configStr) {
   if (params.sourceType === "xtream") {
     return {
       type: "xtream",
-      server: params.server || "",
-      username: params.username || "",
-      password: params.password || "",
+      server: decodeURIComponent(params.server || ""),
+      username: decodeURIComponent(params.username || ""),
+      password: decodeURIComponent(params.password || ""),
+      country: decodeURIComponent(params.country || ""),
     };
   } else {
     return {
       type: "m3u",
-      url: params.m3uUrl || "",
+      url: decodeURIComponent(params.m3uUrl || ""),
+      country: decodeURIComponent(params.country || ""),
     };
   }
 }
@@ -157,6 +161,26 @@ app.get("/configure", (req, res) => {
 app.get("/:config/configure", (req, res) => {
   stats.configures++;
   res.sendFile(path.join(__dirname, "public", "configure.html"));
+});
+
+// --- API: Fetch categories from provider ---
+app.use(express.json());
+app.post("/api/categories", async (req, res) => {
+  try {
+    const { server, username, password } = req.body;
+    if (!server || !username || !password) {
+      return res.status(400).json({ error: "Missing credentials" });
+    }
+    const config = { server: server.replace(/\/+$/, ""), username, password };
+    const [live, vod, series] = await Promise.all([
+      xtream.getLiveCategories(config).catch(() => []),
+      xtream.getVodCategories(config).catch(() => []),
+      xtream.getSeriesCategories(config).catch(() => []),
+    ]);
+    res.json({ live, vod, series });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /**
@@ -223,10 +247,17 @@ async function catalogHandler(req, res) {
       metas = await getM3UCatalog(config, type, search);
     }
 
-    // Filter by search query if provided
+    // Filter by preferred category if set (uses category_id from provider)
+    // Note: category filtering is now done at the API level in getXtreamCatalog
+
+    // Filter by search — all words must appear in the name (any order)
     if (search) {
       stats.searches++;
-      metas = metas.filter(m => m.name.toLowerCase().includes(search));
+      const words = search.split(/\s+/).filter(w => w.length > 0);
+      metas = metas.filter(m => {
+        const name = m.name.toLowerCase();
+        return words.every(word => name.includes(word));
+      });
     }
 
     res.json({ metas });
@@ -286,17 +317,32 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
 // --- Xtream Codes handlers ---
 
 async function getXtreamCatalog(config, type) {
-  let items = [];
-
-  if (type === "tv") {
-    items = await xtream.getLiveStreams(config);
-  } else if (type === "movie") {
-    items = await xtream.getVodStreams(config);
-  } else if (type === "series") {
-    items = await xtream.getSeries(config);
+  const categoryIds = (config.country || "").split(",").filter(Boolean);
+  const cacheKey = `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
+  const cached = xtreamCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) {
+    return cached.data;
   }
 
-  return items.map((item) => {
+  let items = [];
+  if (categoryIds.length === 0) {
+    // No filter — get all
+    if (type === "tv") items = await xtream.getLiveStreams(config);
+    else if (type === "movie") items = await xtream.getVodStreams(config);
+    else if (type === "series") items = await xtream.getSeries(config);
+  } else {
+    // Fetch each selected category in parallel
+    const fetches = categoryIds.map(catId => {
+      if (type === "tv") return xtream.getLiveStreams(config, catId);
+      else if (type === "movie") return xtream.getVodStreams(config, catId);
+      else if (type === "series") return xtream.getSeries(config, catId);
+      return Promise.resolve([]);
+    });
+    const results = await Promise.all(fetches);
+    items = results.flat();
+  }
+
+  const result = items.map((item) => {
     const name = item.name || item.title || "Unknown";
     const logo = item.stream_icon || item.cover || "";
     return {
@@ -307,17 +353,52 @@ async function getXtreamCatalog(config, type) {
       posterShape: "square",
     };
   });
+
+  xtreamCache.set(cacheKey, { data: result, ts: Date.now() });
+  return result;
 }
 
 async function getXtreamMeta(config, type, id) {
-  // id format: iptv_<type>_<streamId>
+  // Look up actual channel name from cached catalog
+  const catalog = await getXtreamCatalog(config, type);
+  const item = catalog.find(m => m.id === id);
+
+  if (item) {
+    return {
+      id,
+      type,
+      name: item.name,
+      poster: item.poster,
+      posterShape: "square",
+      description: `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`,
+    };
+  }
+
+  // Fallback: fetch from API if not in cache
   const streamId = id.replace(`iptv_${type}_`, "");
+  try {
+    let items = [];
+    if (type === "tv") items = await xtream.getLiveStreams(config);
+    else if (type === "movie") items = await xtream.getVodStreams(config);
+    else if (type === "series") items = await xtream.getSeries(config);
+    const found = items.find(i => String(i.stream_id || i.series_id) === streamId);
+    if (found) {
+      const name = found.name || found.title || `Stream ${streamId}`;
+      const logo = found.stream_icon || found.cover || "";
+      return {
+        id, type, name,
+        poster: logo || makePosterUrl(name),
+        posterShape: "square",
+        description: `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`,
+      };
+    }
+  } catch (_) {}
 
   return {
     id,
     type,
     name: `Stream ${streamId}`,
-    poster: "",
+    poster: makePosterUrl(`Stream ${streamId}`),
     posterShape: "square",
     description: `IPTV ${type} stream`,
   };

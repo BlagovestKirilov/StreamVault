@@ -45,19 +45,6 @@
       justify-content: center;
       padding: 16px;
       padding: 16px env(safe-area-inset-right) 16px env(safe-area-inset-left);
-      background-image:
-        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(124, 92, 252, 0.12), transparent),
-        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(52, 211, 153, 0.06), transparent);
-    }
-
-    /* Animated background dots */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
-      background-size: 40px 40px;
-      pointer-events: none;
     }
 
     .wrapper {
@@ -109,9 +96,8 @@
       border: 1px solid var(--border);
       border-radius: 20px;
       padding: 28px 24px;
-      box-shadow:
-        0 24px 48px rgba(0,0,0,0.4),
-        inset 0 1px 0 rgba(255,255,255,0.03);
+      box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+      overflow: hidden;
     }
 
     /* Tabs */
@@ -203,6 +189,9 @@
       outline: none;
       transition: all 0.2s;
       -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      box-shadow: none;
     }
     .input-wrap input:focus {
       border-color: var(--accent);
@@ -216,6 +205,136 @@
     .input-wrap input::placeholder {
       color: #444466;
     }
+    .input-wrap input:-webkit-autofill,
+    .input-wrap input:-webkit-autofill:hover,
+    .input-wrap input:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset !important;
+      -webkit-text-fill-color: var(--text) !important;
+      caret-color: var(--text);
+      border-color: var(--border) !important;
+    }
+
+    /* Category picker */
+    .btn-load-cats {
+      width: 100%;
+      padding: 14px 18px;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-load-cats:hover { border-color: var(--accent); }
+    .btn-load-cats:active { transform: scale(0.97); }
+    .btn-load-cats:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .cat-search-wrap {
+      margin-top: 10px;
+    }
+    .cat-search-wrap input {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 16px;
+      outline: none;
+      transition: all 0.2s;
+      -webkit-appearance: none;
+    }
+    .cat-search-wrap input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .cat-search-wrap input::placeholder { color: #444466; }
+
+    .cat-list {
+      margin-top: 8px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      -webkit-overflow-scrolling: touch;
+    }
+    .cat-list::-webkit-scrollbar { width: 6px; }
+    .cat-list::-webkit-scrollbar-track { background: transparent; }
+    .cat-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .cat-item {
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+      background: var(--card);
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cat-item:last-child { border-bottom: none; }
+    .cat-item:active { background: rgba(124,92,252,0.15); }
+    .cat-item.selected {
+      color: var(--text);
+      background: #191938;
+    }
+    .cat-item .cat-check {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-radius: 5px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .cat-item.selected .cat-check {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .cat-item.selected .cat-check::after {
+      content: '✓';
+      font-size: 11px;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .cat-selected {
+      margin-top: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .cat-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      background: rgba(124,92,252,0.15);
+      border: 1px solid rgba(124,92,252,0.3);
+      border-radius: 8px;
+      font-size: 0.75rem;
+      color: var(--accent-hover);
+      font-weight: 600;
+    }
+    .cat-tag .remove-tag {
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      opacity: 0.7;
+    }
+    .cat-tag .remove-tag:hover { opacity: 1; }
 
     /* Button */
     .btn-install {
@@ -234,12 +353,12 @@
       align-items: center;
       justify-content: center;
       gap: 10px;
-      box-shadow: 0 6px 20px var(--accent-glow);
+      box-shadow: none;
       -webkit-tap-highlight-color: transparent;
     }
     .btn-install:hover {
       transform: translateY(-2px);
-      box-shadow: 0 10px 30px var(--accent-glow);
+      box-shadow: 0 6px 16px var(--accent-glow);
     }
     .btn-install:active {
       transform: translateY(0) scale(0.98);
@@ -398,7 +517,7 @@
         <div class="field">
           <label>Server URL</label>
           <div class="input-wrap">
-            <input type="url" id="server" placeholder="http://provider.com:8080" inputmode="url" autocapitalize="off" autocorrect="off" />
+            <input type="text" id="server" placeholder="http://provider.com:8080" inputmode="url" autocapitalize="off" autocorrect="off" autocomplete="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
             </svg>
@@ -429,12 +548,28 @@
         <div class="field">
           <label>Playlist URL</label>
           <div class="input-wrap">
-            <input type="url" id="m3uUrl" placeholder="http://example.com/playlist.m3u8" inputmode="url" autocapitalize="off" autocorrect="off" />
+            <input type="text" id="m3uUrl" placeholder="http://example.com/playlist.m3u8" inputmode="url" autocapitalize="off" autocorrect="off" autocomplete="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
             </svg>
           </div>
         </div>
+      </div>
+
+      <!-- Category filter -->
+      <div class="field" id="categoryField">
+        <label>Categories <span style="opacity:0.5;font-size:0.8em">(optional — select multiple)</span></label>
+        <button type="button" onclick="loadCategories()" id="btnLoadCats" class="btn-load-cats">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+          <span id="btnLoadCatsText">Load Categories</span>
+        </button>
+        <div class="cat-search-wrap" id="catSearchWrap" style="display:none;">
+          <input type="text" id="catSearch" placeholder="Search categories..." oninput="filterCategories()" />
+        </div>
+        <div class="cat-list" id="catList" style="display:none;"></div>
+        <div class="cat-selected" id="catSelected"></div>
       </div>
 
       <!-- Install button -->
@@ -486,10 +621,17 @@
       document.getElementById('panelXtream').classList.toggle('active', t === 'xtream');
       document.getElementById('panelM3u').classList.toggle('active', t === 'm3u');
       document.getElementById('result').style.display = 'none';
+      // Show category field always, but hide loaded data when on M3U
+      const isXtream = t === 'xtream';
+      const hasData = allCategories.length > 0;
+      document.getElementById('catSearchWrap').style.display = (isXtream && hasData) ? 'block' : 'none';
+      document.getElementById('catList').style.display = (isXtream && hasData) ? 'block' : 'none';
+      document.getElementById('catSelected').style.display = isXtream ? 'flex' : 'none';
     }
 
     function install() {
       let params = '';
+      const categoryIds = [...selectedCategories].join(',');
 
       if (source === 'xtream') {
         const server = document.getElementById('server').value.trim();
@@ -499,26 +641,40 @@
           showToast('Please fill in all fields');
           return;
         }
-        params = `sourceType=xtream&server=${enc(server)}&username=${enc(user)}&password=${enc(pass)}&m3uUrl=`;
+        if (!isValidUrl(server)) {
+          showToast('Server URL must be a valid URL (http://...)');
+          return;
+        }
+        params = `sourceType=xtream&server=${enc(server)}&username=${enc(user)}&password=${enc(pass)}&m3uUrl=&country=${enc(categoryIds)}`;
       } else {
         const url = document.getElementById('m3uUrl').value.trim();
         if (!url) {
           showToast('Please enter an M3U URL');
           return;
         }
-        params = `sourceType=m3u&server=&username=&password=&m3uUrl=${enc(url)}`;
+        if (!isValidUrl(url)) {
+          showToast('Playlist URL must be a valid URL (http://...)');
+          return;
+        }
+        params = `sourceType=m3u&server=&username=&password=&m3uUrl=${enc(url)}&country=`;
       }
 
       const base = window.location.origin;
-      const manifestUrl = `${base}/${encodeURIComponent(params)}/manifest.json`;
-      const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${encodeURIComponent(params)}/manifest.json`;
+      const configPath = encodeURIComponent(params);
+      const manifestUrl = `${base}/${configPath}/manifest.json`;
+
+      // Use the proper web URL format that Stremio handles on all platforms
+      const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+      // Native deep link as fallback
+      const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
 
       document.getElementById('installUrl').value = manifestUrl;
-      document.getElementById('stremioLink').href = stremioUrl;
+      document.getElementById('stremioLink').href = stremioWebUrl;
       document.getElementById('result').style.display = 'block';
 
-      // Auto-redirect to Stremio
-      setTimeout(() => { window.location.href = stremioUrl; }, 300);
+      // Try native deep link first, fallback to web
+      window.location.href = stremioUrl;
+      setTimeout(() => { window.location.href = stremioWebUrl; }, 1500);
     }
 
     function copyUrl() {
@@ -540,6 +696,115 @@
       t.style.color = success ? '#000' : '#fff';
       t.classList.add('show');
       setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    let allCategories = [];
+    let selectedCategories = new Set();
+
+    async function loadCategories() {
+      if (source !== 'xtream') {
+        showToast('Categories only available for Xtream Codes');
+        return;
+      }
+      const server = document.getElementById('server').value.trim();
+      const user = document.getElementById('username').value.trim();
+      const pass = document.getElementById('password').value.trim();
+      if (!server || !user || !pass) {
+        showToast('Fill in server, username & password first');
+        return;
+      }
+      if (!isValidUrl(server)) {
+        showToast('Server URL must be a valid URL (http://...)');
+        return;
+      }
+
+      const btn = document.getElementById('btnLoadCats');
+      const btnText = document.getElementById('btnLoadCatsText');
+      btn.disabled = true;
+      btnText.textContent = 'Loading...';
+
+      try {
+        const res = await fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server, username: user, password: pass })
+        });
+        const data = await res.json();
+        if (data.error) { showToast(data.error); return; }
+
+        allCategories = (data.live || []).sort((a, b) =>
+          (a.category_name || '').localeCompare(b.category_name || '')
+        );
+        selectedCategories.clear();
+        renderCategoryList();
+        document.getElementById('catSearchWrap').style.display = 'block';
+        document.getElementById('catList').style.display = 'block';
+        btnText.textContent = `Reload (${allCategories.length} found)`;
+        showToast(`${allCategories.length} categories loaded`, true);
+      } catch (e) {
+        showToast('Failed to load categories');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderCategoryList() {
+      const query = (document.getElementById('catSearch').value || '').toLowerCase();
+      const list = document.getElementById('catList');
+      const filtered = allCategories.filter(c =>
+        (c.category_name || '').toLowerCase().includes(query)
+      );
+
+      list.innerHTML = filtered.map(cat => {
+        const sel = selectedCategories.has(cat.category_id) ? ' selected' : '';
+        return `<div class="cat-item${sel}" onclick="toggleCategory('${cat.category_id}', '${(cat.category_name||'').replace(/'/g, "\\'")}')">
+          <span class="cat-check"></span>
+          <span>${cat.category_name}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function toggleCategory(id, name) {
+      if (selectedCategories.has(id)) {
+        selectedCategories.delete(id);
+      } else {
+        selectedCategories.add(id);
+      }
+      renderCategoryList();
+      renderSelectedTags();
+    }
+
+    function renderSelectedTags() {
+      const container = document.getElementById('catSelected');
+      if (selectedCategories.size === 0) {
+        container.innerHTML = '';
+        return;
+      }
+      const tags = [...selectedCategories].map(id => {
+        const cat = allCategories.find(c => c.category_id === id);
+        const name = cat ? cat.category_name : id;
+        return `<span class="cat-tag">${name} <span class="remove-tag" onclick="removeCategory('${id}')">&times;</span></span>`;
+      });
+      container.innerHTML = tags.join('');
+    }
+
+    function removeCategory(id) {
+      selectedCategories.delete(id);
+      renderCategoryList();
+      renderSelectedTags();
+    }
+
+    function filterCategories() {
+      renderCategoryList();
+    }
+
+    function isValidUrl(str) {
+      try {
+        const u = new URL(str);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+      } catch (e) {
+        return false;
+      }
     }
 
     function enc(s) { return encodeURIComponent(s); }
