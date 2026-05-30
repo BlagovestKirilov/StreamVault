@@ -672,9 +672,8 @@
       document.getElementById('stremioLink').href = stremioWebUrl;
       document.getElementById('result').style.display = 'block';
 
-      // Try native deep link first, fallback to web
+      // Try native deep link (opens Stremio app prompt on Windows/Android)
       window.location.href = stremioUrl;
-      setTimeout(() => { window.location.href = stremioWebUrl; }, 1500);
     }
 
     function copyUrl() {
