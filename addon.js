@@ -772,8 +772,8 @@ function parseExtra(extraStr) {
 
 // --- Start server ---
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`StreamVault IPTV running on port ${PORT}`);
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`StreamVault IPTV running on 0.0.0.0:${PORT}`);
   });
 }
 
