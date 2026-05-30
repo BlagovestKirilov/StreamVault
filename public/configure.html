@@ -234,6 +234,13 @@
     .btn-load-cats:hover { border-color: var(--accent); }
     .btn-load-cats:active { transform: scale(0.97); }
     .btn-load-cats:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-load-cats svg.spinning {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
 
     .cat-search-wrap {
       margin-top: 10px;
@@ -560,7 +567,7 @@
       <div class="field" id="categoryField">
         <label>Categories <span style="opacity:0.5;font-size:0.8em">(optional — select multiple)</span></label>
         <button type="button" onclick="loadCategories()" id="btnLoadCats" class="btn-load-cats">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+          <svg id="btnLoadCatsIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
           </svg>
           <span id="btnLoadCatsText">Load Categories</span>
@@ -719,8 +726,10 @@
 
       const btn = document.getElementById('btnLoadCats');
       const btnText = document.getElementById('btnLoadCatsText');
+      const btnIcon = document.getElementById('btnLoadCatsIcon');
       btn.disabled = true;
       btnText.textContent = 'Loading...';
+      btnIcon.classList.add('spinning');
 
       try {
         const res = await fetch('/api/categories', {
@@ -744,6 +753,7 @@
         showToast('Failed to load categories');
       } finally {
         btn.disabled = false;
+        btnIcon.classList.remove('spinning');
       }
     }
 
