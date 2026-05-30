@@ -113,11 +113,27 @@ const BASE_MANIFEST = {
   ],
 };
 
-// --- Parse config from Stremio's URL-encoded path segment ---
+// --- Parse config from URL path segment (supports base64url and legacy URL-encoded) ---
 function parseConfigPath(configStr) {
-  // Stremio encodes config as: key=value&key2=value2 (URL-encoded)
+  let params = {};
+
+  // Detect base64url format (no & or = at start, starts with "ey" for JSON base64)
+  if (configStr.startsWith("ey") || (!configStr.includes("%3D") && !configStr.includes("sourceType"))) {
+    try {
+      // Base64url decode
+      const base64 = configStr.replace(/-/g, "+").replace(/_/g, "/");
+      const json = Buffer.from(base64, "base64").toString("utf-8");
+      const obj = JSON.parse(json);
+      if (obj.t === "xtream") {
+        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "" };
+      } else {
+        return { type: "m3u", url: obj.m || "", country: obj.c || "" };
+      }
+    } catch (e) { /* fall through to legacy parsing */ }
+  }
+
+  // Legacy: URL-encoded key=value&key2=value2
   const decoded = decodeURIComponent(configStr);
-  const params = {};
   decoded.split("&").forEach((pair) => {
     const idx = pair.indexOf("=");
     if (idx > -1) {
@@ -125,7 +141,6 @@ function parseConfigPath(configStr) {
     }
   });
 
-  // Map to our internal config format
   if (params.sourceType === "xtream") {
     return {
       type: "xtream",

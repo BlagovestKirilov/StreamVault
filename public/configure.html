@@ -636,8 +636,12 @@
       document.getElementById('catSelected').style.display = isXtream ? 'flex' : 'none';
     }
 
+    function toBase64Url(str) {
+      return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
     function install() {
-      let params = '';
+      let configObj = {};
       const categoryIds = [...selectedCategories].join(',');
 
       if (source === 'xtream') {
@@ -652,7 +656,7 @@
           showToast('Server URL must be a valid URL (http://...)');
           return;
         }
-        params = `sourceType=xtream&server=${enc(server)}&username=${enc(user)}&password=${enc(pass)}&m3uUrl=&country=${enc(categoryIds)}`;
+        configObj = { t: 'xtream', s: server, u: user, p: pass, c: categoryIds };
       } else {
         const url = document.getElementById('m3uUrl').value.trim();
         if (!url) {
@@ -663,11 +667,11 @@
           showToast('Playlist URL must be a valid URL (http://...)');
           return;
         }
-        params = `sourceType=m3u&server=&username=&password=&m3uUrl=${enc(url)}&country=`;
+        configObj = { t: 'm3u', m: url, c: '' };
       }
 
       const base = window.location.origin;
-      const configPath = encodeURIComponent(params);
+      const configPath = toBase64Url(JSON.stringify(configObj));
       const manifestUrl = `${base}/${configPath}/manifest.json`;
 
       // Use the proper web URL format that Stremio handles on all platforms
@@ -679,8 +683,10 @@
       document.getElementById('stremioLink').href = stremioWebUrl;
       document.getElementById('result').style.display = 'block';
 
-      // Try native deep link (opens Stremio app prompt on Windows/Android)
-      window.location.href = stremioUrl;
+      // Prefetch manifest to warm up server/DNS/TLS, then open Stremio
+      fetch(manifestUrl).finally(() => {
+        window.location.href = stremioUrl;
+      });
     }
 
     function copyUrl() {
