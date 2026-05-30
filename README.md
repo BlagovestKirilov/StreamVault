@@ -1,54 +1,45 @@
 # StreamVault IPTV
 
-**Your personal streaming vault. All channels, one place.**
+**Stream IPTV via Xtream Codes or M3U playlist — live TV, VOD & series.**
 
-A Stremio addon that connects your IPTV service directly to Stremio — supporting both **Xtream Codes** and **M3U playlist** sources.
+A Stremio addon that brings all your IPTV channels into one place. Connect your existing IPTV subscription and watch everything directly inside Stremio.
 
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Node](https://img.shields.io/badge/Node.js-18%2B-brightgreen?style=flat-square)
 
 ---
 
-## Features
+## What You Can Do
 
-- **Xtream Codes** — connect with server URL, username & password
-- **M3U Playlists** — paste any M3U/M3U8 playlist URL
-- **Live TV** — all your live channels in Stremio
-- **VOD** — movies from your IPTV provider
-- **Series** — TV series with episodes
-- **Search** — find channels by name directly in Stremio
-- **Multi-device** — works on PC, Android, iOS, TV (same network)
-- **Auto-fallback streams** — HLS, TS, MP4, MKV formats for reliability
-- **Zero config files** — everything configured inside Stremio's UI
-
----
-
-## How It Works
-
-1. Install the addon in Stremio
-2. Choose your source type (Xtream Codes or M3U)
-3. Enter your credentials or playlist URL
-4. All your channels appear in Stremio — browse, search, and play
+- **Watch Live TV** — all your live channels right inside Stremio
+- **Watch Movies (VOD)** — browse and play movies from your IPTV provider
+- **Watch Series** — TV series with full episode listings
+- **TV Guide (EPG)** — see what's playing now and what's coming next on live channels
+- **Search** — find any channel, movie, or series by name directly in Stremio
+- **Test Your Connection** — verify your IPTV credentials work before installing
+- **Filter by Category** — choose specific channel categories to keep your library clean
+- **Works Everywhere** — PC, Android, iOS, and TV — same addon, all devices
 
 ---
 
-## Supported Content
+## How to Install
 
-| Type | Xtream Codes | M3U |
-|------|:---:|:---:|
-| Live TV | ✅ | ✅ |
-| Movies (VOD) | ✅ | ✅ |
-| Series | ✅ | ✅ |
+1. Open the StreamVault configure page
+2. Choose your source: **Xtream Codes** or **M3U Playlist**
+3. Enter your IPTV credentials or playlist URL
+4. Optionally test your connection and select categories
+5. Click **Install to Stremio** — done!
+
+Your channels will appear in Stremio's catalog. Browse, search, and play.
 
 ---
 
-## Tech Stack
+## Supported Sources
 
-- **Node.js** + **Express**
-- **Stremio Addon SDK** protocol
-- **Axios** for HTTP requests
-- Stateless — no database needed
+| Source | Live TV | Movies | Series | TV Guide |
+|--------|:---:|:---:|:---:|:---:|
+| **Xtream Codes** | ✅ | ✅ | ✅ | ✅ |
+| **M3U Playlist** | ✅ | ✅ | ✅ | — |
 
 ---
 

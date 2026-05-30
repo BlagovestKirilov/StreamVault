@@ -1,15 +1,34 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+# Run tests first, then deploy to Fly.io on push to master
 
-name: Fly Deploy
+name: Test & Deploy
+
 on:
   push:
     branches:
-      - main
+      - master
+  pull_request:
+    branches:
+      - master
+
 jobs:
-  deploy:
-    name: Deploy app
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    concurrency: deploy-group
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master

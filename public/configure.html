@@ -343,6 +343,48 @@
     }
     .cat-tag .remove-tag:hover { opacity: 1; }
 
+    /* Test Connection button */
+    .btn-test {
+      width: 100%;
+      padding: 14px;
+      margin-bottom: 8px;
+      background: transparent;
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+      border-radius: 14px;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-test:hover {
+      background: rgba(124,92,252,0.08);
+    }
+    .btn-test:active {
+      transform: scale(0.98);
+    }
+    .btn-test:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-test svg {
+      width: 18px;
+      height: 18px;
+    }
+    .btn-test.success {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .btn-test.error {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
     /* Button */
     .btn-install {
       width: 100%;
@@ -579,6 +621,14 @@
         <div class="cat-selected" id="catSelected"></div>
       </div>
 
+      <!-- Test Connection button -->
+      <button class="btn-test" id="btnTest" onclick="testConnection()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 0 1 7.424-7.424m-1.414 1.414a3.375 3.375 0 0 0-4.596 4.596M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636" />
+        </svg>
+        <span id="btnTestText">Test Connection</span>
+      </button>
+
       <!-- Install button -->
       <button class="btn-install" id="btnInstall" onclick="install()">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -636,11 +686,7 @@
       document.getElementById('catSelected').style.display = isXtream ? 'flex' : 'none';
     }
 
-    function toBase64Url(str) {
-      return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
-    function install() {
+    async function install() {
       let configObj = {};
       const categoryIds = [...selectedCategories].join(',');
 
@@ -670,23 +716,41 @@
         configObj = { t: 'm3u', m: url, c: '' };
       }
 
-      const base = window.location.origin;
-      const configPath = toBase64Url(JSON.stringify(configObj));
-      const manifestUrl = `${base}/${configPath}/manifest.json`;
+      const btn = document.getElementById('btnInstall');
+      btn.classList.add('loading');
 
-      // Use the proper web URL format that Stremio handles on all platforms
-      const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-      // Native deep link as fallback
-      const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
+      try {
+        // Encrypt config server-side so credentials are not visible in URL
+        const encRes = await fetch('/api/encrypt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(configObj)
+        });
+        const encData = await encRes.json();
+        if (encData.error) { showToast(encData.error); return; }
 
-      document.getElementById('installUrl').value = manifestUrl;
-      document.getElementById('stremioLink').href = stremioWebUrl;
-      document.getElementById('result').style.display = 'block';
+        const base = window.location.origin;
+        const configPath = encData.config;
+        const manifestUrl = `${base}/${configPath}/manifest.json`;
 
-      // Prefetch manifest to warm up server/DNS/TLS, then open Stremio
-      fetch(manifestUrl).finally(() => {
-        window.location.href = stremioUrl;
-      });
+        // Use the proper web URL format that Stremio handles on all platforms
+        const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+        // Native deep link as fallback
+        const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
+
+        document.getElementById('installUrl').value = manifestUrl;
+        document.getElementById('stremioLink').href = stremioWebUrl;
+        document.getElementById('result').style.display = 'block';
+
+        // Prefetch manifest to warm up server/DNS/TLS, then open Stremio
+        fetch(manifestUrl).finally(() => {
+          window.location.href = stremioUrl;
+        });
+      } catch (e) {
+        showToast('Failed to generate install URL');
+      } finally {
+        btn.classList.remove('loading');
+      }
     }
 
     function copyUrl() {
@@ -813,6 +877,57 @@
       renderCategoryList();
     }
 
+    async function testConnection() {
+      const btn = document.getElementById('btnTest');
+      const btnText = document.getElementById('btnTestText');
+      btn.disabled = true;
+      btn.className = 'btn-test';
+      btnText.textContent = 'Testing...';
+
+      try {
+        let body = {};
+        if (source === 'xtream') {
+          const server = document.getElementById('server').value.trim();
+          const user = document.getElementById('username').value.trim();
+          const pass = document.getElementById('password').value.trim();
+          if (!server || !user || !pass) { showToast('Fill in all fields first'); return; }
+          if (!isValidUrl(server)) { showToast('Server URL must be a valid URL'); return; }
+          body = { type: 'xtream', server, username: user, password: pass };
+        } else {
+          const url = document.getElementById('m3uUrl').value.trim();
+          if (!url) { showToast('Enter an M3U URL first'); return; }
+          if (!isValidUrl(url)) { showToast('Must be a valid URL'); return; }
+          body = { type: 'm3u', m3uUrl: url };
+        }
+
+        const res = await fetch('/api/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          btn.classList.add('success');
+          btnText.textContent = data.message;
+          showToast(data.message, true);
+        } else {
+          btn.classList.add('error');
+          btnText.textContent = 'Connection failed';
+          showToast(data.error || 'Connection failed');
+        }
+      } catch (e) {
+        btn.classList.add('error');
+        btnText.textContent = 'Connection failed';
+        showToast('Connection failed: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => {
+          btn.className = 'btn-test';
+          btnText.textContent = 'Test Connection';
+        }, 4000);
+      }
+    }
+
     function isValidUrl(str) {
       try {
         const u = new URL(str);
@@ -822,7 +937,6 @@
       }
     }
 
-    function enc(s) { return encodeURIComponent(s); }
   </script>
 </body>
 </html>

@@ -8,8 +8,34 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
+
+// --- Encryption for config URLs ---
+const CONFIG_SECRET = process.env.CONFIG_SECRET || "dev-secret";
+const STATS_SECRET = process.env.STATS_SECRET || "";
+const encryptionKey = crypto.scryptSync(CONFIG_SECRET, "streamvault-salt", 32);
+
+function encryptConfig(configObj) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey, iv);
+  let encrypted = cipher.update(JSON.stringify(configObj), "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const authTag = cipher.getAuthTag().toString("hex");
+  return iv.toString("hex") + authTag + encrypted;
+}
+
+function decryptConfig(encStr) {
+  const iv = Buffer.from(encStr.slice(0, 24), "hex");
+  const authTag = Buffer.from(encStr.slice(24, 56), "hex");
+  const ciphertext = encStr.slice(56);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(ciphertext, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+  return JSON.parse(decrypted);
+}
 
 const app = express();
 const PORT = process.env.PORT || 7000;
@@ -18,14 +44,22 @@ const PORT = process.env.PORT || 7000;
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
+
+// --- Helper: extract client IP ---
+function getIp(req) {
+  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+}
 
 // --- Serve static files (logo, images) ---
 app.use("/public", express.static(path.join(__dirname, "public")));
 
-// --- Analytics ---
-const STATS_FILE = path.join(__dirname, "stats.json");
+// --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
+const STATS_DIR = fs.existsSync("/data") ? "/data" : __dirname;
+const STATS_FILE = path.join(STATS_DIR, "stats.json");
 let stats = { installs: 0, configures: 0, streams: 0, searches: 0, users: new Set(), startedAt: new Date().toISOString() };
 
 try {
@@ -57,6 +91,17 @@ async function getCachedM3U(url) {
   m3uCache.set(url, { data, ts: Date.now() });
   return data;
 }
+
+// --- Cache eviction (runs every 30 min) ---
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of m3uCache) {
+    if (now - val.ts > M3U_CACHE_TTL) m3uCache.delete(key);
+  }
+  for (const [key, val] of xtreamCache) {
+    if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
+  }
+}, 30 * 60 * 1000);
 
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
@@ -113,12 +158,24 @@ const BASE_MANIFEST = {
   ],
 };
 
-// --- Parse config from URL path segment (supports base64url and legacy URL-encoded) ---
+// --- Parse config from URL path segment (supports encrypted, base64url, and legacy URL-encoded) ---
 function parseConfigPath(configStr) {
   let params = {};
 
-  // Detect base64url format (no & or = at start, starts with "ey" for JSON base64)
-  if (configStr.startsWith("ey") || (!configStr.includes("%3D") && !configStr.includes("sourceType"))) {
+  // Detect encrypted format: "e-" prefix followed by hex chars (iv + authTag + ciphertext)
+  if (configStr.startsWith("e-") && /^e-[0-9a-f]+$/i.test(configStr)) {
+    try {
+      const obj = decryptConfig(configStr.slice(2));
+      if (obj.t === "xtream") {
+        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "" };
+      } else if (obj.t === "m3u") {
+        return { type: "m3u", url: obj.m || "", country: obj.c || "" };
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  // Detect base64url format: must start with "ey" (base64-encoded JSON "{") and contain only base64url chars
+  if (/^ey[A-Za-z0-9_-]+$/.test(configStr)) {
     try {
       // Base64url decode
       const base64 = configStr.replace(/-/g, "+").replace(/_/g, "/");
@@ -126,7 +183,7 @@ function parseConfigPath(configStr) {
       const obj = JSON.parse(json);
       if (obj.t === "xtream") {
         return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "" };
-      } else {
+      } else if (obj.t === "m3u") {
         return { type: "m3u", url: obj.m || "", country: obj.c || "" };
       }
     } catch (e) { /* fall through to legacy parsing */ }
@@ -161,7 +218,14 @@ function parseConfigPath(configStr) {
 // --- Middleware: extract config from URL path ---
 function extractConfig(req, res, next) {
   try {
-    req.userConfig = parseConfigPath(req.params.config);
+    const config = parseConfigPath(req.params.config);
+    if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
+      return res.status(400).json({ error: "Missing Xtream credentials." });
+    }
+    if (config.type === "m3u" && !config.url) {
+      return res.status(400).json({ error: "Missing M3U URL." });
+    }
+    req.userConfig = config;
     next();
   } catch (e) {
     res.status(400).json({ error: "Invalid configuration." });
@@ -171,14 +235,12 @@ function extractConfig(req, res, next) {
 // --- Serve configuration page for Stremio ---
 app.get("/configure", (req, res) => {
   stats.configures++;
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-  console.log(`[CONFIGURE] ${ip} opened configure page`);
+  console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 app.get("/:config/configure", (req, res) => {
   stats.configures++;
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
-  console.log(`[CONFIGURE] ${ip} opened configure page`);
+  console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 
@@ -202,6 +264,48 @@ app.post("/api/categories", async (req, res) => {
   }
 });
 
+// --- API: Encrypt config for secure URL ---
+app.post("/api/encrypt", (req, res) => {
+  try {
+    const configObj = req.body;
+    if (!configObj || !configObj.t) {
+      return res.status(400).json({ error: "Invalid config" });
+    }
+    const encrypted = encryptConfig(configObj);
+    res.json({ config: "e-" + encrypted });
+  } catch (e) {
+    res.status(500).json({ error: "Encryption failed" });
+  }
+});
+
+// --- API: Test connection to provider ---
+app.post("/api/test", async (req, res) => {
+  try {
+    const { type, server, username, password, m3uUrl } = req.body;
+    if (type === "xtream") {
+      if (!server || !username || !password) {
+        return res.status(400).json({ ok: false, error: "Missing credentials" });
+      }
+      const config = { server: server.replace(/\/+$/, ""), username, password };
+      const cats = await xtream.getLiveCategories(config);
+      if (!Array.isArray(cats)) {
+        return res.json({ ok: false, error: "Invalid response from server" });
+      }
+      res.json({ ok: true, message: `Connected! Found ${cats.length} live categories.` });
+    } else if (type === "m3u") {
+      if (!m3uUrl) {
+        return res.status(400).json({ ok: false, error: "Missing M3U URL" });
+      }
+      const { channels } = await m3u.parseM3U(m3uUrl);
+      res.json({ ok: true, message: `Connected! Found ${channels.length} channels.` });
+    } else {
+      res.status(400).json({ ok: false, error: "Unknown source type" });
+    }
+  } catch (e) {
+    res.json({ ok: false, error: e.message || "Connection failed" });
+  }
+});
+
 /**
  * Generate a poster URL with the channel name as visible text (PNG).
  * Uses ui-avatars.com — a free service that generates text-based images.
@@ -220,7 +324,7 @@ app.get("/manifest.json", (req, res) => {
 
 // Configured manifest (user completed install)
 app.get("/:config/manifest.json", extractConfig, (req, res) => {
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  const ip = getIp(req);
   const isNew = !stats.users.has(ip);
   if (isNew) {
     stats.users.add(ip);
@@ -231,8 +335,11 @@ app.get("/:config/manifest.json", extractConfig, (req, res) => {
   res.json(manifest);
 });
 
-// --- Stats dashboard ---
+// --- Stats dashboard (protected by STATS_SECRET env var) ---
 app.get("/stats", (req, res) => {
+  if (STATS_SECRET && req.query.key !== STATS_SECRET) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
   const uptime = process.uptime();
   const h = Math.floor(uptime / 3600);
   const m = Math.floor((uptime % 3600) / 60);
@@ -259,17 +366,16 @@ async function catalogHandler(req, res) {
     const { type } = req.params;
     const extra = req.params.extra ? parseExtra(req.params.extra) : {};
     const search = (extra.search || "").toLowerCase();
+    const skip = parseInt(extra.skip) || 0;
+    const PAGE_SIZE = 100;
 
     let metas = [];
 
     if (config.type === "xtream") {
       metas = await getXtreamCatalog(config, type);
     } else if (config.type === "m3u") {
-      metas = await getM3UCatalog(config, type, search);
+      metas = await getM3UCatalog(config, type);
     }
-
-    // Filter by preferred category if set (uses category_id from provider)
-    // Note: category filtering is now done at the API level in getXtreamCatalog
 
     // Filter by search — all words must appear in the name (any order)
     if (search) {
@@ -280,6 +386,9 @@ async function catalogHandler(req, res) {
         return words.every(word => name.includes(word));
       });
     }
+
+    // Paginate
+    metas = metas.slice(skip, skip + PAGE_SIZE);
 
     res.json({ metas });
   } catch (e) {
@@ -380,23 +489,39 @@ async function getXtreamCatalog(config, type) {
 }
 
 async function getXtreamMeta(config, type, id) {
+  const streamId = id.replace(`iptv_${type}_`, "");
+
   // Look up actual channel name from cached catalog
   const catalog = await getXtreamCatalog(config, type);
   const item = catalog.find(m => m.id === id);
 
+  let name = item ? item.name : `Stream ${streamId}`;
+  let poster = item ? item.poster : makePosterUrl(name);
+  let description = `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`;
+
+  // Fetch EPG for live channels
+  if (type === "tv") {
+    try {
+      const epg = await xtream.getShortEPG(config, streamId);
+      if (epg && epg.length > 0) {
+        const lines = epg.map(e => {
+          const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
+          const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
+          const start = e.start || "";
+          const end = e.end || "";
+          const time = start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
+          return `${time ? time + " " : ""}${title}${desc ? "\n  " + desc : ""}`;
+        });
+        description = "📺 TV Guide:\n" + lines.join("\n");
+      }
+    } catch (_) {}
+  }
+
   if (item) {
-    return {
-      id,
-      type,
-      name: item.name,
-      poster: item.poster,
-      posterShape: "square",
-      description: `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`,
-    };
+    return { id, type, name, poster, posterShape: "square", description };
   }
 
   // Fallback: fetch from API if not in cache
-  const streamId = id.replace(`iptv_${type}_`, "");
   try {
     let items = [];
     if (type === "tv") items = await xtream.getLiveStreams(config);
@@ -404,14 +529,10 @@ async function getXtreamMeta(config, type, id) {
     else if (type === "series") items = await xtream.getSeries(config);
     const found = items.find(i => String(i.stream_id || i.series_id) === streamId);
     if (found) {
-      const name = found.name || found.title || `Stream ${streamId}`;
+      name = found.name || found.title || name;
       const logo = found.stream_icon || found.cover || "";
-      return {
-        id, type, name,
-        poster: logo || makePosterUrl(name),
-        posterShape: "square",
-        description: `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`,
-      };
+      poster = logo || makePosterUrl(name);
+      return { id, type, name, poster, posterShape: "square", description };
     }
   } catch (_) {}
 
@@ -479,16 +600,10 @@ function getXtreamStreams(config, type, id) {
 
 // --- M3U handlers ---
 
-async function getM3UCatalog(config, type, search) {
+async function getM3UCatalog(config, type) {
   const { channels } = await getCachedM3U(config.url);
 
-  // Filter by type and search query
-  let filtered = channels.filter((ch) => ch.type === type);
-  if (search) {
-    filtered = filtered.filter((ch) => ch.name.toLowerCase().includes(search));
-  }
-
-  return filtered.map((ch) => {
+  return channels.filter((ch) => ch.type === type).map((ch) => {
     return {
       id: `iptv_${type}_${ch.id}`,
       type: type,
@@ -552,6 +667,10 @@ function parseExtra(extraStr) {
 }
 
 // --- Start server ---
-app.listen(PORT, () => {
-  console.log(`StreamVault IPTV running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`StreamVault IPTV running on port ${PORT}`);
+  });
+}
+
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig };

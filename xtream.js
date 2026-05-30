@@ -84,6 +84,28 @@ async function getSeriesInfo(config, seriesId) {
 }
 
 /**
+ * Fetch short EPG for a specific stream (current/next program).
+ * @param {Object} config
+ * @param {string|number} streamId
+ */
+async function getShortEPG(config, streamId) {
+  const url = `${baseUrl(config)}&action=get_short_epg&stream_id=${streamId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return (data && data.epg_listings) || [];
+}
+
+/**
+ * Fetch full EPG for a specific stream.
+ * @param {Object} config
+ * @param {string|number} streamId
+ */
+async function getEPG(config, streamId) {
+  const url = `${baseUrl(config)}&action=get_simple_data_table&stream_id=${streamId}`;
+  const { data } = await axios.get(url, { timeout: 15000 });
+  return (data && data.epg_listings) || [];
+}
+
+/**
  * Build stream URL for live channel.
  */
 function buildLiveStreamUrl(config, streamId) {
@@ -115,6 +137,8 @@ module.exports = {
   getSeriesCategories,
   getSeries,
   getSeriesInfo,
+  getShortEPG,
+  getEPG,
   buildLiveStreamUrl,
   buildVodStreamUrl,
   buildSeriesStreamUrl,
