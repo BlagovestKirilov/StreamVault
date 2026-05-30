@@ -57,6 +57,11 @@ app.use((req, res, next) => {
 // --- JSON body parser (with size limit) ---
 app.use(express.json({ limit: "16kb" }));
 
+// --- Health check for Fly.io (must be unauthenticated for Fly's built-in checks) ---
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
 // --- Helper: extract client IP ---
 function getIp(req) {
   return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
@@ -139,6 +144,14 @@ function saveStats() {
 setInterval(saveStats, 60000);
 process.on("SIGTERM", saveStats);
 process.on("SIGINT", () => { saveStats(); process.exit(0); });
+process.on("unhandledRejection", (err) => {
+  console.error("[FATAL] Unhandled rejection:", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", err);
+  saveStats();
+  process.exit(1);
+});
 
 // --- In-memory caches ---
 const m3uCache = new Map();
