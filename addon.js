@@ -537,7 +537,7 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
 
     if (config.type === "xtream") {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      streams = await getXtreamStreams(config, type, id, baseUrl);
+      streams = await getXtreamStreams(config, type, id, baseUrl, req.params.config);
     } else if (config.type === "m3u") {
       streams = await getM3UStreams(config, id);
     }
@@ -550,11 +550,13 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
   }
 });
 
-// --- Stream redirect (gives VLC a readable title from the URL) ---
-app.get("/play/:config/:name", (req, res) => {
-  const target = req.query.url;
-  if (!target) return res.status(400).send("Missing url");
-  res.redirect(302, target);
+// --- Stream redirect (gives VLC a readable title from the URL path) ---
+app.get("/play/:config/:streamType/:streamId/:ext/:name", extractConfig, (req, res) => {
+  const config = req.userConfig;
+  const { streamType, streamId, ext } = req.params;
+  const server = config.server.replace(/\/+$/, "");
+  const url = `${server}/${streamType}/${config.username}/${config.password}/${streamId}.${ext}`;
+  res.redirect(302, url);
 });
 
 // --- Xtream Codes handlers ---
@@ -662,7 +664,7 @@ async function getXtreamMeta(config, type, id) {
   };
 }
 
-async function getXtreamStreams(config, type, id, baseUrl) {
+async function getXtreamStreams(config, type, id, baseUrl, configPath) {
   // id format: iptv_<type>_<streamId>
   const streamId = id.replace(`iptv_${type}_`, "");
   const server = config.server.replace(/\/+$/, "");
@@ -681,17 +683,23 @@ async function getXtreamStreams(config, type, id, baseUrl) {
     // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
     const tvName = channelName || `Channel ${streamId}`;
     const safeName = encodeURIComponent(tvName);
-    const tsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
-    const hlsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
+    // Route through /play redirect so VLC shows channel name (last path segment)
+    const useRedirect = baseUrl && configPath;
+    const tsUrl = useRedirect
+      ? `${baseUrl}/play/${configPath}/live/${streamId}/ts/${safeName}`
+      : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
+    const hlsUrl = useRedirect
+      ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
+      : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
     streams.push(
       {
         title: tvName,
-        url: baseUrl ? `${baseUrl}/play/_/${safeName}.ts?url=${encodeURIComponent(tsUrl)}` : tsUrl,
+        url: tsUrl,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       },
       {
         title: tvName,
-        url: baseUrl ? `${baseUrl}/play/_/${safeName}.m3u8?url=${encodeURIComponent(hlsUrl)}` : hlsUrl,
+        url: hlsUrl,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       }
     );
