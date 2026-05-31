@@ -123,11 +123,24 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 const STATS_DIR = fs.existsSync("/data") ? "/data" : __dirname;
 const STATS_FILE = path.join(STATS_DIR, "stats.json");
-let stats = { installs: 0, configures: 0, streams: 0, searches: 0, users: new Set(), startedAt: new Date().toISOString() };
+let stats = {
+  installs: 0, configures: 0, streams: 0, searches: 0,
+  users: new Set(), startedAt: new Date().toISOString(),
+  streamsByType: { tv: 0, movie: 0, series: 0 },
+  configType: { xtream: 0, m3u: 0 },
+  dailyActive: {},  // { "2026-05-31": Set([ips]) }
+};
 
 try {
   const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
   stats = { ...saved, users: new Set(saved.users || []) };
+  if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
+  if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
+  if (!stats.dailyActive) stats.dailyActive = {};
+  // Restore daily active Sets
+  for (const day of Object.keys(stats.dailyActive)) {
+    stats.dailyActive[day] = new Set(stats.dailyActive[day]);
+  }
 } catch (_) {}
 
 const MAX_TRACKED_USERS = 10000;
@@ -138,7 +151,14 @@ function saveStatsData() {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
-  return { ...stats, users: [...stats.users] };
+  // Keep only last 30 days of dailyActive
+  const dailySerialized = {};
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  for (const [day, ips] of Object.entries(stats.dailyActive)) {
+    if (new Date(day) >= cutoff) dailySerialized[day] = [...ips];
+  }
+  return { ...stats, users: [...stats.users], dailyActive: dailySerialized };
 }
 
 function saveStats() {
@@ -435,7 +455,13 @@ app.get("/:config/manifest.json", extractConfig, (req, res) => {
     stats.users.add(ip);
     stats.installs++;
   }
-  console.log(`[INSTALL] ${ip} ${isNew ? 'NEW install' : 'existing user'} — type: ${req.userConfig.type}`);
+  // Track config type and daily active
+  const cType = req.userConfig.type;
+  if (stats.configType[cType] !== undefined) stats.configType[cType]++;
+  const today = new Date().toISOString().slice(0, 10);
+  if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
+  stats.dailyActive[today].add(ip);
+  console.log(`[INSTALL] ${ip} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
   const manifest = { ...BASE_MANIFEST, behaviorHints: { configurable: true } };
   res.json(manifest);
 });
@@ -448,13 +474,26 @@ app.get("/stats", (req, res) => {
   const uptime = process.uptime();
   const h = Math.floor(uptime / 3600);
   const m = Math.floor((uptime % 3600) / 60);
+  // Daily active users (last 7 days)
+  const last7 = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    last7[key] = stats.dailyActive[key] ? stats.dailyActive[key].size : 0;
+  }
+  const avgStreamsPerUser = stats.users.size > 0 ? +(stats.streams / stats.users.size).toFixed(1) : 0;
   res.json({
     addon: "StreamVault IPTV",
     installs: stats.installs,
     uniqueUsers: stats.users.size,
     configures: stats.configures,
     streamsPlayed: stats.streams,
+    streamsByType: stats.streamsByType,
     searches: stats.searches,
+    configType: stats.configType,
+    avgStreamsPerUser,
+    dailyActiveUsers: last7,
     uptime: `${h}h ${m}m`,
     startedAt: stats.startedAt,
   });
@@ -543,6 +582,7 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
     }
 
     stats.streams++;
+    if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
     res.json({ streams });
   } catch (e) {
     console.error("Stream error:", e.message);
