@@ -667,16 +667,17 @@ async function getXtreamStreams(config, type, id) {
 
   if (type === "tv") {
     // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
+    const tvName = channelName || `Channel ${streamId}`;
     streams.push(
       {
-        title: channelName || "Live Stream (TS)",
+        title: tvName,
         url: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live", filename: `${tvName}.ts` },
       },
       {
-        title: `${channelName || "Live Stream"} (HLS)`,
+        title: tvName,
         url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live", filename: `${tvName}.m3u8` },
       }
     );
   } else if (type === "movie") {
