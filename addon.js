@@ -535,7 +535,7 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
     let streams = [];
 
     if (config.type === "xtream") {
-      streams = getXtreamStreams(config, type, id);
+      streams = await getXtreamStreams(config, type, id);
     } else if (config.type === "m3u") {
       streams = await getM3UStreams(config, id);
     }
@@ -650,10 +650,18 @@ async function getXtreamMeta(config, type, id) {
   };
 }
 
-function getXtreamStreams(config, type, id) {
+async function getXtreamStreams(config, type, id) {
   // id format: iptv_<type>_<streamId>
   const streamId = id.replace(`iptv_${type}_`, "");
   const server = config.server.replace(/\/+$/, "");
+
+  // Look up channel name from catalog
+  let channelName = "";
+  try {
+    const catalog = await getXtreamCatalog(config, type);
+    const item = catalog.find(m => m.id === id);
+    if (item) channelName = item.name;
+  } catch (_) {}
 
   let streams = [];
 
@@ -661,12 +669,12 @@ function getXtreamStreams(config, type, id) {
     // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
     streams.push(
       {
-        title: "Live Stream (TS)",
+        title: channelName || "Live Stream (TS)",
         url: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       },
       {
-        title: "Live Stream (HLS)",
+        title: `${channelName || "Live Stream"} (HLS)`,
         url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       }
@@ -674,12 +682,12 @@ function getXtreamStreams(config, type, id) {
   } else if (type === "movie") {
     streams.push(
       {
-        title: "VOD Stream (MP4)",
+        title: channelName || "VOD Stream (MP4)",
         url: `${server}/movie/${config.username}/${config.password}/${streamId}.mp4`,
         behaviorHints: { notWebReady: false },
       },
       {
-        title: "VOD Stream (MKV)",
+        title: `${channelName || "VOD Stream"} (MKV)`,
         url: `${server}/movie/${config.username}/${config.password}/${streamId}.mkv`,
         behaviorHints: { notWebReady: false },
       }
@@ -687,12 +695,12 @@ function getXtreamStreams(config, type, id) {
   } else if (type === "series") {
     streams.push(
       {
-        title: "Series Stream (MKV)",
+        title: channelName || "Series Stream (MKV)",
         url: `${server}/series/${config.username}/${config.password}/${streamId}.mkv`,
         behaviorHints: { notWebReady: false },
       },
       {
-        title: "Series Stream (MP4)",
+        title: `${channelName || "Series Stream"} (MP4)`,
         url: `${server}/series/${config.username}/${config.password}/${streamId}.mp4`,
         behaviorHints: { notWebReady: false },
       }
