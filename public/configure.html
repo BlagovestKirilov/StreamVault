@@ -528,12 +528,60 @@
       .input-wrap input { font-size: 16px; } /* prevents iOS zoom */
     }
 
-    @media (prefers-color-scheme: light) {
-      /* Keep dark theme regardless — it's a streaming app */
+    html.light {
+      --bg: #f5f5fa;
+      --card: #ffffff;
+      --card-glow: rgba(123, 91, 245, 0.06);
+      --border: #d8d8e8;
+      --accent: #6c4ce0;
+      --accent-glow: rgba(108, 76, 224, 0.2);
+      --accent-hover: #8565ff;
+      --green: #16a34a;
+      --green-bg: rgba(22, 163, 74, 0.08);
+      --red: #dc2626;
+      --text: #1a1a2e;
+      --muted: #6b6b8a;
+      --input-bg: #eeeef5;
+      --input-focus: #e0e0ed;
     }
+
+    html.light .brand-icon { background: rgba(108, 76, 224, 0.15); color: #6c4ce0; }
+    html.light .brand-icon svg { stroke: #6c4ce0; }
+    html.light .tab-btn { color: #6b6b8a; }
+    html.light .tab-btn.active { color: #1a1a2e; }
+    html.light .toast { background: #1a1a2e; }
+
+    .theme-toggle {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.2s;
+      z-index: 100;
+    }
+    .theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+    .theme-toggle svg { width: 20px; height: 20px; }
   </style>
 </head>
 <body>
+
+  <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+    <svg id="iconSun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+    </svg>
+    <svg id="iconMoon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="display:none">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+    </svg>
+  </button>
 
   <div class="wrapper">
     <div class="brand">
@@ -682,6 +730,21 @@
     document.addEventListener('visibilitychange', function() {
       if (!document.hidden) window.scrollTo(0, 0);
     });
+
+    // Theme toggle
+    function applyTheme(theme) {
+      document.documentElement.classList.toggle('light', theme === 'light');
+      document.getElementById('iconSun').style.display = theme === 'light' ? 'none' : 'block';
+      document.getElementById('iconMoon').style.display = theme === 'light' ? 'block' : 'none';
+      document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f5f5fa' : '#0a0a16';
+    }
+    function toggleTheme() {
+      const isLight = document.documentElement.classList.contains('light');
+      const newTheme = isLight ? 'dark' : 'light';
+      localStorage.setItem('sv-theme', newTheme);
+      applyTheme(newTheme);
+    }
+    applyTheme(localStorage.getItem('sv-theme') || 'dark');
 
     let source = 'xtream';
 
