@@ -658,17 +658,17 @@ function getXtreamStreams(config, type, id) {
   let streams = [];
 
   if (type === "tv") {
-    // Provide multiple format options for live — auto-retry with fallbacks
+    // Live TV: use external player (VLC/MX) to avoid Stremio's ~60s HLS timeout
     streams.push(
-      {
-        title: "Live Stream (HLS)",
-        url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
-        behaviorHints: { notWebReady: false },
-      },
       {
         title: "Live Stream (TS)",
         url: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
-        behaviorHints: { notWebReady: false },
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+      },
+      {
+        title: "Live Stream (HLS)",
+        url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       }
     );
   } else if (type === "movie") {
@@ -746,11 +746,14 @@ async function getM3UStreams(config, id) {
 
   if (!channel) return [];
 
+  const isLive = channel.type === "tv";
   return [
     {
       title: channel.name,
       url: channel.url,
-      behaviorHints: { notWebReady: false },
+      behaviorHints: isLive
+        ? { notWebReady: true, bingeGroup: "streamvault-live" }
+        : { notWebReady: false },
     },
   ];
 }
