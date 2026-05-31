@@ -42,9 +42,10 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 16px;
-      padding: 16px env(safe-area-inset-right) 16px env(safe-area-inset-left);
+      justify-content: flex-start;
+      padding: 40px 16px;
+      padding: 40px env(safe-area-inset-right) 40px env(safe-area-inset-left);
+      overflow-y: auto;
     }
 
     .wrapper {
@@ -544,6 +545,12 @@
       <p>Your personal streaming vault. All channels, one place.</p>
     </div>
 
+    <div class="tip-box" style="width: 100%; max-width: 480px; margin-bottom: 12px; padding: 12px 14px; background: var(--input-bg); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--muted); line-height: 1.5;">
+      <strong style="color: var(--accent);">💡 Live TV requires VLC</strong><br/>
+      Set it as default: Stremio &rarr; Settings &rarr; Advanced &rarr; Default Player &rarr; VLC<br/>
+      <span>Works on: Android, Android TV, Fire TV, Apple TV, iOS, Windows, macOS, Linux</span>
+    </div>
+
     <div class="card">
       <!-- Tab switcher -->
       <div class="tabs">
@@ -661,13 +668,6 @@
           </a>
         </div>
         <p class="result-hint">If Stremio didn't open, copy the URL and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL</p>
-        <p class="result-hint" style="margin-top: 10px; padding: 10px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--border);">
-          <strong style="color: var(--accent);">💡 Tip for Live TV:</strong><br/>
-          For best playback, set VLC as default player:<br/>
-          Stremio &rarr; Settings &rarr; Advanced &rarr; Default Player &rarr; VLC<br/><br/>
-          <strong style="color: var(--muted);">Supported devices:</strong>
-          <span style="color: var(--muted);">Android phones, Android TV, Fire TV Stick, Apple TV, iOS, Windows, macOS, Linux</span>
-        </p>
       </div>
     </div>
   </div>
@@ -676,6 +676,11 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    // Scroll to top when returning from Stremio or another app
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) window.scrollTo(0, 0);
+    });
+
     let source = 'xtream';
 
     function setTab(t) {
