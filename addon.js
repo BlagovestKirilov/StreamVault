@@ -44,6 +44,7 @@ const dnsLookup = promisify(dns.lookup);
 
 const app = express();
 const PORT = process.env.PORT || 7000;
+app.set("trust proxy", true);
 
 // --- CORS headers (required for Stremio) ---
 app.use((req, res, next) => {
@@ -535,7 +536,8 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
     let streams = [];
 
     if (config.type === "xtream") {
-      streams = await getXtreamStreams(config, type, id);
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      streams = await getXtreamStreams(config, type, id, baseUrl);
     } else if (config.type === "m3u") {
       streams = await getM3UStreams(config, id);
     }
@@ -546,6 +548,13 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
     console.error("Stream error:", e.message);
     res.json({ streams: [] });
   }
+});
+
+// --- Stream redirect (gives VLC a readable title from the URL) ---
+app.get("/play/:config/:name", (req, res) => {
+  const target = req.query.url;
+  if (!target) return res.status(400).send("Missing url");
+  res.redirect(302, target);
 });
 
 // --- Xtream Codes handlers ---
@@ -650,7 +659,7 @@ async function getXtreamMeta(config, type, id) {
   };
 }
 
-async function getXtreamStreams(config, type, id) {
+async function getXtreamStreams(config, type, id, baseUrl) {
   // id format: iptv_<type>_<streamId>
   const streamId = id.replace(`iptv_${type}_`, "");
   const server = config.server.replace(/\/+$/, "");
@@ -668,16 +677,19 @@ async function getXtreamStreams(config, type, id) {
   if (type === "tv") {
     // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
     const tvName = channelName || `Channel ${streamId}`;
+    const safeName = encodeURIComponent(tvName);
+    const tsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
+    const hlsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
     streams.push(
       {
         title: tvName,
-        url: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live", filename: `${tvName}.ts` },
+        url: baseUrl ? `${baseUrl}/play/_/${safeName}.ts?url=${encodeURIComponent(tsUrl)}` : tsUrl,
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       },
       {
         title: tvName,
-        url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live", filename: `${tvName}.m3u8` },
+        url: baseUrl ? `${baseUrl}/play/_/${safeName}.m3u8?url=${encodeURIComponent(hlsUrl)}` : hlsUrl,
+        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       }
     );
   } else if (type === "movie") {
