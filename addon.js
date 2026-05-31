@@ -658,17 +658,16 @@ function getXtreamStreams(config, type, id) {
   let streams = [];
 
   if (type === "tv") {
-    // Live TV: externalUrl forces Stremio to open in external player (VLC/MX)
-    // This avoids Stremio's built-in player ~60s HLS timeout
+    // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
     streams.push(
       {
-        title: "▶️ Play in External Player (TS)",
-        externalUrl: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
+        title: "Live Stream (TS)",
+        url: `${server}/live/${config.username}/${config.password}/${streamId}.ts`,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       },
       {
-        title: "▶️ Play in External Player (HLS)",
-        externalUrl: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
+        title: "Live Stream (HLS)",
+        url: `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`,
         behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
       }
     );
@@ -748,20 +747,13 @@ async function getM3UStreams(config, id) {
   if (!channel) return [];
 
   const isLive = channel.type === "tv";
-  if (isLive) {
-    return [
-      {
-        title: `▶️ ${channel.name}`,
-        externalUrl: channel.url,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-      },
-    ];
-  }
   return [
     {
       title: channel.name,
       url: channel.url,
-      behaviorHints: { notWebReady: false },
+      behaviorHints: isLive
+        ? { notWebReady: true, bingeGroup: "streamvault-live" }
+        : { notWebReady: false },
     },
   ];
 }

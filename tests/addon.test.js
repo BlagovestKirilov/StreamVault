@@ -305,8 +305,8 @@ describe("encryptConfig / decryptConfig", () => {
   test("tampered ciphertext throws", () => {
     const config = { t: "xtream", s: "http://test.com", u: "user", p: "pass", c: "" };
     const encrypted = encryptConfig(config);
-    // Flip a character in the ciphertext portion
-    const tampered = encrypted.slice(0, -2) + "ff";
+    // Corrupt the auth tag (chars 24-56) to guarantee authentication failure
+    const tampered = encrypted.slice(0, 24) + "00".repeat(16) + encrypted.slice(56);
     expect(() => decryptConfig(tampered)).toThrow();
   });
 });
