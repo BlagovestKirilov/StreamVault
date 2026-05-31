@@ -196,7 +196,7 @@ const BASE_MANIFEST = {
   id: "community.streamvault.addon",
   version: "1.0.0",
   name: "StreamVault IPTV",
-  description: "Stream IPTV via Xtream Codes or M3U playlist — live TV, VOD & series.",
+  description: "Stream IPTV via Xtream Codes or M3U playlist — live TV, VOD & series. VLC player is required for live TV.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv", "movie", "series"],
