@@ -582,8 +582,11 @@ async function getXtreamCatalog(config, type) {
       return Promise.resolve([]);
     });
     const results = await Promise.all(fetches);
-    items = results.flat();
+    items = results.filter(Array.isArray).flat();
   }
+
+  // Guard: API may return an object/error instead of an array
+  if (!Array.isArray(items)) items = [];
 
   const result = items.map((item) => {
     const name = item.name || item.title || "Unknown";
