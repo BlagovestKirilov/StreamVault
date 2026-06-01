@@ -128,6 +128,7 @@ let stats = {
   users: new Set(), startedAt: new Date().toISOString(),
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
+  installsByType: { xtream: 0, m3u: 0 },
   dailyActive: {},  // { "2026-05-31": Set([ips]) }
 };
 
@@ -136,6 +137,7 @@ try {
   stats = { ...saved, users: new Set(saved.users || []) };
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
+  if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   // Restore daily active Sets
   for (const day of Object.keys(stats.dailyActive)) {
@@ -458,6 +460,7 @@ app.get("/:config/manifest.json", extractConfig, (req, res) => {
   // Track config type and daily active
   const cType = req.userConfig.type;
   if (stats.configType[cType] !== undefined) stats.configType[cType]++;
+  if (isNew && stats.installsByType[cType] !== undefined) stats.installsByType[cType]++;
   const today = new Date().toISOString().slice(0, 10);
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(ip);
@@ -492,6 +495,7 @@ app.get("/stats", (req, res) => {
     streamsByType: stats.streamsByType,
     searches: stats.searches,
     configType: stats.configType,
+    installsByType: stats.installsByType,
     avgStreamsPerUser,
     dailyActiveUsers: last7,
     uptime: `${h}h ${m}m`,
