@@ -123,6 +123,7 @@ app.use("/public", express.static(path.join(__dirname, "public")));
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 const STATS_DIR = fs.existsSync("/data") ? "/data" : __dirname;
 const STATS_FILE = path.join(STATS_DIR, "stats.json");
+const PROCESS_START = new Date().toISOString();
 let stats = {
   installs: 0, configures: 0, streams: 0, searches: 0,
   users: new Set(), startedAt: new Date().toISOString(),
@@ -190,8 +191,17 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
+const M3U_CACHE_MAX = 30;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+const XTREAM_CACHE_MAX = 100;
+
+function setCapped(cache, key, value, max) {
+  cache.set(key, value);
+  if (cache.size > max) {
+    cache.delete(cache.keys().next().value); // evict oldest (insertion order)
+  }
+}
 
 async function getCachedM3U(url) {
   const cached = m3uCache.get(url);
@@ -199,11 +209,11 @@ async function getCachedM3U(url) {
     return cached.data;
   }
   const data = await m3u.parseM3U(url);
-  m3uCache.set(url, { data, ts: Date.now() });
+  setCapped(m3uCache, url, { data, ts: Date.now() }, M3U_CACHE_MAX);
   return data;
 }
 
-// --- Cache eviction (runs every 30 min) ---
+// --- Cache eviction (runs every 10 min) ---
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of m3uCache) {
@@ -212,7 +222,7 @@ setInterval(() => {
   for (const [key, val] of xtreamCache) {
     if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
   }
-}, 30 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
@@ -499,6 +509,7 @@ app.get("/stats", (req, res) => {
     avgStreamsPerUser,
     dailyActiveUsers: last7,
     uptime: `${h}h ${m}m`,
+    lastRestarted: PROCESS_START,
     startedAt: stats.startedAt,
   });
 });
@@ -646,7 +657,7 @@ async function getXtreamCatalog(config, type) {
     };
   });
 
-  xtreamCache.set(cacheKey, { data: result, ts: Date.now() });
+  setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
   return result;
 }
 
