@@ -191,10 +191,10 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
-const M3U_CACHE_MAX = 30;
+const M3U_CACHE_MAX = 5;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
-const XTREAM_CACHE_MAX = 100;
+const XTREAM_CACHE_MAX = 25;
 
 function setCapped(cache, key, value, max) {
   cache.set(key, value);
@@ -223,6 +223,23 @@ setInterval(() => {
     if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
   }
 }, 10 * 60 * 1000);
+
+// --- Memory pressure eviction (runs every 30s) ---
+const HEAP_WARN_MB = 300;
+const HEAP_CRIT_MB = 400;
+setInterval(() => {
+  const { heapUsed } = process.memoryUsage();
+  const mb = heapUsed / 1024 / 1024;
+  if (mb > HEAP_CRIT_MB) {
+    m3uCache.clear();
+    xtreamCache.clear();
+    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — cleared all caches`);
+  } else if (mb > HEAP_WARN_MB) {
+    const keys = [...m3uCache.keys()];
+    keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => m3uCache.delete(k));
+    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — evicted oldest M3U cache entries`);
+  }
+}, 30 * 1000);
 
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {

@@ -27,6 +27,9 @@ primary_region = 'ams'
   source = "data"
   destination = "/data"
 
+[env]
+  NODE_OPTIONS = "--max-old-space-size=450"
+
 [[vm]]
   cpu_kind = 'shared'
   cpus = 1
