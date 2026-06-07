@@ -6,13 +6,22 @@
 
 const axios = require("axios");
 
+// Hard ceiling on a single playlist download. axios defaults to unlimited in
+// Node, so without this one oversized playlist can OOM the whole process.
+const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB
+
 /**
  * Fetch and parse an M3U playlist from a URL.
  * @param {string} url - The M3U playlist URL
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
 async function parseM3U(url) {
-  const { data } = await axios.get(url, { timeout: 30000, responseType: "text" });
+  const { data } = await axios.get(url, {
+    timeout: 30000,
+    responseType: "text",
+    maxContentLength: MAX_RESPONSE_BYTES,
+    maxBodyLength: MAX_RESPONSE_BYTES,
+  });
   return parseM3UContent(data);
 }
 

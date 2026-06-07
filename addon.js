@@ -191,7 +191,7 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
-const M3U_CACHE_MAX = 5;
+const M3U_CACHE_MAX = 3;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 const XTREAM_CACHE_MAX = 25;
@@ -224,9 +224,11 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-// --- Memory pressure eviction (runs every 30s) ---
-const HEAP_WARN_MB = 300;
-const HEAP_CRIT_MB = 400;
+// --- Memory pressure eviction (runs every 10s) ---
+// Thresholds sit below the --max-old-space-size=640 ceiling (see fly.toml) so
+// the safety net clears caches with headroom to spare before the hard cap.
+const HEAP_WARN_MB = 450;
+const HEAP_CRIT_MB = 550;
 setInterval(() => {
   const { heapUsed } = process.memoryUsage();
   const mb = heapUsed / 1024 / 1024;
@@ -239,7 +241,7 @@ setInterval(() => {
     keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => m3uCache.delete(k));
     console.warn(`[MEM] heap ${mb.toFixed(0)} MB — evicted oldest M3U cache entries`);
   }
-}, 30 * 1000);
+}, 10 * 1000);
 
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
