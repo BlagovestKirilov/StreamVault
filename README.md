@@ -4,8 +4,6 @@
 
 A Stremio addon that brings all your live IPTV channels into one place. Connect your existing IPTV subscription and watch live TV directly inside Stremio.
 
-> **Live TV only.** StreamVault serves live channels — movies and series are intentionally left out, since Stremio already covers VOD natively. This keeps your catalog clean and handles very large playlists without issues.
-
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
@@ -33,6 +31,8 @@ A Stremio addon that brings all your live IPTV channels into one place. Connect 
 
 Your channels will appear in Stremio's catalog. Browse, search, and play.
 
+> ⚠️ **VLC external player is required for live TV.** Live streams don't play in Stremio's built-in player.
+
 ---
 
 ## Supported Sources
@@ -41,8 +41,6 @@ Your channels will appear in Stremio's catalog. Browse, search, and play.
 |--------|:---:|:---:|
 | **Xtream Codes** | ✅ | ✅ |
 | **M3U Playlist** | ✅ | — |
-
-> Movies and series are not served — StreamVault is live TV only.
 
 ---
 
