@@ -248,15 +248,13 @@ const BASE_MANIFEST = {
   id: "community.streamvault.addon",
   version: "1.0.0",
   name: "StreamVault IPTV",
-  description: "Stream IPTV via Xtream Codes or M3U playlist — live TV, VOD & series. VLC player is required for live TV.",
+  description: "Stream live TV via Xtream Codes or M3U playlist. VLC player is required for live TV.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
-  types: ["tv", "movie", "series"],
+  types: ["tv"],
   idPrefixes: ["iptv_"],
   catalogs: [
     { type: "tv", id: "iptv_live", name: "StreamVault Live", extra: [{ name: "search" }, { name: "skip" }] },
-    { type: "movie", id: "iptv_vod", name: "StreamVault VOD", extra: [{ name: "search" }, { name: "skip" }] },
-    { type: "series", id: "iptv_series", name: "StreamVault Series", extra: [{ name: "search" }, { name: "skip" }] },
   ],
   // Stremio will show these fields in its own Settings UI
   behaviorHints: {
@@ -395,12 +393,8 @@ app.post("/api/categories", async (req, res) => {
       return res.status(400).json({ error: "Invalid or blocked server URL" });
     }
     const config = { server: server.replace(/\/+$/, ""), username, password };
-    const [live, vod, series] = await Promise.all([
-      xtream.getLiveCategories(config).catch(() => []),
-      xtream.getVodCategories(config).catch(() => []),
-      xtream.getSeriesCategories(config).catch(() => []),
-    ]);
-    res.json({ live, vod, series });
+    const live = await xtream.getLiveCategories(config).catch(() => []);
+    res.json({ live });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -636,6 +630,9 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", extractConfig, (req, r
 // --- Xtream Codes handlers ---
 
 async function getXtreamCatalog(config, type) {
+  // Only live TV channels are supported
+  if (type !== "tv") return [];
+
   const categoryIds = (config.country || "").split(",").filter(Boolean);
   const cacheKey = `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
   const cached = xtreamCache.get(cacheKey);
@@ -645,18 +642,9 @@ async function getXtreamCatalog(config, type) {
 
   let items = [];
   if (categoryIds.length === 0) {
-    // No filter — get all
-    if (type === "tv") items = await xtream.getLiveStreams(config);
-    else if (type === "movie") items = await xtream.getVodStreams(config);
-    else if (type === "series") items = await xtream.getSeries(config);
+    items = await xtream.getLiveStreams(config);
   } else {
-    // Fetch each selected category in parallel
-    const fetches = categoryIds.map(catId => {
-      if (type === "tv") return xtream.getLiveStreams(config, catId);
-      else if (type === "movie") return xtream.getVodStreams(config, catId);
-      else if (type === "series") return xtream.getSeries(config, catId);
-      return Promise.resolve([]);
-    });
+    const fetches = categoryIds.map(catId => xtream.getLiveStreams(config, catId));
     const results = await Promise.all(fetches);
     items = results.filter(Array.isArray).flat();
   }
@@ -668,7 +656,7 @@ async function getXtreamCatalog(config, type) {
     const name = item.name || item.title || "Unknown";
     const logo = item.stream_icon || item.cover || "";
     return {
-      id: `iptv_${type}_${item.stream_id || item.series_id}`,
+      id: `iptv_${type}_${item.stream_id}`,
       type: type,
       name: name,
       poster: logo || makePosterUrl(name),
@@ -681,6 +669,9 @@ async function getXtreamCatalog(config, type) {
 }
 
 async function getXtreamMeta(config, type, id) {
+  // Only live TV channels are supported
+  if (type !== "tv") return null;
+
   const streamId = id.replace(`iptv_${type}_`, "");
 
   // Look up actual channel name from cached catalog
@@ -689,25 +680,23 @@ async function getXtreamMeta(config, type, id) {
 
   let name = item ? item.name : `Stream ${streamId}`;
   let poster = item ? item.poster : makePosterUrl(name);
-  let description = `${type === "tv" ? "Live Channel" : type === "movie" ? "Movie" : "Series"} — StreamVault IPTV`;
+  let description = "📺 Live Channel — StreamVault IPTV";
 
   // Fetch EPG for live channels
-  if (type === "tv") {
-    try {
-      const epg = await xtream.getShortEPG(config, streamId);
-      if (epg && epg.length > 0) {
-        const lines = epg.map(e => {
-          const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
-          const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
-          const start = e.start || "";
-          const end = e.end || "";
-          const time = start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
-          return `${time ? time + " " : ""}${title}${desc ? "\n  " + desc : ""}`;
-        });
-        description = "📺 TV Guide:\n" + lines.join("\n");
-      }
-    } catch (_) {}
-  }
+  try {
+    const epg = await xtream.getShortEPG(config, streamId);
+    if (epg && epg.length > 0) {
+      const lines = epg.map(e => {
+        const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
+        const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
+        const start = e.start || "";
+        const end = e.end || "";
+        const time = start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
+        return `${time ? time + " " : ""}${title}${desc ? "\n  " + desc : ""}`;
+      });
+      description = "📺 TV Guide:\n" + lines.join("\n");
+    }
+  } catch (_) {}
 
   if (item) {
     return { id, type, name, poster, posterShape: "square", description };
@@ -715,11 +704,8 @@ async function getXtreamMeta(config, type, id) {
 
   // Fallback: fetch from API if not in cache
   try {
-    let items = [];
-    if (type === "tv") items = await xtream.getLiveStreams(config);
-    else if (type === "movie") items = await xtream.getVodStreams(config);
-    else if (type === "series") items = await xtream.getSeries(config);
-    const found = items.find(i => String(i.stream_id || i.series_id) === streamId);
+    const items = await xtream.getLiveStreams(config);
+    const found = items.find(i => String(i.stream_id) === streamId);
     if (found) {
       name = found.name || found.title || name;
       const logo = found.stream_icon || found.cover || "";
@@ -739,7 +725,10 @@ async function getXtreamMeta(config, type, id) {
 }
 
 async function getXtreamStreams(config, type, id, baseUrl, configPath) {
-  // id format: iptv_<type>_<streamId>
+  // Only live TV channels are supported
+  if (type !== "tv") return [];
+
+  // id format: iptv_tv_<streamId>
   const streamId = id.replace(`iptv_${type}_`, "");
   const server = config.server.replace(/\/+$/, "");
 
@@ -751,59 +740,30 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
     if (item) channelName = item.name;
   } catch (_) {}
 
-  let streams = [];
+  // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
+  const tvName = channelName || `Channel ${streamId}`;
+  const safeName = encodeURIComponent(tvName);
+  // Route through /play redirect so VLC shows channel name (last path segment)
+  const useRedirect = baseUrl && configPath;
+  const tsUrl = useRedirect
+    ? `${baseUrl}/play/${configPath}/live/${streamId}/ts/${safeName}`
+    : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
+  const hlsUrl = useRedirect
+    ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
+    : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
 
-  if (type === "tv") {
-    // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
-    const tvName = channelName || `Channel ${streamId}`;
-    const safeName = encodeURIComponent(tvName);
-    // Route through /play redirect so VLC shows channel name (last path segment)
-    const useRedirect = baseUrl && configPath;
-    const tsUrl = useRedirect
-      ? `${baseUrl}/play/${configPath}/live/${streamId}/ts/${safeName}`
-      : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
-    const hlsUrl = useRedirect
-      ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
-      : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
-    streams.push(
-      {
-        title: tvName,
-        url: tsUrl,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-      },
-      {
-        title: tvName,
-        url: hlsUrl,
-        behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-      }
-    );
-  } else if (type === "movie") {
-    streams.push(
-      {
-        title: channelName || "VOD Stream (MP4)",
-        url: `${server}/movie/${config.username}/${config.password}/${streamId}.mp4`,
-        behaviorHints: { notWebReady: false },
-      },
-      {
-        title: `${channelName || "VOD Stream"} (MKV)`,
-        url: `${server}/movie/${config.username}/${config.password}/${streamId}.mkv`,
-        behaviorHints: { notWebReady: false },
-      }
-    );
-  } else if (type === "series") {
-    streams.push(
-      {
-        title: channelName || "Series Stream (MKV)",
-        url: `${server}/series/${config.username}/${config.password}/${streamId}.mkv`,
-        behaviorHints: { notWebReady: false },
-      },
-      {
-        title: `${channelName || "Series Stream"} (MP4)`,
-        url: `${server}/series/${config.username}/${config.password}/${streamId}.mp4`,
-        behaviorHints: { notWebReady: false },
-      }
-    );
-  }
+  const streams = [
+    {
+      title: tvName,
+      url: tsUrl,
+      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+    },
+    {
+      title: tvName,
+      url: hlsUrl,
+      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+    }
+  ];
 
   return streams;
 }
@@ -811,12 +771,15 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
 // --- M3U handlers ---
 
 async function getM3UCatalog(config, type) {
+  // Only live TV channels are supported
+  if (type !== "tv") return [];
+
   const { channels } = await getCachedM3U(config.url);
 
-  return channels.filter((ch) => ch.type === type).map((ch) => {
+  return channels.filter((ch) => ch.type === "tv").map((ch) => {
     return {
-      id: `iptv_${type}_${ch.id}`,
-      type: type,
+      id: `iptv_tv_${ch.id}`,
+      type: "tv",
       name: ch.name,
       poster: ch.logo || makePosterUrl(ch.name),
       posterShape: "square",
@@ -825,9 +788,12 @@ async function getM3UCatalog(config, type) {
 }
 
 async function getM3UMeta(config, type, id) {
+  // Only live TV channels are supported
+  if (type !== "tv") return null;
+
   const { channels } = await getCachedM3U(config.url);
   const channelId = id.replace(`iptv_${type}_`, "");
-  const channel = channels.find((ch) => ch.id === channelId);
+  const channel = channels.find((ch) => ch.id === channelId && ch.type === "tv");
 
   if (!channel) return null;
 
@@ -844,22 +810,19 @@ async function getM3UMeta(config, type, id) {
 async function getM3UStreams(config, id) {
   const { channels } = await getCachedM3U(config.url);
 
-  // Extract channel id from the full id (iptv_<type>_<channelId>)
-  const parts = id.match(/^iptv_(tv|movie|series)_(.+)$/);
-  const channelId = parts ? parts[2] : id;
+  // Extract channel id from the full id (iptv_tv_<channelId>)
+  const parts = id.match(/^iptv_tv_(.+)$/);
+  const channelId = parts ? parts[1] : id;
 
-  const channel = channels.find((ch) => ch.id === channelId);
+  const channel = channels.find((ch) => ch.id === channelId && ch.type === "tv");
 
   if (!channel) return [];
 
-  const isLive = channel.type === "tv";
   return [
     {
       title: channel.name,
       url: channel.url,
-      behaviorHints: isLive
-        ? { notWebReady: true, bingeGroup: "streamvault-live" }
-        : { notWebReady: false },
+      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
   ];
 }

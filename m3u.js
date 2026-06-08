@@ -1,32 +1,31 @@
 /**
  * m3u.js — M3U/M3U8 playlist parser.
  *
- * Parses #EXTINF metadata and groups channels by group-title.
+ * Streams and parses #EXTINF metadata, filtering to live channels only.
+ * Stops after MAX_LIVE_CHANNELS to prevent OOM. No byte-size limit.
  */
 
 const axios = require("axios");
+const readline = require("readline");
 
-// Hard ceiling on a single playlist download. axios defaults to unlimited in
-// Node, so without this one oversized playlist can OOM the whole process.
-const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB
+// Memory safety cap on live channels per playlist
+const MAX_LIVE_CHANNELS = 10_000;
 
 /**
- * Fetch and parse an M3U playlist from a URL.
- * @param {string} url - The M3U playlist URL
- * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
+ * Determine if a URL is a live channel (not VOD).
  */
-async function parseM3U(url) {
-  const { data } = await axios.get(url, {
-    timeout: 30000,
-    responseType: "text",
-    maxContentLength: MAX_RESPONSE_BYTES,
-    maxBodyLength: MAX_RESPONSE_BYTES,
-  });
-  return parseM3UContent(data);
+function isLiveUrl(url) {
+  const lower = url.toLowerCase();
+  // Xtream-style VOD paths
+  if (/\/(movie|series|vod)\//i.test(lower)) return false;
+  // File extensions that indicate VOD
+  if (/\.(mp4|mkv|avi|mov|wmv|flv|webm)(\?.*)?$/.test(lower)) return false;
+  return true;
 }
 
 /**
- * Parse raw M3U content string.
+ * Parse raw M3U content string (synchronous, for testing).
+ * Does NOT filter by live/VOD — includes all entries.
  * @param {string} content - Raw M3U text
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
@@ -34,40 +33,105 @@ function parseM3UContent(content) {
   const lines = content.split(/\r?\n/);
   const channels = [];
   const categories = {};
-
   let currentInfo = null;
+  let channelIndex = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
     if (line.startsWith("#EXTINF:")) {
-      // Parse the EXTINF line
       currentInfo = parseExtInf(line);
     } else if (line && !line.startsWith("#") && currentInfo) {
-      // This is the stream URL line following an EXTINF
       const channel = {
-        id: currentInfo.tvgId || generateId(currentInfo.name, i),
+        id: currentInfo.tvgId || generateId(currentInfo.name, channelIndex),
         name: currentInfo.name,
         logo: currentInfo.tvgLogo || "",
         group: currentInfo.groupTitle || "Uncategorized",
         url: line,
-        // Determine type based on extension or group hints
         type: guessType(line, currentInfo.groupTitle),
       };
 
       channels.push(channel);
 
-      // Group by category
       if (!categories[channel.group]) {
         categories[channel.group] = [];
       }
       categories[channel.group].push(channel);
+      channelIndex++;
 
       currentInfo = null;
     }
   }
 
   return { channels, categories };
+}
+
+/**
+ * Fetch and stream-parse an M3U playlist from a URL, extracting live channels only.
+ * @param {string} url - The M3U playlist URL
+ * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
+ */
+async function parseM3U(url) {
+  const response = await axios.get(url, {
+    timeout: 30000,
+    responseType: "stream",
+  });
+
+  return new Promise((resolve, reject) => {
+    const channels = [];
+    const categories = {};
+    let pendingMeta = null;
+    let channelIndex = 0;
+
+    const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
+
+    rl.on("line", (raw) => {
+      const line = raw.trim();
+
+      if (line.startsWith("#EXTINF:")) {
+        pendingMeta = parseExtInf(line);
+      } else if (pendingMeta && line && !line.startsWith("#")) {
+        // URL line following an EXTINF
+        if (isLiveUrl(line)) {
+          // URL already passed the live filter, so label it "tv" directly.
+          // Do NOT use guessType here: it factors in group-title, which would
+          // misclassify genuine live channels in groups named e.g. "Movies"
+          // and cause them to be dropped by the catalog's tv-only filter.
+          const channel = {
+            id: pendingMeta.tvgId || generateId(pendingMeta.name, channelIndex),
+            name: pendingMeta.name,
+            logo: pendingMeta.tvgLogo || "",
+            group: pendingMeta.groupTitle || "Uncategorized",
+            url: line,
+            type: "tv",
+          };
+
+          channels.push(channel);
+
+          // Group by category
+          if (!categories[channel.group]) {
+            categories[channel.group] = [];
+          }
+          categories[channel.group].push(channel);
+          channelIndex++;
+
+          // Stop after hitting the cap
+          if (channels.length >= MAX_LIVE_CHANNELS) {
+            response.data.destroy();
+            rl.close();
+          }
+        }
+        pendingMeta = null;
+      }
+    });
+
+    rl.on("close", () => resolve({ channels, categories }));
+    rl.on("error", reject);
+    response.data.on("error", (err) => {
+      if (err.code !== "ERR_STREAM_DESTROYED") reject(err);
+      // ERR_STREAM_DESTROYED is expected when we call destroy() after hitting the cap
+    });
+  });
 }
 
 /**
