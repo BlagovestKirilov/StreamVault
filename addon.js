@@ -498,7 +498,8 @@ app.get("/stats", (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
   const uptime = process.uptime();
-  const h = Math.floor(uptime / 3600);
+  const d = Math.floor(uptime / 86400);
+  const h = Math.floor((uptime % 86400) / 3600);
   const m = Math.floor((uptime % 3600) / 60);
   // Daily active users (last 7 days)
   const last7 = {};
@@ -521,7 +522,7 @@ app.get("/stats", (req, res) => {
     installsByType: stats.installsByType,
     avgStreamsPerUser,
     dailyActiveUsers: last7,
-    uptime: `${h}h ${m}m`,
+    uptime: d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`,
     lastRestarted: PROCESS_START,
     startedAt: stats.startedAt,
   });
