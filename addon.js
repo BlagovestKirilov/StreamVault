@@ -42,9 +42,14 @@ const dns = require("dns");
 const { promisify } = require("util");
 const dnsLookup = promisify(dns.lookup);
 
+const compression = require("compression");
+
 const app = express();
 const PORT = process.env.PORT || 7000;
 app.set("trust proxy", true);
+
+// --- Gzip compression (shrinks catalog/meta JSON egress) ---
+app.use(compression());
 
 // --- CORS headers (required for Stremio) ---
 app.use((req, res, next) => {
