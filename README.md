@@ -12,11 +12,15 @@ A Stremio addon that brings all your live IPTV channels into one place. Connect 
 ## What You Can Do
 
 - **Watch Live TV** — all your live channels right inside Stremio
-- **TV Guide (EPG)** — see what's playing now and what's coming next on live channels
+- **Browse by Category** — your provider's own categories / playlist groups appear in Stremio's genre dropdown
+- **Pick Only What You Want** — choose categories (Xtream) or playlist groups (M3U) at setup to keep your library clean
+- **TV Guide (EPG)** — see what's playing now and next on Xtream channels, shown in your local time
 - **Search** — find any live channel by name directly in Stremio
-- **Test Your Connection** — verify your IPTV credentials work before installing
-- **Filter by Category** — choose specific channel categories to keep your library clean
+- **Quality Options** — HD / FHD / UHD versions of the same channel are offered together; Xtream channels come as both TS (best for VLC) and HLS
+- **Test Your Connection** — verify your credentials before installing; Xtream shows account status, expiry date and connections
+- **Works with Picky Providers** — custom User-Agent / Referer from your playlist (`#EXTVLCOPT`, `#EXTHTTP`, `url|User-Agent=…`) is passed to the player
 - **Handles Large Playlists** — playlists are streamed and parsed, so even huge M3U files load without errors
+- **Private by Design** — your credentials are encrypted inside your install link
 - **Works Everywhere** — PC, Android, iOS, and TV — same addon, all devices
 
 ---
@@ -26,21 +30,23 @@ A Stremio addon that brings all your live IPTV channels into one place. Connect 
 1. Open the StreamVault configure page
 2. Choose your source: **Xtream Codes** or **M3U Playlist**
 3. Enter your IPTV credentials or playlist URL
-4. Optionally test your connection and select categories
+4. Optionally test your connection and click **Load Categories** to pick only the categories / groups you want
 5. Click **Install to Stremio** — done!
 
-Your channels will appear in Stremio's catalog. Browse, search, and play.
+Your channels will appear in Stremio's catalog. Browse by category, search, and play.
 
 > ⚠️ **VLC external player is required for live TV.** Live streams don't play in Stremio's built-in player.
+
+> 💡 Already installed an older version? Reinstall from the configure page to get local TV-guide times and group selection.
 
 ---
 
 ## Supported Sources
 
-| Source | Live TV | TV Guide |
-|--------|:---:|:---:|
-| **Xtream Codes** | ✅ | ✅ |
-| **M3U Playlist** | ✅ | — |
+| Source | Live TV | Category filter | Pick at setup | TV Guide |
+|--------|:---:|:---:|:---:|:---:|
+| **Xtream Codes** | ✅ | ✅ | ✅ categories | ✅ |
+| **M3U Playlist** | ✅ | ✅ | ✅ groups | — |
 
 ---
 

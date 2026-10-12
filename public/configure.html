@@ -755,12 +755,15 @@
       document.getElementById('panelXtream').classList.toggle('active', t === 'xtream');
       document.getElementById('panelM3u').classList.toggle('active', t === 'm3u');
       document.getElementById('result').style.display = 'none';
-      // Show category field always, but hide loaded data when on M3U
-      const isXtream = t === 'xtream';
-      const hasData = allCategories.length > 0;
-      document.getElementById('catSearchWrap').style.display = (isXtream && hasData) ? 'block' : 'none';
-      document.getElementById('catList').style.display = (isXtream && hasData) ? 'block' : 'none';
-      document.getElementById('catSelected').style.display = isXtream ? 'flex' : 'none';
+      // Categories belong to one source — start fresh on switch
+      allCategories = [];
+      selectedCategories.clear();
+      document.getElementById('catSearch').value = '';
+      document.getElementById('catSearchWrap').style.display = 'none';
+      document.getElementById('catList').style.display = 'none';
+      document.getElementById('btnLoadCatsText').textContent = 'Load Categories';
+      renderCategoryList();
+      renderSelectedTags();
     }
 
     async function install() {
@@ -791,6 +794,15 @@
           return;
         }
         configObj = { t: 'm3u', m: url, c: '' };
+        // Selected group-titles (empty = whole playlist)
+        if (selectedCategories.size > 0) {
+          const g = JSON.stringify([...selectedCategories]);
+          if (g.length > 2048) {
+            showToast('Too many groups selected — pick fewer');
+            return;
+          }
+          configObj.g = g;
+        }
       }
 
       // Viewer's timezone so TV guide times show in local time
@@ -858,24 +870,38 @@
       setTimeout(() => t.classList.remove('show'), Math.max(2500, msg.length * 60));
     }
 
+    // Normalised { id, name, count? }: Xtream id = category_id, M3U id = group-title
     let allCategories = [];
     let selectedCategories = new Set();
 
     async function loadCategories() {
-      if (source !== 'xtream') {
-        showToast('Categories only available for Xtream Codes');
-        return;
-      }
-      const server = document.getElementById('server').value.trim();
-      const user = document.getElementById('username').value.trim();
-      const pass = document.getElementById('password').value.trim();
-      if (!server || !user || !pass) {
-        showToast('Fill in server, username & password first');
-        return;
-      }
-      if (!isValidUrl(server)) {
-        showToast('Server URL must be a valid URL (http://...)');
-        return;
+      let endpoint, body;
+      if (source === 'xtream') {
+        const server = document.getElementById('server').value.trim();
+        const user = document.getElementById('username').value.trim();
+        const pass = document.getElementById('password').value.trim();
+        if (!server || !user || !pass) {
+          showToast('Fill in server, username & password first');
+          return;
+        }
+        if (!isValidUrl(server)) {
+          showToast('Server URL must be a valid URL (http://...)');
+          return;
+        }
+        endpoint = '/api/categories';
+        body = { server, username: user, password: pass };
+      } else {
+        const url = document.getElementById('m3uUrl').value.trim();
+        if (!url) {
+          showToast('Enter the playlist URL first');
+          return;
+        }
+        if (!isValidUrl(url)) {
+          showToast('Playlist URL must be a valid URL (http://...)');
+          return;
+        }
+        endpoint = '/api/m3u-groups';
+        body = { m3uUrl: url };
       }
 
       const btn = document.getElementById('btnLoadCats');
@@ -886,17 +912,18 @@
       btnIcon.classList.add('spinning');
 
       try {
-        const res = await fetch('/api/categories', {
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ server, username: user, password: pass })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
-        if (data.error) { showToast(data.error); return; }
+        if (data.error) { showToast(data.error); btnText.textContent = 'Load Categories'; return; }
 
-        allCategories = (data.live || []).sort((a, b) =>
-          (a.category_name || '').localeCompare(b.category_name || '')
-        );
+        const items = source === 'xtream'
+          ? (data.live || []).map(c => ({ id: c.category_id, name: c.category_name || '' }))
+          : (data.groups || []).map(g => ({ id: g.name, name: g.name, count: g.count }));
+        allCategories = items.sort((a, b) => a.name.localeCompare(b.name));
         selectedCategories.clear();
         renderCategoryList();
         document.getElementById('catSearchWrap').style.display = 'block';
@@ -905,6 +932,7 @@
         showToast(`${allCategories.length} categories loaded`, true);
       } catch (e) {
         showToast('Failed to load categories');
+        btnText.textContent = 'Load Categories';
       } finally {
         btn.disabled = false;
         btnIcon.classList.remove('spinning');
@@ -921,20 +949,20 @@
       const query = (document.getElementById('catSearch').value || '').toLowerCase();
       const list = document.getElementById('catList');
       const filtered = allCategories.filter(c =>
-        (c.category_name || '').toLowerCase().includes(query)
+        c.name.toLowerCase().includes(query)
       );
 
       list.innerHTML = '';
       filtered.forEach(cat => {
         const div = document.createElement('div');
-        div.className = 'cat-item' + (selectedCategories.has(cat.category_id) ? ' selected' : '');
-        div.onclick = () => toggleCategory(cat.category_id, cat.category_name || '');
+        div.className = 'cat-item' + (selectedCategories.has(cat.id) ? ' selected' : '');
+        div.onclick = () => toggleCategory(cat.id);
 
         const check = document.createElement('span');
         check.className = 'cat-check';
 
         const label = document.createElement('span');
-        label.textContent = cat.category_name || '';
+        label.textContent = cat.count ? `${cat.name} (${cat.count})` : cat.name;
 
         div.appendChild(check);
         div.appendChild(label);
@@ -942,7 +970,7 @@
       });
     }
 
-    function toggleCategory(id, name) {
+    function toggleCategory(id) {
       if (selectedCategories.has(id)) {
         selectedCategories.delete(id);
       } else {
@@ -957,8 +985,8 @@
       container.innerHTML = '';
       if (selectedCategories.size === 0) return;
       [...selectedCategories].forEach(id => {
-        const cat = allCategories.find(c => c.category_id === id);
-        const name = cat ? cat.category_name : id;
+        const cat = allCategories.find(c => c.id === id);
+        const name = cat ? cat.name : id;
 
         const tag = document.createElement('span');
         tag.className = 'cat-tag';

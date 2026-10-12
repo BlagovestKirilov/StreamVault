@@ -358,6 +358,64 @@ describe("memory safety", () => {
   });
 });
 
+// ─── M3U group selection ───
+
+describe("M3U group selection", () => {
+  const m3u = require("../m3u");
+  const playlist = `#EXTM3U
+#EXTINF:-1 tvg-id="a" group-title="Sports",A
+http://example.com/a.m3u8
+#EXTINF:-1 group-title="News",B
+http://example.com/b.m3u8
+#EXTINF:-1 group-title="Sports",C
+http://example.com/c.m3u8`;
+  afterEach(() => jest.restoreAllMocks());
+
+  test("parser keeps only selected groups with the same ids as unfiltered", () => {
+    const all = m3u.parseM3UContent(playlist).channels;
+    const sports = m3u.parseM3UContent(playlist, ["Sports"]).channels;
+    expect(sports.map(c => c.name)).toEqual(["A", "C"]);
+    expect(sports.map(c => c.id)).toEqual([all[0].id, all[2].id]);
+  });
+
+  test("config g round-trips through /api/encrypt and parseConfigPath", async () => {
+    const res = await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://example.com/x.m3u", g: JSON.stringify(["Sports", "A, B & C"]) });
+    expect(parseConfigPath(res.body.config).groups).toEqual(["Sports", "A, B & C"]);
+  });
+
+  test("invalid or missing g means all groups", () => {
+    const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    expect(parseConfigPath(enc({ t: "m3u", m: "http://e.com/x", g: "{not json" })).groups).toEqual([]);
+    expect(parseConfigPath(enc({ t: "m3u", m: "http://e.com/x" })).groups).toEqual([]);
+  });
+
+  test("/api/encrypt rejects a group list that would be truncated", async () => {
+    const g = JSON.stringify(Array.from({ length: 200 }, (_, i) => `Group number ${i}`));
+    const res = await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://example.com/x.m3u", g });
+    expect(res.status).toBe(400);
+  });
+
+  test("catalog and genre options only contain the selected groups", async () => {
+    const spy = jest.spyOn(m3u, "parseM3U").mockImplementation(async (url, groups) => m3u.parseM3UContent(playlist, groups));
+    const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const cfg = enc({ t: "m3u", m: "http://groups-test.example.com/x.m3u", g: JSON.stringify(["Sports"]) });
+    const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["A", "C"]);
+    expect(spy).toHaveBeenCalledWith("http://groups-test.example.com/x.m3u", ["Sports"]);
+  });
+
+  test("POST /api/m3u-groups returns groups with counts", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([{ name: "Sports", count: 2 }, { name: "News", count: 1 }]);
+    const res = await request(app).post("/api/m3u-groups").send({ m3uUrl: "http://example.com/x.m3u" });
+    expect(res.body.groups).toEqual([{ name: "Sports", count: 2 }, { name: "News", count: 1 }]);
+  });
+
+  test("POST /api/m3u-groups blocks private URLs", async () => {
+    const res = await request(app).post("/api/m3u-groups").send({ m3uUrl: "http://192.168.1.1/x.m3u" });
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── Xtream account info + EPG timezone ───
 
 describe("formatAccountInfo", () => {

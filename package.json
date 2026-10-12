@@ -1,6 +1,6 @@
 {
   "name": "streamvault-iptv",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "StreamVault IPTV — Your personal streaming vault. All channels, one place.",
   "main": "addon.js",
   "scripts": {

@@ -19,52 +19,57 @@ npx jest --testNamePattern "SSRF"
 
 ## Architecture
 
-StreamVault is a Stremio addon (Express.js HTTP server) that proxies IPTV streams from Xtream Codes API servers or M3U playlists into the Stremio protocol.
+StreamVault is a Stremio addon (Express.js HTTP server) that proxies IPTV streams from Xtream Codes API servers or M3U playlists into the Stremio protocol. **Live TV only** — VOD/series are intentionally dropped (memory).
 
 ### Core files
 
-- **`addon.js`** — The entire application: Express routes, config parsing, caching, encryption, SSRF protection, analytics, and all Stremio protocol handlers.
-- **`xtream.js`** — Thin wrapper around the Xtream Codes HTTP API (categories, streams, EPG).
-- **`m3u.js`** — M3U/M3U8 playlist parser that groups channels by category and detects content type (live TV, VOD, series).
-- **`public/configure.html`** — Single-page configuration UI served to users before installation; generates an encrypted install URL.
-- **`tests/addon.test.js`** — Jest + Supertest integration tests covering all routes, config formats, encryption, and SSRF protection.
+- **`addon.js`** — Express routes, config parsing, caching, encryption, analytics, and all Stremio protocol handlers.
+- **`xtream.js`** — Thin wrapper around the Xtream Codes HTTP API (categories, streams, short EPG, account info). Every call is SSRF-checked.
+- **`m3u.js`** — Streaming M3U parser (`createLineParser`): live-only filter, unique ids, playlist headers, optional group filter, group-count mode.
+- **`urlguard.js`** — SSRF protection (`validateExternalUrl`, `assertExternalUrl`, `blockPrivateRedirects`).
+- **`public/configure.html`** — Configuration UI; category/group picker; generates an encrypted install URL.
+- **`tests/addon.test.js`** — Jest + Supertest tests. Upstream calls are mocked with `jest.spyOn(m3u|xtream, ...)`.
 
 ### Request flow
 
-1. User opens `/configure`, fills in Xtream or M3U credentials, and clicks Install.
+1. User opens `/configure`, fills in Xtream or M3U details, optionally loads + picks categories/groups, clicks Install.
 2. The UI calls `POST /api/encrypt` to encode the config as AES-256-GCM ciphertext, producing a `/:config` URL segment.
-3. Stremio installs the addon at `/:config/manifest.json`.
-4. Stremio calls `/:config/catalog/:type/:id.json`, `/:config/meta/:type/:id.json`, and `/:config/stream/:type/:id.json`.
-5. Each handler decrypts `:config`, fetches data from the upstream Xtream API or M3U URL (with caching), and returns Stremio-format JSON.
+3. Stremio installs `/:config/manifest.json`. The configured manifest lists the user's groups as catalog `genre` options (`getGenresWithin`, cached 6h, 8s timeout → no dropdown).
+4. Stremio calls `/:config/catalog|meta|stream/:type/:id.json`.
+5. Each handler decrypts `:config`, fetches from Xtream / the M3U URL (cached), returns Stremio JSON.
+
+Other endpoints: `POST /api/test` (connection test + Xtream account info), `POST /api/categories` (Xtream), `POST /api/m3u-groups` (M3U group names + counts, no channels kept), `/play/...` (redirect so VLC shows the channel name), `/stats?key=` (usage + `memory`/`caches` telemetry), `/health`.
 
 ### Config encoding
 
-Three formats are supported for the `:config` URL segment (parsed in `addon.js` around line 270):
-- **Encrypted** (current): AES-256-GCM base64url, keyed by `CONFIG_SECRET` env var.
-- **Base64url** (legacy): plain JSON encoded as base64url.
-- **URL-encoded** (oldest legacy): `key=value&key=value` query-string style.
+Three formats for the `:config` segment (`parseConfigPath`): **encrypted** `e-<hex>` (current, keyed by `CONFIG_SECRET`), **base64url** JSON (legacy), **URL-encoded** (oldest). Short keys: `t` type, `s`/`u`/`p` Xtream server/user/pass, `m` M3U URL, `c` Xtream category ids (comma-joined), `g` M3U groups (JSON array string), `z` viewer timezone (IANA). Allowed keys are whitelisted in `ALLOWED_CONFIG_KEYS`; values are capped at 2048 chars (`g` over the cap is rejected, not truncated).
 
-### Caching
+### Stremio details worth knowing
 
-In-memory caches inside `addon.js`:
-- M3U playlist data: 10-minute TTL
-- Xtream API data: 4-hour TTL
-- Cache eviction runs on a 30-minute interval
+- Catalog extras are parsed from the **raw** path (`req.path`), not `req.params` (already decoded — breaks `&` in names).
+- M3U ids: first entry keeps the bare `tvg-id`; duplicates get `_v2`, `_v3`. Ids are assigned before the group filter so they are stable across selections. Streams return the picked channel + up to 5 same-`tvg-id` variants.
+- Stream `name` = left column in Stremio ("StreamVault\nTS"), `title` = right side.
+- Bump `BASE_MANIFEST.version` when the manifest shape changes so clients refresh it.
 
-### SSRF protection
+### Memory (the server has crashed from OOM before — keep it bounded)
 
-All outbound HTTP requests (Xtream API calls and M3U fetches) go through `isSafeUrl()` in `addon.js`, which blocks private IP ranges, localhost, `.local`/`.internal` domains, and cloud metadata endpoints (169.254.169.254). This is tested extensively in the test suite.
+- Fly VM 1 GB, `--max-old-space-size=640`. Heap watchdog every 10s: >450 MB evicts half the M3U cache, >550 MB clears all caches.
+- Caches: M3U playlists 10 min TTL, max 3 entries (key = URL + selected groups); Xtream catalogs 4h, max 25; genres 6h, max 500. A capped 10k-channel parse ≈ 5 MB heap.
+- `once(key, load)` dedupes concurrent cache misses so one playlist is downloaded once, not per request.
+- M3U parse stops at 10k live channels; Xtream responses capped at 50 MB.
+- Don't add per-user downloads of large files (e.g. XMLTV EPG) without strict size/concurrency limits.
+- Check `/stats` → `memory` (peak, evictions) before changing cache sizes.
 
 ### Environment variables
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `PORT` | HTTP listen port | `7000` |
-| `CONFIG_SECRET` | AES-256-GCM key for config encryption | `dev-secret` |
-| `STATS_SECRET` | Password to access `/stats` dashboard | _(none, endpoint open)_ |
+| `CONFIG_SECRET` | AES-256-GCM key for config encryption — **required on Fly / production** (app exits without it) | `dev-secret` (local only) |
+| `STATS_SECRET` | Password to access `/stats` | _(none, endpoint open)_ |
 
 ### Deployment
 
 - Fly.io (`fly.toml`): 1 shared CPU, 1 GB RAM, AMS region, persistent `/data` volume for `stats.json`.
-- GitHub Actions (`.github/workflows/fly-deploy.yml`): runs tests then deploys on every push to `master`.
-- Docker: `node:18-alpine`, `npm ci --production`.
+- GitHub Actions (`.github/workflows/fly-deploy.yml`): tests (Node 24) then deploys on every push to `master` — **pushing is deploying**, no manual `fly deploy` needed.
+- Docker: `node:24-alpine`, `npm ci --omit=dev`.

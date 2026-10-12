@@ -184,16 +184,32 @@ function once(key, load) {
   return p;
 }
 
-async function getCachedM3U(url) {
-  const cached = m3uCache.get(url);
+async function getCachedM3U(config) {
+  const groups = config.groups || [];
+  // Same playlist with a different group selection is a different (smaller) entry
+  const key = groups.length ? `${config.url}\u0001${groups.join("\u0001")}` : config.url;
+  const cached = m3uCache.get(key);
   if (cached && Date.now() - cached.ts < M3U_CACHE_TTL) {
     return cached.data;
   }
-  return once(`m3u:${url}`, async () => {
-    const data = await m3u.parseM3U(url);
-    setCapped(m3uCache, url, { data, ts: Date.now() }, M3U_CACHE_MAX);
+  return once(`m3u:${key}`, async () => {
+    const data = await m3u.parseM3U(config.url, groups);
+    setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   });
+}
+
+// Config "g" = JSON array of M3U group-titles the user picked (empty/invalid = all)
+const MAX_SELECTED_GROUPS = 300;
+function parseGroups(g) {
+  if (!g) return [];
+  try {
+    const arr = JSON.parse(g);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(x => typeof x === "string" && x).slice(0, MAX_SELECTED_GROUPS);
+  } catch (_) {
+    return [];
+  }
 }
 
 // --- Cache eviction (runs every 10 min) ---
@@ -237,7 +253,7 @@ setInterval(() => {
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
   id: "community.streamvault.addon",
-  version: "1.0.0",
+  version: "1.1.0",
   name: "StreamVault IPTV",
   description: "Stream live TV via Xtream Codes or M3U playlist. VLC player is required for live TV.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
@@ -298,7 +314,7 @@ function parseConfigPath(configStr) {
       if (obj.t === "xtream") {
         return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
       } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "" };
+        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
       }
     } catch (e) { /* fall through */ }
   }
@@ -313,7 +329,7 @@ function parseConfigPath(configStr) {
       if (obj.t === "xtream") {
         return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
       } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "" };
+        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
       }
     } catch (e) { /* fall through to legacy parsing */ }
   }
@@ -391,8 +407,26 @@ app.post("/api/categories", async (req, res) => {
   }
 });
 
+// --- API: List M3U groups (configure page group picker) ---
+// Counts only — no channels are kept in memory, and concurrent clicks share one download
+app.post("/api/m3u-groups", async (req, res) => {
+  try {
+    const { m3uUrl } = req.body || {};
+    if (!m3uUrl) {
+      return res.status(400).json({ error: "Missing M3U URL" });
+    }
+    if (!(await validateExternalUrl(m3uUrl))) {
+      return res.status(400).json({ error: "Invalid or blocked M3U URL" });
+    }
+    const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
+    res.json({ groups });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // --- API: Encrypt config for secure URL ---
-const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z"]);
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
 app.post("/api/encrypt", (req, res) => {
   try {
     const configObj = req.body;
@@ -405,6 +439,10 @@ app.post("/api/encrypt", (req, res) => {
       if (ALLOWED_CONFIG_KEYS.has(key)) {
         sanitized[key] = String(configObj[key]).slice(0, 2048);
       }
+    }
+    // A truncated group list would silently fall back to "all groups"
+    if (sanitized.g && String(configObj.g).length > 2048) {
+      return res.status(400).json({ error: "Too many groups selected — pick fewer" });
     }
     const encrypted = encryptConfig(sanitized);
     res.json({ config: "e-" + encrypted });
@@ -866,7 +904,7 @@ async function getM3UCatalog(config, type) {
   // Only live TV channels are supported
   if (type !== "tv") return [];
 
-  const { channels } = await getCachedM3U(config.url);
+  const { channels } = await getCachedM3U(config);
 
   return channels.filter((ch) => ch.type === "tv").map((ch) => {
     return {
@@ -884,7 +922,7 @@ async function getM3UMeta(config, type, id) {
   // Only live TV channels are supported
   if (type !== "tv") return null;
 
-  const { channels } = await getCachedM3U(config.url);
+  const { channels } = await getCachedM3U(config);
   const channelId = id.replace(`iptv_${type}_`, "");
   const channel = channels.find((ch) => ch.id === channelId && ch.type === "tv");
 
@@ -902,7 +940,7 @@ async function getM3UMeta(config, type, id) {
 }
 
 async function getM3UStreams(config, id) {
-  const { channels } = await getCachedM3U(config.url);
+  const { channels } = await getCachedM3U(config);
 
   // Extract channel id from the full id (iptv_tv_<channelId>)
   const parts = id.match(/^iptv_tv_(.+)$/);

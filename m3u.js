@@ -33,12 +33,19 @@ function isLiveUrl(url) {
  *   the variants together.
  * - Request headers from #EXTVLCOPT, #EXTHTTP and Kodi-style "url|Header=..."
  *   are attached as `headers` (only when present).
+ * - `groups` keeps only those group-titles. IDs are assigned before filtering,
+ *   so a channel keeps its id whichever groups the user picked.
+ * - `countOnly` stores no channels, just { group -> count } (cheap group listing).
  *
- * @param {boolean} liveOnly - drop VOD URLs and label everything "tv"
+ * @param {Object} opts
+ * @param {boolean} opts.liveOnly - drop VOD URLs and label everything "tv"
+ * @param {Set<string>} [opts.groups] - keep only these groups
+ * @param {boolean} [opts.countOnly] - only count channels per group
  */
-function createLineParser(liveOnly) {
+function createLineParser({ liveOnly, groups = null, countOnly = false }) {
   const channels = [];
   const categories = {};
+  const groupCounts = new Map();
   const idCounts = new Map();
   let pendingMeta = null;
   let pendingHeaders = null;
@@ -74,16 +81,27 @@ function createLineParser(liveOnly) {
     // channels in groups named e.g. "Movies" and drop them from the catalog.
     if (liveOnly && !isLiveUrl(url)) return;
 
+    const group = meta.groupTitle || "Uncategorized";
+    if (countOnly) {
+      if (groupCounts.has(group) || groupCounts.size < MAX_GROUPS) {
+        groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
+      }
+      return;
+    }
+
     const baseId = meta.tvgId || generateId(meta.name, channelIndex);
     const seen = idCounts.get(baseId) || 0;
     idCounts.set(baseId, seen + 1);
+    channelIndex++;
+
+    if (groups && !groups.has(group)) return;
 
     const channel = {
       id: seen === 0 ? baseId : `${baseId}_v${seen + 1}`,
       tvgId: meta.tvgId,
       name: meta.name,
       logo: meta.tvgLogo || "",
-      group: meta.groupTitle || "Uncategorized",
+      group,
       url,
       type: liveOnly ? "tv" : guessType(url, meta.groupTitle),
     };
@@ -92,11 +110,13 @@ function createLineParser(liveOnly) {
     channels.push(channel);
     if (!categories[channel.group]) categories[channel.group] = [];
     categories[channel.group].push(channel);
-    channelIndex++;
   }
 
-  return { addLine, channels, categories };
+  return { addLine, channels, categories, groupCounts };
 }
+
+// Cap on distinct groups reported by parseM3UGroups (the picker stays usable)
+const MAX_GROUPS = 3000;
 
 /**
  * Parse raw M3U content string (synchronous, for testing).
@@ -104,18 +124,13 @@ function createLineParser(liveOnly) {
  * @param {string} content - Raw M3U text
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
-function parseM3UContent(content) {
-  const parser = createLineParser(false);
+function parseM3UContent(content, groups) {
+  const parser = createLineParser({ liveOnly: false, groups: groups && groups.length ? new Set(groups) : null });
   content.split(/\r?\n/).forEach(parser.addLine);
   return { channels: parser.channels, categories: parser.categories };
 }
 
-/**
- * Fetch and stream-parse an M3U playlist from a URL, extracting live channels only.
- * @param {string} url - The M3U playlist URL
- * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
- */
-async function parseM3U(url) {
+async function fetchPlaylistStream(url) {
   // Playlist URL comes from the user's config — block internal targets
   await assertExternalUrl(url);
   const response = await axios.get(url, {
@@ -123,26 +138,54 @@ async function parseM3U(url) {
     responseType: "stream",
     beforeRedirect: blockPrivateRedirects,
   });
+  return response.data;
+}
+
+/**
+ * List a playlist's live groups with channel counts, without keeping channels
+ * in memory (used by the configure page's group picker).
+ * @returns {Array<{name: string, count: number}>} in playlist order
+ */
+async function parseM3UGroups(url) {
+  const stream = await fetchPlaylistStream(url);
+  return new Promise((resolve, reject) => {
+    const parser = createLineParser({ liveOnly: true, countOnly: true });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    rl.on("line", parser.addLine);
+    rl.on("close", () => resolve([...parser.groupCounts].map(([name, count]) => ({ name, count }))));
+    rl.on("error", reject);
+    stream.on("error", reject);
+  });
+}
+
+/**
+ * Fetch and stream-parse an M3U playlist from a URL, extracting live channels only.
+ * @param {string} url - The M3U playlist URL
+ * @param {string[]} [groups] - keep only these group-titles (empty = all)
+ * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
+ */
+async function parseM3U(url, groups) {
+  const stream = await fetchPlaylistStream(url);
 
   return new Promise((resolve, reject) => {
-    const parser = createLineParser(true);
+    const parser = createLineParser({ liveOnly: true, groups: groups && groups.length ? new Set(groups) : null });
     const { channels, categories } = parser;
 
-    const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
     rl.on("line", (raw) => {
       if (channels.length >= MAX_LIVE_CHANNELS) return;
       parser.addLine(raw);
       // Stop after hitting the cap
       if (channels.length >= MAX_LIVE_CHANNELS) {
-        response.data.destroy();
+        stream.destroy();
         rl.close();
       }
     });
 
     rl.on("close", () => resolve({ channels, categories }));
     rl.on("error", reject);
-    response.data.on("error", (err) => {
+    stream.on("error", (err) => {
       if (err.code !== "ERR_STREAM_DESTROYED") reject(err);
       // ERR_STREAM_DESTROYED is expected when we call destroy() after hitting the cap
     });
@@ -272,4 +315,4 @@ function generateId(name, index) {
   return `m3u_${slug}_${index}`;
 }
 
-module.exports = { parseM3U, parseM3UContent };
+module.exports = { parseM3U, parseM3UContent, parseM3UGroups };
