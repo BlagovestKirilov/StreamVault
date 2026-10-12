@@ -37,10 +37,7 @@ function decryptConfig(encStr) {
   return JSON.parse(decrypted);
 }
 
-const { URL } = require("url");
-const dns = require("dns");
-const { promisify } = require("util");
-const dnsLookup = promisify(dns.lookup);
+const { isPrivateIp, validateExternalUrl } = require("./urlguard");
 
 const compression = require("compression");
 
@@ -81,46 +78,7 @@ function safeError(e) {
   return msg;
 }
 
-// --- SSRF protection: block private/internal IPs ---
-const PRIVATE_IP_RANGES = [
-  /^127\./,
-  /^10\./,
-  /^172\.(1[6-9]|2[0-9]|3[01])\./,
-  /^192\.168\./,
-  /^169\.254\./,
-  /^0\./,
-  /^::1$/,
-  /^fd[0-9a-f]{2}:/i,
-  /^fe80:/i,
-  /^fc[0-9a-f]{2}:/i,
-  /^::$/,
-];
-
-function isPrivateIp(ip) {
-  return PRIVATE_IP_RANGES.some(r => r.test(ip));
-}
-
-async function validateExternalUrl(urlStr) {
-  if (!urlStr || typeof urlStr !== "string") return false;
-  if (urlStr.length > 2048) return false;
-  let parsed;
-  try {
-    parsed = new URL(urlStr);
-  } catch (_) {
-    return false;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-  const hostname = parsed.hostname;
-  if (isPrivateIp(hostname)) return false;
-  if (hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
-  try {
-    const { address } = await dnsLookup(hostname);
-    if (isPrivateIp(address)) return false;
-  } catch (_) {
-    return false;
-  }
-  return true;
-}
+// --- SSRF protection: see urlguard.js (also enforced inside m3u.js / xtream.js) ---
 
 // --- Serve static files (logo, images) ---
 app.use("/public", express.static(path.join(__dirname, "public")));
@@ -826,13 +784,37 @@ async function getM3UStreams(config, id) {
 
   if (!channel) return [];
 
-  return [
-    {
-      title: channel.name,
-      url: channel.url,
-      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-    },
-  ];
+  // Other entries sharing this tvg-id are usually quality variants (HD/FHD/UHD)
+  // of the same channel — offer them after the one the user picked. A tvg-id
+  // shared by many entries is junk (e.g. "0"), so skip variants then.
+  let variants = [];
+  if (channel.tvgId) {
+    variants = channels.filter((ch) => ch.tvgId === channel.tvgId && ch !== channel && ch.type === "tv");
+    if (variants.length > MAX_M3U_VARIANTS) variants = [];
+  }
+
+  return [channel, ...variants].map(m3uStream);
+}
+
+const MAX_M3U_VARIANTS = 5;
+
+function streamFormat(url) {
+  const path = url.split("?")[0].toLowerCase();
+  if (path.endsWith(".m3u8")) return "HLS";
+  if (path.endsWith(".ts")) return "TS";
+  return "Live";
+}
+
+function m3uStream(ch) {
+  const behaviorHints = { notWebReady: true, bingeGroup: "streamvault-live" };
+  // Playlist-provided User-Agent/Referer — some providers reject requests without them
+  if (ch.headers) behaviorHints.proxyHeaders = { request: ch.headers };
+  return {
+    name: `StreamVault\n${streamFormat(ch.url)}`,
+    title: ch.group ? `${ch.name}\n${ch.group}` : ch.name,
+    url: ch.url,
+    behaviorHints,
+  };
 }
 
 // --- Utility ---

@@ -6,15 +6,25 @@
  */
 
 const axios = require("axios");
+const { assertExternalUrl, blockPrivateRedirects } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
 // in Node. Live-only responses are small, but the cap stays as a safety net.
 const MAX_RESPONSE_BYTES = 50 * 1024 * 1024; // 50 MB
-const http = axios.create({
+const client = axios.create({
   timeout: 15000,
   maxContentLength: MAX_RESPONSE_BYTES,
   maxBodyLength: MAX_RESPONSE_BYTES,
+  beforeRedirect: blockPrivateRedirects,
 });
+
+// Server URL comes from the user's config, so every call is SSRF-checked
+const http = {
+  async get(url) {
+    await assertExternalUrl(url);
+    return client.get(url);
+  },
+};
 
 /**
  * Build the base API URL for Xtream Codes.

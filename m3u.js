@@ -7,6 +7,7 @@
 
 const axios = require("axios");
 const readline = require("readline");
+const { assertExternalUrl, blockPrivateRedirects } = require("./urlguard");
 
 // Memory safety cap on live channels per playlist
 const MAX_LIVE_CHANNELS = 10_000;
@@ -24,46 +25,89 @@ function isLiveUrl(url) {
 }
 
 /**
+ * Line-by-line M3U parser shared by the string and streaming entry points.
+ *
+ * - IDs are unique: entries reusing a tvg-id (HD/FHD/UHD variants) get a
+ *   "_v2", "_v3" suffix; the first keeps the bare tvg-id so existing library
+ *   entries still resolve. `tvgId` is kept so the stream handler can offer
+ *   the variants together.
+ * - Request headers from #EXTVLCOPT, #EXTHTTP and Kodi-style "url|Header=..."
+ *   are attached as `headers` (only when present).
+ *
+ * @param {boolean} liveOnly - drop VOD URLs and label everything "tv"
+ */
+function createLineParser(liveOnly) {
+  const channels = [];
+  const categories = {};
+  const idCounts = new Map();
+  let pendingMeta = null;
+  let pendingHeaders = null;
+  let channelIndex = 0;
+
+  function addLine(raw) {
+    const line = raw.trim();
+    if (!line) return;
+
+    if (line.startsWith("#EXTINF:")) {
+      pendingMeta = parseExtInf(line);
+      return;
+    }
+    if (line.startsWith("#EXTVLCOPT:")) {
+      pendingHeaders = parseVlcOpt(line, pendingHeaders);
+      return;
+    }
+    if (line.startsWith("#EXTHTTP:")) {
+      pendingHeaders = parseExtHttp(line, pendingHeaders);
+      return;
+    }
+    if (line.startsWith("#") || !pendingMeta) return;
+
+    // URL line following an EXTINF
+    const { url, headers: pipeHeaders } = splitPipeHeaders(line);
+    const headers = pipeHeaders ? { ...pendingHeaders, ...pipeHeaders } : pendingHeaders;
+    const meta = pendingMeta;
+    pendingMeta = null;
+    pendingHeaders = null;
+
+    // Live filter already ran, so label it "tv" directly. Do NOT use guessType
+    // here: it factors in group-title, which would misclassify genuine live
+    // channels in groups named e.g. "Movies" and drop them from the catalog.
+    if (liveOnly && !isLiveUrl(url)) return;
+
+    const baseId = meta.tvgId || generateId(meta.name, channelIndex);
+    const seen = idCounts.get(baseId) || 0;
+    idCounts.set(baseId, seen + 1);
+
+    const channel = {
+      id: seen === 0 ? baseId : `${baseId}_v${seen + 1}`,
+      tvgId: meta.tvgId,
+      name: meta.name,
+      logo: meta.tvgLogo || "",
+      group: meta.groupTitle || "Uncategorized",
+      url,
+      type: liveOnly ? "tv" : guessType(url, meta.groupTitle),
+    };
+    if (headers && Object.keys(headers).length > 0) channel.headers = headers;
+
+    channels.push(channel);
+    if (!categories[channel.group]) categories[channel.group] = [];
+    categories[channel.group].push(channel);
+    channelIndex++;
+  }
+
+  return { addLine, channels, categories };
+}
+
+/**
  * Parse raw M3U content string (synchronous, for testing).
  * Does NOT filter by live/VOD — includes all entries.
  * @param {string} content - Raw M3U text
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
 function parseM3UContent(content) {
-  const lines = content.split(/\r?\n/);
-  const channels = [];
-  const categories = {};
-  let currentInfo = null;
-  let channelIndex = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (line.startsWith("#EXTINF:")) {
-      currentInfo = parseExtInf(line);
-    } else if (line && !line.startsWith("#") && currentInfo) {
-      const channel = {
-        id: currentInfo.tvgId || generateId(currentInfo.name, channelIndex),
-        name: currentInfo.name,
-        logo: currentInfo.tvgLogo || "",
-        group: currentInfo.groupTitle || "Uncategorized",
-        url: line,
-        type: guessType(line, currentInfo.groupTitle),
-      };
-
-      channels.push(channel);
-
-      if (!categories[channel.group]) {
-        categories[channel.group] = [];
-      }
-      categories[channel.group].push(channel);
-      channelIndex++;
-
-      currentInfo = null;
-    }
-  }
-
-  return { channels, categories };
+  const parser = createLineParser(false);
+  content.split(/\r?\n/).forEach(parser.addLine);
+  return { channels: parser.channels, categories: parser.categories };
 }
 
 /**
@@ -72,56 +116,27 @@ function parseM3UContent(content) {
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
 async function parseM3U(url) {
+  // Playlist URL comes from the user's config — block internal targets
+  await assertExternalUrl(url);
   const response = await axios.get(url, {
     timeout: 30000,
     responseType: "stream",
+    beforeRedirect: blockPrivateRedirects,
   });
 
   return new Promise((resolve, reject) => {
-    const channels = [];
-    const categories = {};
-    let pendingMeta = null;
-    let channelIndex = 0;
+    const parser = createLineParser(true);
+    const { channels, categories } = parser;
 
     const rl = readline.createInterface({ input: response.data, crlfDelay: Infinity });
 
     rl.on("line", (raw) => {
-      const line = raw.trim();
-
-      if (line.startsWith("#EXTINF:")) {
-        pendingMeta = parseExtInf(line);
-      } else if (pendingMeta && line && !line.startsWith("#")) {
-        // URL line following an EXTINF
-        if (isLiveUrl(line)) {
-          // URL already passed the live filter, so label it "tv" directly.
-          // Do NOT use guessType here: it factors in group-title, which would
-          // misclassify genuine live channels in groups named e.g. "Movies"
-          // and cause them to be dropped by the catalog's tv-only filter.
-          const channel = {
-            id: pendingMeta.tvgId || generateId(pendingMeta.name, channelIndex),
-            name: pendingMeta.name,
-            logo: pendingMeta.tvgLogo || "",
-            group: pendingMeta.groupTitle || "Uncategorized",
-            url: line,
-            type: "tv",
-          };
-
-          channels.push(channel);
-
-          // Group by category
-          if (!categories[channel.group]) {
-            categories[channel.group] = [];
-          }
-          categories[channel.group].push(channel);
-          channelIndex++;
-
-          // Stop after hitting the cap
-          if (channels.length >= MAX_LIVE_CHANNELS) {
-            response.data.destroy();
-            rl.close();
-          }
-        }
-        pendingMeta = null;
+      if (channels.length >= MAX_LIVE_CHANNELS) return;
+      parser.addLine(raw);
+      // Stop after hitting the cap
+      if (channels.length >= MAX_LIVE_CHANNELS) {
+        response.data.destroy();
+        rl.close();
       }
     });
 
@@ -173,6 +188,58 @@ function parseExtInf(line) {
   if (!info.name) info.name = info.tvgName || info.tvgId || "Unknown";
 
   return info;
+}
+
+// Header names we pass on to the player; anything else in the playlist is ignored
+const VLC_OPT_HEADERS = {
+  "http-user-agent": "User-Agent",
+  "http-referrer": "Referer",
+  "http-referer": "Referer",
+  "http-origin": "Origin",
+};
+const MAX_HEADER_VALUE = 512;
+
+function setHeader(headers, name, value) {
+  const v = String(value || "").trim();
+  if (!v || v.length > MAX_HEADER_VALUE || /[\r\n]/.test(v)) return headers;
+  return { ...headers, [name]: v };
+}
+
+/** #EXTVLCOPT:http-user-agent=Mozilla/5.0 */
+function parseVlcOpt(line, headers) {
+  const opt = line.slice("#EXTVLCOPT:".length);
+  const idx = opt.indexOf("=");
+  if (idx === -1) return headers;
+  const name = VLC_OPT_HEADERS[opt.slice(0, idx).trim().toLowerCase()];
+  return name ? setHeader(headers, name, opt.slice(idx + 1)) : headers;
+}
+
+/** #EXTHTTP:{"User-Agent":"...","Referer":"..."} */
+function parseExtHttp(line, headers) {
+  try {
+    const obj = JSON.parse(line.slice("#EXTHTTP:".length));
+    for (const [k, v] of Object.entries(obj || {})) {
+      if (typeof v === "string" && /^[A-Za-z0-9-]{1,64}$/.test(k)) headers = setHeader(headers, k, v);
+    }
+  } catch (_) { /* malformed JSON — ignore */ }
+  return headers;
+}
+
+/** Kodi-style "http://host/stream.m3u8|User-Agent=abc&Referer=http://x" */
+function splitPipeHeaders(line) {
+  const idx = line.indexOf("|");
+  if (idx === -1) return { url: line, headers: null };
+  let headers = null;
+  for (const pair of line.slice(idx + 1).split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    const key = pair.slice(0, eq).trim();
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(key)) continue;
+    let value = pair.slice(eq + 1);
+    try { value = decodeURIComponent(value); } catch (_) { /* keep raw */ }
+    headers = setHeader(headers, key, value);
+  }
+  return { url: line.slice(0, idx), headers };
 }
 
 /**

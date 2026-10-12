@@ -162,6 +162,114 @@ http://example.com/show.m3u8`;
     const { channels } = parseM3UContent(content);
     expect(channels[0].type).toBe("series");
   });
+
+  test("gives entries sharing a tvg-id unique ids, first keeps the bare id", () => {
+    const content = `#EXTM3U
+#EXTINF:-1 tvg-id="btv.bg",bTV HD
+http://example.com/btv_hd.m3u8
+#EXTINF:-1 tvg-id="btv.bg",bTV FHD
+http://example.com/btv_fhd.m3u8
+#EXTINF:-1 tvg-id="btv.bg",bTV UHD
+http://example.com/btv_uhd.m3u8`;
+    const { channels } = parseM3UContent(content);
+    expect(channels.map(c => c.id)).toEqual(["btv.bg", "btv.bg_v2", "btv.bg_v3"]);
+    expect(channels.every(c => c.tvgId === "btv.bg")).toBe(true);
+  });
+
+  test("captures #EXTVLCOPT headers for the next entry only", () => {
+    const content = `#EXTM3U
+#EXTINF:-1,Channel A
+#EXTVLCOPT:http-user-agent=MyAgent/1.0
+#EXTVLCOPT:http-referrer=http://ref.example.com/
+#EXTVLCOPT:network-caching=1000
+http://example.com/a.m3u8
+#EXTINF:-1,Channel B
+http://example.com/b.m3u8`;
+    const { channels } = parseM3UContent(content);
+    expect(channels[0].headers).toEqual({ "User-Agent": "MyAgent/1.0", Referer: "http://ref.example.com/" });
+    expect(channels[1].headers).toBeUndefined();
+  });
+
+  test("captures #EXTHTTP JSON headers", () => {
+    const content = `#EXTM3U
+#EXTINF:-1,Channel A
+#EXTHTTP:{"User-Agent":"Agent","Referer":"http://r.example.com"}
+http://example.com/a.m3u8`;
+    const { channels } = parseM3UContent(content);
+    expect(channels[0].headers).toEqual({ "User-Agent": "Agent", Referer: "http://r.example.com" });
+  });
+
+  test("splits Kodi-style pipe headers off the URL", () => {
+    const content = `#EXTM3U
+#EXTINF:-1,Channel A
+http://example.com/a.m3u8|User-Agent=Agent%2F2&Referer=http://r.example.com`;
+    const { channels } = parseM3UContent(content);
+    expect(channels[0].url).toBe("http://example.com/a.m3u8");
+    expect(channels[0].headers).toEqual({ "User-Agent": "Agent/2", Referer: "http://r.example.com" });
+  });
+
+  test("ignores header values containing line breaks", () => {
+    const content = `#EXTM3U
+#EXTINF:-1,Channel A
+#EXTHTTP:{"User-Agent":"bad\\r\\nX-Injected: 1"}
+http://example.com/a.m3u8`;
+    const { channels } = parseM3UContent(content);
+    expect(channels[0].headers).toBeUndefined();
+  });
+});
+
+// ─── M3U streams (variants + labels + headers) ───
+
+describe("M3U stream handler", () => {
+  const m3u = require("../m3u");
+  const playlist = `#EXTM3U
+#EXTINF:-1 tvg-id="btv.bg" group-title="BG",bTV HD
+http://example.com/btv_hd.m3u8
+#EXTINF:-1 tvg-id="btv.bg" group-title="BG",bTV FHD
+#EXTVLCOPT:http-user-agent=Agent
+http://example.com/btv_fhd.ts`;
+  const configPath = () => Buffer.from(JSON.stringify({ t: "m3u", m: "http://playlist.example.com/list.m3u" }))
+    .toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  beforeEach(() => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(playlist));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  test("returns the picked channel first, then its quality variants, labelled", async () => {
+    const res = await request(app).get(`/${configPath()}/stream/tv/iptv_tv_btv.bg_v2.json`);
+    expect(res.status).toBe(200);
+    const { streams } = res.body;
+    expect(streams.map(s => s.url)).toEqual(["http://example.com/btv_fhd.ts", "http://example.com/btv_hd.m3u8"]);
+    expect(streams[0].name).toBe("StreamVault\nTS");
+    expect(streams[0].title).toBe("bTV FHD\nBG");
+    expect(streams[0].behaviorHints.proxyHeaders).toEqual({ request: { "User-Agent": "Agent" } });
+    expect(streams[1].name).toBe("StreamVault\nHLS");
+    expect(streams[1].behaviorHints.proxyHeaders).toBeUndefined();
+  });
+});
+
+// ─── SSRF guard on fetch paths ───
+
+describe("outbound fetch SSRF guard", () => {
+  const m3uReal = jest.requireActual("../m3u");
+  const xtream = require("../xtream");
+
+  test("parseM3U refuses a private playlist URL", async () => {
+    await expect(m3uReal.parseM3U("http://169.254.169.254/latest")).rejects.toThrow("Invalid or blocked URL");
+  });
+
+  test("xtream calls refuse a private server", async () => {
+    const config = { server: "http://10.0.0.1:8080", username: "u", password: "p" };
+    await expect(xtream.getLiveStreams(config)).rejects.toThrow("Invalid or blocked URL");
+  });
+
+  test("isPrivateIp catches bracketed and IPv4-mapped IPv6", () => {
+    expect(isPrivateIp("[::1]")).toBe(true);
+    expect(isPrivateIp("::ffff:127.0.0.1")).toBe(true);
+    expect(isPrivateIp("[fdaa:0:1::2]")).toBe(true);
+    expect(isPrivateIp("::ffff:8.8.8.8")).toBe(false);
+  });
 });
 
 // ─── HTTP API tests ───
