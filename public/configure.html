@@ -793,6 +793,12 @@
         configObj = { t: 'm3u', m: url, c: '' };
       }
 
+      // Viewer's timezone so TV guide times show in local time
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) configObj.z = tz;
+      } catch (_) {}
+
       const btn = document.getElementById('btnInstall');
       btn.classList.add('loading');
 
@@ -848,7 +854,8 @@
       t.style.background = success ? 'var(--green)' : 'var(--red)';
       t.style.color = success ? '#000' : '#fff';
       t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 2500);
+      // Longer messages (e.g. with account info) stay up long enough to read
+      setTimeout(() => t.classList.remove('show'), Math.max(2500, msg.length * 60));
     }
 
     let allCategories = [];
@@ -1009,7 +1016,7 @@
         if (data.ok) {
           btn.classList.add('success');
           btnText.textContent = data.message;
-          showToast(data.message, true);
+          showToast(data.account ? `${data.message} ${data.account}` : data.message, true);
         } else {
           btn.classList.add('error');
           btnText.textContent = 'Connection failed';

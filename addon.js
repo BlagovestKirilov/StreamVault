@@ -13,6 +13,13 @@ const xtream = require("./xtream");
 const m3u = require("./m3u");
 
 // --- Encryption for config URLs ---
+// The fallback is for local dev only: in production it would let anyone decrypt
+// users' provider credentials from their install URLs. Fly sets FLY_APP_NAME.
+const IS_PRODUCTION = !!process.env.FLY_APP_NAME || process.env.NODE_ENV === "production";
+if (IS_PRODUCTION && !process.env.CONFIG_SECRET) {
+  console.error("[FATAL] CONFIG_SECRET is not set — refusing to start in production");
+  process.exit(1);
+}
 const CONFIG_SECRET = process.env.CONFIG_SECRET || "dev-secret";
 const STATS_SECRET = process.env.STATS_SECRET || "";
 const encryptionKey = crypto.scryptSync(CONFIG_SECRET, "streamvault-salt", 32);
@@ -166,14 +173,27 @@ function setCapped(cache, key, value, max) {
   }
 }
 
+// Concurrent cache misses for the same key share one download instead of each
+// fetching + parsing it (catalog/meta/stream/manifest often arrive together)
+const inflight = new Map();
+
+function once(key, load) {
+  if (inflight.has(key)) return inflight.get(key);
+  const p = load().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
 async function getCachedM3U(url) {
   const cached = m3uCache.get(url);
   if (cached && Date.now() - cached.ts < M3U_CACHE_TTL) {
     return cached.data;
   }
-  const data = await m3u.parseM3U(url);
-  setCapped(m3uCache, url, { data, ts: Date.now() }, M3U_CACHE_MAX);
-  return data;
+  return once(`m3u:${url}`, async () => {
+    const data = await m3u.parseM3U(url);
+    setCapped(m3uCache, url, { data, ts: Date.now() }, M3U_CACHE_MAX);
+    return data;
+  });
 }
 
 // --- Cache eviction (runs every 10 min) ---
@@ -192,16 +212,24 @@ setInterval(() => {
 // the safety net clears caches with headroom to spare before the hard cap.
 const HEAP_WARN_MB = 450;
 const HEAP_CRIT_MB = 550;
+// Surfaced in /stats so cache sizes can be tuned from real numbers (since last restart)
+const memStats = { heapPeakMB: 0, rssPeakMB: 0, warnEvictions: 0, critEvictions: 0, lastEviction: null };
 setInterval(() => {
-  const { heapUsed } = process.memoryUsage();
+  const { heapUsed, rss } = process.memoryUsage();
   const mb = heapUsed / 1024 / 1024;
+  memStats.heapPeakMB = Math.max(memStats.heapPeakMB, Math.round(mb));
+  memStats.rssPeakMB = Math.max(memStats.rssPeakMB, Math.round(rss / 1024 / 1024));
   if (mb > HEAP_CRIT_MB) {
     m3uCache.clear();
     xtreamCache.clear();
+    memStats.critEvictions++;
+    memStats.lastEviction = new Date().toISOString();
     console.warn(`[MEM] heap ${mb.toFixed(0)} MB — cleared all caches`);
   } else if (mb > HEAP_WARN_MB) {
     const keys = [...m3uCache.keys()];
     keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => m3uCache.delete(k));
+    memStats.warnEvictions++;
+    memStats.lastEviction = new Date().toISOString();
     console.warn(`[MEM] heap ${mb.toFixed(0)} MB — evicted oldest M3U cache entries`);
   }
 }, 10 * 1000);
@@ -268,9 +296,9 @@ function parseConfigPath(configStr) {
     try {
       const obj = decryptConfig(configStr.slice(2));
       if (obj.t === "xtream") {
-        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "" };
+        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
       } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "" };
+        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "" };
       }
     } catch (e) { /* fall through */ }
   }
@@ -283,9 +311,9 @@ function parseConfigPath(configStr) {
       const json = Buffer.from(base64, "base64").toString("utf-8");
       const obj = JSON.parse(json);
       if (obj.t === "xtream") {
-        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "" };
+        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
       } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "" };
+        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "" };
       }
     } catch (e) { /* fall through to legacy parsing */ }
   }
@@ -364,7 +392,7 @@ app.post("/api/categories", async (req, res) => {
 });
 
 // --- API: Encrypt config for secure URL ---
-const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c"]);
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z"]);
 app.post("/api/encrypt", (req, res) => {
   try {
     const configObj = req.body;
@@ -385,6 +413,23 @@ app.post("/api/encrypt", (req, res) => {
   }
 });
 
+// "Account: Active · expires 2026-12-01 · 1/2 connections" (parts the provider omits are skipped)
+function formatAccountInfo(info) {
+  if (!info || typeof info !== "object") return "";
+  const parts = [];
+  if (info.status) parts.push(String(info.status).slice(0, 20));
+  if (String(info.is_trial) === "1") parts.push("trial");
+  const exp = Number(info.exp_date);
+  if (exp > 0) parts.push(`expires ${new Date(exp * 1000).toISOString().slice(0, 10)}`);
+  else if (info.exp_date === null || info.exp_date === "null") parts.push("no expiry");
+  const max = Number(info.max_connections);
+  if (max > 0) {
+    const active = Number(info.active_cons);
+    parts.push(Number.isFinite(active) ? `${active}/${max} connections` : `${max} connections`);
+  }
+  return parts.length ? `Account: ${parts.join(" · ")}` : "";
+}
+
 // --- API: Test connection to provider ---
 app.post("/api/test", async (req, res) => {
   try {
@@ -397,11 +442,18 @@ app.post("/api/test", async (req, res) => {
         return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
       }
       const config = { server: server.replace(/\/+$/, ""), username, password };
-      const cats = await xtream.getLiveCategories(config);
+      const [cats, account] = await Promise.all([
+        xtream.getLiveCategories(config),
+        xtream.getAccountInfo(config).catch(() => null),
+      ]);
       if (!Array.isArray(cats)) {
         return res.json({ ok: false, error: "Invalid response from server" });
       }
-      res.json({ ok: true, message: `Connected! Found ${cats.length} live categories.` });
+      res.json({
+        ok: true,
+        message: `Connected! Found ${cats.length} live categories.`,
+        account: formatAccountInfo(account),
+      });
     } else if (type === "m3u") {
       if (!m3uUrl) {
         return res.status(400).json({ ok: false, error: "Missing M3U URL" });
@@ -517,6 +569,7 @@ app.get("/stats", (req, res) => {
     const key = d.toISOString().slice(0, 10);
     last7[key] = stats.dailyActive[key] ? stats.dailyActive[key].size : 0;
   }
+  const mem = process.memoryUsage();
   const avgStreamsPerUser = stats.users.size > 0 ? +(stats.streams / stats.users.size).toFixed(1) : 0;
   res.json({
     addon: "StreamVault IPTV",
@@ -533,6 +586,19 @@ app.get("/stats", (req, res) => {
     uptime: d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`,
     lastRestarted: PROCESS_START,
     startedAt: stats.startedAt,
+    memory: {
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      ...memStats,
+      warnAtMB: HEAP_WARN_MB,
+      critAtMB: HEAP_CRIT_MB,
+    },
+    caches: {
+      m3u: `${m3uCache.size}/${M3U_CACHE_MAX}`,
+      xtream: `${xtreamCache.size}/${XTREAM_CACHE_MAX}`,
+      genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
+      inflightDownloads: inflight.size,
+    },
   });
 });
 
@@ -655,7 +721,10 @@ async function getXtreamCatalog(config, type) {
   if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) {
     return cached.data;
   }
+  return once(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey));
+}
 
+async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
   // Category names (for the genre filter) are fetched alongside; failure just means no genres
   const categoriesPromise = xtream.getLiveCategories(config).catch(() => []);
   let items = [];
@@ -694,6 +763,22 @@ async function getXtreamCatalog(config, type) {
   return result;
 }
 
+// "HH:MM - HH:MM" in the viewer's timezone (captured by the configure page).
+// Older installs have no timezone → fall back to the provider's local strings.
+function epgTimeRange(e, timezone) {
+  const startTs = Number(e.start_timestamp);
+  const endTs = Number(e.stop_timestamp || e.end_timestamp);
+  if (timezone && startTs && endTs) {
+    try {
+      const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone });
+      return `${fmt.format(startTs * 1000)} - ${fmt.format(endTs * 1000)}`;
+    } catch (_) { /* invalid timezone → fallback */ }
+  }
+  const start = e.start || "";
+  const end = e.end || "";
+  return start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
+}
+
 async function getXtreamMeta(config, type, id) {
   // Only live TV channels are supported
   if (type !== "tv") return null;
@@ -704,8 +789,8 @@ async function getXtreamMeta(config, type, id) {
   const catalog = await getXtreamCatalog(config, type);
   const item = catalog.find(m => m.id === id);
 
-  let name = item ? item.name : `Stream ${streamId}`;
-  let poster = item ? item.poster : makePosterUrl(name);
+  const name = item ? item.name : `Stream ${streamId}`;
+  const poster = item ? item.poster : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
   // Fetch EPG for live channels
@@ -715,39 +800,18 @@ async function getXtreamMeta(config, type, id) {
       const lines = epg.map(e => {
         const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
         const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
-        const start = e.start || "";
-        const end = e.end || "";
-        const time = start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
+        const time = epgTimeRange(e, config.timezone);
         return `${time ? time + " " : ""}${title}${desc ? "\n  " + desc : ""}`;
       });
       description = "📺 TV Guide:\n" + lines.join("\n");
     }
   } catch (_) {}
 
-  if (item) {
-    return { id, type, name, poster, posterShape: "square", description };
-  }
-
-  // Fallback: fetch from API if not in cache
-  try {
-    const items = await xtream.getLiveStreams(config);
-    const found = items.find(i => String(i.stream_id) === streamId);
-    if (found) {
-      name = found.name || found.title || name;
-      const logo = found.stream_icon || found.cover || "";
-      poster = logo || makePosterUrl(name);
-      return { id, type, name, poster, posterShape: "square", description };
-    }
-  } catch (_) {}
-
-  return {
-    id,
-    type,
-    name: `Stream ${streamId}`,
-    poster: makePosterUrl(`Stream ${streamId}`),
-    posterShape: "square",
-    description: `IPTV ${type} stream`,
-  };
+  // Not in the (just loaded) catalog → the provider doesn't list it in the
+  // user's categories; refetching the full stream list would only spike memory
+  const meta = { id, type, name, poster, posterShape: "square", description };
+  if (item && item.genres) meta.genres = item.genres;
+  return meta;
 }
 
 async function getXtreamStreams(config, type, id, baseUrl, configPath) {
@@ -830,8 +894,9 @@ async function getM3UMeta(config, type, id) {
     id,
     type,
     name: channel.name,
-    poster: channel.logo || "",
+    poster: channel.logo || makePosterUrl(channel.name),
     posterShape: "square",
+    genres: [channel.group],
     description: `Group: ${channel.group}`,
   };
 }
@@ -902,4 +967,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError };
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange };

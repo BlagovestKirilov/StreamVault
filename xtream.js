@@ -69,7 +69,17 @@ async function getShortEPG(config, streamId) {
   return (data && data.epg_listings) || [];
 }
 
+/**
+ * Fetch account details (player_api.php with no action → { user_info, server_info }).
+ * @returns {Object|null} user_info: status, exp_date (unix secs or null), max_connections, active_cons, is_trial
+ */
+async function getAccountInfo(config) {
+  const { data } = await http.get(baseUrl(config));
+  return (data && data.user_info) || null;
+}
+
 module.exports = {
+  getAccountInfo,
   getLiveCategories,
   getLiveStreams,
   getShortEPG,

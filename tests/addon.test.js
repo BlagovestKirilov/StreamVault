@@ -1,5 +1,5 @@
 const request = require("supertest");
-const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError } = require("../addon");
+const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange } = require("../addon");
 const { parseM3UContent } = require("../m3u");
 
 // ─── parseConfigPath ───
@@ -302,6 +302,94 @@ http://example.com/1.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://genre-single.example.com/list.m3u" });
     const man = await request(app).get(`/${cfg}/manifest.json`);
     expect(man.body.catalogs[0].extra.map(e => e.name)).toEqual(["search", "skip"]);
+  });
+});
+
+// ─── Memory safety: shared downloads, no fallback refetch, telemetry ───
+
+describe("memory safety", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("concurrent requests for one playlist share a single download", async () => {
+    const spy = jest.spyOn(m3u, "parseM3U").mockImplementation(async () => {
+      await new Promise(r => setTimeout(r, 50));
+      return m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",A\nhttp://example.com/a.m3u8`);
+    });
+    const cfg = enc({ t: "m3u", m: "http://dedupe-test.example.com/list.m3u" });
+    const results = await Promise.all([
+      request(app).get(`/${cfg}/catalog/tv/iptv_live.json`),
+      request(app).get(`/${cfg}/meta/tv/iptv_tv_a.json`),
+      request(app).get(`/${cfg}/stream/tv/iptv_tv_a.json`),
+    ]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(results[0].body.metas).toHaveLength(1);
+    expect(results[2].body.streams).toHaveLength(1);
+  });
+
+  test("Xtream meta for an unknown channel does not refetch the full stream list", async () => {
+    const streams = jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    const cfg = enc({ t: "xtream", s: "http://no-refetch.example.com", u: "u", p: "p", c: "" });
+    const res = await request(app).get(`/${cfg}/meta/tv/iptv_tv_999.json`);
+    expect(res.body.meta.name).toBe("Stream 999");
+    expect(streams).toHaveBeenCalledTimes(1); // catalog load only
+  });
+
+  test("/stats exposes memory and cache usage", async () => {
+    const res = await request(app).get("/stats");
+    expect(res.body.memory.heapUsedMB).toBeGreaterThan(0);
+    expect(res.body.memory).toHaveProperty("heapPeakMB");
+    expect(res.body.caches.m3u).toMatch(/^\d+\/\d+$/);
+    expect(res.body.caches).toHaveProperty("inflightDownloads");
+  });
+
+  test("refuses to start on Fly without CONFIG_SECRET", () => {
+    const { spawnSync } = require("child_process");
+    const env = { ...process.env, FLY_APP_NAME: "test" };
+    delete env.CONFIG_SECRET;
+    const r = spawnSync(process.execPath, ["-e", "require('./addon')"], { cwd: require("path").join(__dirname, ".."), env, encoding: "utf8", timeout: 10000 });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("CONFIG_SECRET is not set");
+  });
+});
+
+// ─── Xtream account info + EPG timezone ───
+
+describe("formatAccountInfo", () => {
+  test("formats a full user_info", () => {
+    expect(formatAccountInfo({ status: "Active", exp_date: "1796083200", max_connections: "2", active_cons: "1", is_trial: "0" }))
+      .toBe("Account: Active · expires 2026-12-01 · 1/2 connections");
+  });
+  test("handles no expiry and trial", () => {
+    expect(formatAccountInfo({ status: "Active", exp_date: null, is_trial: "1" })).toBe("Account: Active · trial · no expiry");
+  });
+  test("returns empty string for missing info", () => {
+    expect(formatAccountInfo(null)).toBe("");
+    expect(formatAccountInfo({})).toBe("");
+  });
+});
+
+describe("epgTimeRange", () => {
+  const entry = { start: "2026-10-12 20:00:00", end: "2026-10-12 21:00:00", start_timestamp: "1791824400", stop_timestamp: "1791828000" };
+  test("formats in the viewer's timezone when known", () => {
+    expect(epgTimeRange(entry, "Europe/Sofia")).toBe("20:00 - 21:00");
+    expect(epgTimeRange(entry, "UTC")).toBe("17:00 - 18:00");
+  });
+  test("falls back to provider strings without (or with invalid) timezone", () => {
+    expect(epgTimeRange(entry, "")).toBe("20:00 - 21:00");
+    expect(epgTimeRange({ ...entry, start: "2026-10-12 09:00:00", end: "2026-10-12 10:00:00" }, "Not/AZone")).toBe("09:00 - 10:00");
+  });
+});
+
+describe("timezone config key", () => {
+  test("/api/encrypt keeps z and parseConfigPath exposes it", async () => {
+    const res = await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://example.com/x.m3u", z: "Europe/Sofia" });
+    expect(parseConfigPath(res.body.config).timezone).toBe("Europe/Sofia");
   });
 });
 
