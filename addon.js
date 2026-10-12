@@ -102,6 +102,7 @@ let stats = {
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
   dailyActive: {},  // { "2026-05-31": Set([ips]) }
+  history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau } }
 };
 
 try {
@@ -111,6 +112,7 @@ try {
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
+  if (!stats.history) stats.history = {};
   // Restore daily active Sets
   for (const day of Object.keys(stats.dailyActive)) {
     stats.dailyActive[day] = new Set(stats.dailyActive[day]);
@@ -132,7 +134,54 @@ function saveStatsData() {
   for (const [day, ips] of Object.entries(stats.dailyActive)) {
     if (new Date(day) >= cutoff) dailySerialized[day] = [...ips];
   }
+  // Keep 90 days of per-day rows; freeze each day's unique-user count into its
+  // row so it survives after dailyActive (30 days) drops the IP list
+  const historyCutoff = new Date();
+  historyCutoff.setDate(historyCutoff.getDate() - HISTORY_DAYS);
+  const history = {};
+  for (const [day, row] of Object.entries(stats.history)) {
+    if (new Date(day) < historyCutoff) continue;
+    history[day] = stats.dailyActive[day] ? { ...row, dau: stats.dailyActive[day].size } : row;
+  }
+  stats.history = history;
   return { ...stats, users: [...stats.users], dailyActive: dailySerialized };
+}
+
+// --- Per-day history (trends) + failures (provider problems) ---
+const HISTORY_DAYS = 90;
+const MAX_RECENT_ERRORS = 20;
+const recentErrors = []; // in memory only: newest first, no URLs/credentials
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dayRow() {
+  const day = todayKey();
+  if (!stats.history[day]) {
+    stats.history[day] = {
+      launches: 0, installs: 0, configures: 0, searches: 0, streams: 0,
+      catalogErrors: 0, metaErrors: 0, streamErrors: 0, emptyStreams: 0,
+    };
+  }
+  return stats.history[day];
+}
+
+function countToday(field) {
+  const row = dayRow();
+  row[field] = (row[field] || 0) + 1;
+}
+
+// where = "catalog" | "meta" | "stream"
+function recordError(where, config, e) {
+  countToday(`${where}Errors`);
+  recentErrors.unshift({
+    at: new Date().toISOString(),
+    where,
+    source: config && config.type,
+    error: safeError(e),
+  });
+  if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.pop();
 }
 
 function saveStats() {
@@ -381,11 +430,13 @@ function extractConfig(req, res, next) {
 // --- Serve configuration page for Stremio ---
 app.get("/configure", (req, res) => {
   stats.configures++;
+  countToday("configures");
   console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
 app.get("/:config/configure", (req, res) => {
   stats.configures++;
+  countToday("configures");
   console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 });
@@ -556,11 +607,13 @@ app.get("/:config/manifest.json", extractConfig, async (req, res) => {
   if (isNew) {
     stats.users.add(ip);
     stats.installs++;
+    countToday("installs");
   }
   // Track config type and daily active
   const cType = req.userConfig.type;
   if (stats.configType[cType] !== undefined) stats.configType[cType]++;
   if (isNew && stats.installsByType[cType] !== undefined) stats.installsByType[cType]++;
+  countToday("launches"); // Stremio fetches the manifest each time the app starts
   const today = new Date().toISOString().slice(0, 10);
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(ip);
@@ -661,6 +714,13 @@ app.get("/stats", (req, res) => {
       genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
       inflightDownloads: inflight.size,
     },
+    // Newest first; dau is live for recent days, frozen in the row for older ones
+    history: Object.keys(stats.history).sort().reverse().map(date => {
+      const live = stats.dailyActive[date];
+      return { date, ...stats.history[date], dau: live ? live.size : (stats.history[date].dau || 0) };
+    }),
+    // Since last restart: what failed and where (no URLs or credentials)
+    recentErrors,
   });
 });
 
@@ -696,6 +756,7 @@ async function catalogHandler(req, res) {
     // Filter by search — all words must appear in the name (any order)
     if (search) {
       stats.searches++;
+      countToday("searches");
       const words = search.split(/\s+/).filter(w => w.length > 0);
       metas = metas.filter(m => {
         const name = m.name.toLowerCase();
@@ -709,6 +770,7 @@ async function catalogHandler(req, res) {
     res.json({ metas });
   } catch (e) {
     console.error("Catalog error:", e.message);
+    recordError("catalog", req.userConfig, e);
     res.json({ metas: [] });
   }
 }
@@ -734,6 +796,7 @@ app.get("/:config/meta/:type/:id.json", extractConfig, async (req, res) => {
     }
   } catch (e) {
     console.error("Meta error:", e.message);
+    recordError("meta", req.userConfig, e);
     res.json({ meta: { id: req.params.id, type: req.params.type, name: "Unknown" } });
   }
 });
@@ -754,10 +817,13 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
     }
 
     stats.streams++;
+    countToday("streams");
+    if (streams.length === 0) countToday("emptyStreams");
     if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
     res.json({ streams });
   } catch (e) {
     console.error("Stream error:", e.message);
+    recordError("stream", req.userConfig, e);
     res.json({ streams: [] });
   }
 });

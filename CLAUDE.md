@@ -38,7 +38,7 @@ StreamVault is a Stremio addon (Express.js HTTP server) that proxies IPTV stream
 4. Stremio calls `/:config/catalog|meta|stream/:type/:id.json`.
 5. Each handler decrypts `:config`, fetches from Xtream / the M3U URL (cached), returns Stremio JSON.
 
-Other endpoints: `POST /api/test` (connection test + Xtream account info), `POST /api/categories` (Xtream), `POST /api/m3u-groups` (M3U group names + counts, no channels kept), `/play/...` (redirect so VLC shows the channel name), `/stats?key=` (usage + `memory`/`caches` telemetry), `/health`.
+Other endpoints: `POST /api/test` (connection test + Xtream account info), `POST /api/categories` (Xtream), `POST /api/m3u-groups` (M3U group names + counts, no channels kept), `/play/...` (redirect so VLC shows the channel name), `/stats?key=` (all-time usage, `history` = 90 days of per-day counts incl. failures, `recentErrors` since restart, `memory`/`caches` telemetry), `/health`.
 
 ### Config encoding
 

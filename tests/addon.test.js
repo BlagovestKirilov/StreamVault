@@ -464,6 +464,49 @@ describe("configure page API", () => {
   });
 });
 
+// ─── Stats history + failure tracking ───
+
+describe("stats history and failures", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const today = () => new Date().toISOString().slice(0, 10);
+  const todayRow = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today());
+  afterEach(() => jest.restoreAllMocks());
+
+  test("counts today's launches, searches and streams (incl. empty results)", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="h1",Hist One\nhttp://example.com/1.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/history.m3u" });
+    const before = (await todayRow()) || { launches: 0, searches: 0, streams: 0, emptyStreams: 0 };
+
+    await request(app).get(`/${cfg}/manifest.json`);
+    await request(app).get(`/${cfg}/catalog/tv/iptv_live/search=hist.json`);
+    await request(app).get(`/${cfg}/stream/tv/iptv_tv_h1.json`);
+    await request(app).get(`/${cfg}/stream/tv/iptv_tv_missing.json`);
+
+    const after = await todayRow();
+    expect(after.launches - before.launches).toBe(1);
+    expect(after.searches - before.searches).toBe(1);
+    expect(after.streams - before.streams).toBe(2);
+    expect(after.emptyStreams - before.emptyStreams).toBe(1);
+    expect(after.dau).toBeGreaterThanOrEqual(1);
+  });
+
+  test("a failing provider is counted and listed without URLs or credentials", async () => {
+    jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("connect ECONNREFUSED http://secret-user:pw@provider.example/list"));
+    const cfg = enc({ t: "m3u", m: "http://example.com/failing.m3u" });
+    const before = (await todayRow()) || { catalogErrors: 0 };
+
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(res.body.metas).toEqual([]);
+
+    const stats = (await request(app).get("/stats")).body;
+    const after = stats.history.find(r => r.date === today());
+    expect(after.catalogErrors - (before.catalogErrors || 0)).toBe(1);
+    expect(stats.recentErrors[0]).toMatchObject({ where: "catalog", source: "m3u", error: "Connection failed" });
+    expect(JSON.stringify(stats.recentErrors)).not.toContain("secret-user");
+  });
+});
+
 // ─── /play redirect ───
 
 describe("/play redirect", () => {
