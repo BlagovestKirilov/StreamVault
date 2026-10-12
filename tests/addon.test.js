@@ -249,6 +249,62 @@ http://example.com/btv_fhd.ts`;
   });
 });
 
+// ─── Category (genre) filter ───
+
+describe("category filter", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("M3U: manifest lists playlist groups, catalog filters by genre", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="Sports & News",Diema Sport
+http://example.com/1.m3u8
+#EXTINF:-1 group-title="Bulgaria",bTV
+http://example.com/2.m3u8
+#EXTINF:-1 group-title="Sports & News",Ring
+http://example.com/3.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://genre-test.example.com/list.m3u" });
+
+    const man = await request(app).get(`/${cfg}/manifest.json`);
+    const genre = man.body.catalogs[0].extra.find(e => e.name === "genre");
+    expect(genre.options).toEqual(["Sports & News", "Bulgaria"]);
+
+    const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("Sports & News")}.json`);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["Diema Sport", "Ring"]);
+  });
+
+  test("Xtream: category names become genre options", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([
+      { category_id: "1", category_name: "BG | Sport" },
+      { category_id: "2", category_name: "BG | Kids" },
+    ]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
+      { stream_id: 10, name: "Diema Sport", category_id: "1" },
+      { stream_id: 11, name: "Nickelodeon", category_id: 2 },
+    ]);
+    const cfg = enc({ t: "xtream", s: "http://genre-xtream.example.com", u: "u", p: "p", c: "" });
+
+    const man = await request(app).get(`/${cfg}/manifest.json`);
+    const genre = man.body.catalogs[0].extra.find(e => e.name === "genre");
+    expect(genre.options).toEqual(["BG | Sport", "BG | Kids"]);
+
+    const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("BG | Kids")}.json`);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["Nickelodeon"]);
+  });
+
+  test("single group → no genre dropdown", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1,Only Channel
+http://example.com/1.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://genre-single.example.com/list.m3u" });
+    const man = await request(app).get(`/${cfg}/manifest.json`);
+    expect(man.body.catalogs[0].extra.map(e => e.name)).toEqual(["search", "skip"]);
+  });
+});
+
 // ─── SSRF guard on fetch paths ───
 
 describe("outbound fetch SSRF guard", () => {
@@ -288,10 +344,15 @@ describe("API endpoints", () => {
   });
 
   test("GET /:config/manifest.json returns configured manifest", async () => {
+    // Provider down → manifest still served, just without the genre filter
+    const xtream = require("../xtream");
+    jest.spyOn(xtream, "getLiveStreams").mockRejectedValue(new Error("down"));
     const config = { t: "xtream", s: "http://example.com", u: "user", p: "pass", c: "" };
     const encoded = Buffer.from(JSON.stringify(config)).toString("base64")
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const res = await request(app).get(`/${encoded}/manifest.json`);
+    jest.restoreAllMocks();
+    expect(res.body.catalogs[0].extra.map(e => e.name)).toEqual(["search", "skip"]);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe("community.streamvault.addon");
     expect(res.body.behaviorHints.configurable).toBe(true);

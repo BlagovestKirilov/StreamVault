@@ -436,7 +436,7 @@ app.get("/manifest.json", (req, res) => {
 });
 
 // Configured manifest (user completed install)
-app.get("/:config/manifest.json", extractConfig, (req, res) => {
+app.get("/:config/manifest.json", extractConfig, async (req, res) => {
   const ip = getIp(req);
   const isNew = !stats.users.has(ip);
   if (isNew) {
@@ -451,9 +451,54 @@ app.get("/:config/manifest.json", extractConfig, (req, res) => {
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(ip);
   console.log(`[INSTALL] ${ip} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
-  const manifest = { ...BASE_MANIFEST, behaviorHints: { configurable: true } };
-  res.json(manifest);
+  const genres = await getGenresWithin(req.userConfig, req.params.config, GENRES_TIMEOUT_MS);
+  res.json(configuredManifest(genres));
 });
+
+// --- Category filter: the user's own groups become the catalog's "genre" options ---
+const GENRES_TIMEOUT_MS = 8000;      // manifest must stay fast; fall back to no filter
+const GENRES_CACHE_TTL = 6 * 60 * 60 * 1000;
+const GENRES_CACHE_MAX = 500;
+const MAX_GENRE_OPTIONS = 300;
+const genresCache = new Map();       // config path -> { data: [names], ts }
+
+function configuredManifest(genres) {
+  const extra = [{ name: "search" }];
+  // A single group (e.g. everything "Uncategorized") makes a useless dropdown
+  if (genres.length > 1) extra.push({ name: "genre", options: genres, isRequired: false });
+  extra.push({ name: "skip" });
+  return {
+    ...BASE_MANIFEST,
+    catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
+    behaviorHints: { configurable: true },
+  };
+}
+
+async function getGenres(config, cacheKey) {
+  const cached = genresCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < GENRES_CACHE_TTL) return cached.data;
+
+  // Catalog items carry their group in `genres`; keep provider order, dedupe
+  const metas = config.type === "xtream"
+    ? await getXtreamCatalog(config, "tv")
+    : await getM3UCatalog(config, "tv");
+  const names = [...new Set(metas.map(m => m.genres && m.genres[0]).filter(Boolean))]
+    .slice(0, MAX_GENRE_OPTIONS);
+
+  setCapped(genresCache, cacheKey, { data: names, ts: Date.now() }, GENRES_CACHE_MAX);
+  return names;
+}
+
+// Slow/broken provider must not block the manifest — return [] (no filter) instead
+async function getGenresWithin(config, cacheKey, ms) {
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve([]), ms); });
+  try {
+    return await Promise.race([getGenres(config, cacheKey).catch(() => []), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // --- Stats dashboard (protected by STATS_SECRET env var) ---
 app.get("/stats", (req, res) => {
@@ -500,7 +545,9 @@ async function catalogHandler(req, res) {
   try {
     const config = req.userConfig;
     const { type } = req.params;
-    const extra = req.params.extra ? parseExtra(req.params.extra) : {};
+    // Parse the raw (still-encoded) segment: req.params is already decoded, so a
+    // "&" inside a group name or search ("Sports & News") would split wrongly
+    const extra = req.params.extra ? parseExtra(req.path.split("/").pop()) : {};
     const search = (extra.search || "").toLowerCase();
     const skip = parseInt(extra.skip) || 0;
     const PAGE_SIZE = 100;
@@ -511,6 +558,11 @@ async function catalogHandler(req, res) {
       metas = await getXtreamCatalog(config, type);
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
+    }
+
+    // Filter by category (Stremio's genre dropdown)
+    if (extra.genre) {
+      metas = metas.filter(m => m.genres && m.genres[0] === extra.genre);
     }
 
     // Filter by search — all words must appear in the name (any order)
@@ -604,6 +656,8 @@ async function getXtreamCatalog(config, type) {
     return cached.data;
   }
 
+  // Category names (for the genre filter) are fetched alongside; failure just means no genres
+  const categoriesPromise = xtream.getLiveCategories(config).catch(() => []);
   let items = [];
   if (categoryIds.length === 0) {
     items = await xtream.getLiveStreams(config);
@@ -612,20 +666,28 @@ async function getXtreamCatalog(config, type) {
     const results = await Promise.all(fetches);
     items = results.filter(Array.isArray).flat();
   }
+  const categories = await categoriesPromise;
 
   // Guard: API may return an object/error instead of an array
   if (!Array.isArray(items)) items = [];
 
+  const categoryNames = new Map(
+    (Array.isArray(categories) ? categories : []).map(c => [String(c.category_id), c.category_name])
+  );
+
   const result = items.map((item) => {
     const name = item.name || item.title || "Unknown";
     const logo = item.stream_icon || item.cover || "";
-    return {
+    const category = categoryNames.get(String(item.category_id));
+    const meta = {
       id: `iptv_${type}_${item.stream_id}`,
       type: type,
       name: name,
       poster: logo || makePosterUrl(name),
       posterShape: "square",
     };
+    if (category) meta.genres = [category];
+    return meta;
   });
 
   setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
@@ -749,6 +811,7 @@ async function getM3UCatalog(config, type) {
       name: ch.name,
       poster: ch.logo || makePosterUrl(ch.name),
       posterShape: "square",
+      genres: [ch.group],
     };
   });
 }
