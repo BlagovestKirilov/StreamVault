@@ -88,7 +88,8 @@ function safeError(e) {
 // --- SSRF protection: see urlguard.js (also enforced inside m3u.js / xtream.js) ---
 
 // --- Serve static files (logo, images) ---
-app.use("/public", express.static(path.join(__dirname, "public")));
+// Cached by browsers/Stremio for a week so repeat visits don't re-download images
+app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d" }));
 
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 const STATS_DIR = fs.existsSync("/data") ? "/data" : __dirname;

@@ -65,21 +65,14 @@
       text-align: center;
       margin-bottom: 28px;
     }
+    /* Real logo: 144px WebP (~5 KB) shown at 56px, sharp on retina */
     .brand-icon {
+      display: block;
       width: 56px;
       height: 56px;
       margin: 0 auto 14px;
-      background: linear-gradient(135deg, var(--accent), #4f46e5);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      border-radius: 14px;
       box-shadow: 0 8px 24px var(--accent-glow);
-    }
-    .brand-icon svg {
-      width: 28px;
-      height: 28px;
-      color: white;
     }
     .brand h1 {
       font-size: 1.5rem;
@@ -565,8 +558,6 @@
       --input-focus: #e0e0ed;
     }
 
-    html.light .brand-icon { background: rgba(108, 76, 224, 0.15); color: #6c4ce0; }
-    html.light .brand-icon svg { stroke: #6c4ce0; }
     html.light .tab-btn { color: #6b6b8a; }
     html.light .tab-btn.active { color: #1a1a2e; }
     html.light .toast { background: #1a1a2e; }
@@ -605,11 +596,7 @@
 
   <div class="wrapper">
     <div class="brand">
-      <div class="brand-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-        </svg>
-      </div>
+      <img class="brand-icon" src="/public/img/logo-144.webp" width="56" height="56" alt="StreamVault logo" />
       <h1>StreamVault</h1>
       <p>Your personal streaming vault. All channels, one place.</p>
     </div>
