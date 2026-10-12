@@ -265,6 +265,26 @@
     }
     .cat-search-wrap input::placeholder { color: #444466; }
 
+    .cat-tools {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .cat-tools span { margin-right: auto; }
+    .cat-tools button {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+    .cat-tools button:hover { color: var(--accent-hover); }
+
     .cat-list {
       margin-top: 8px;
       max-height: 200px;
@@ -673,6 +693,11 @@
         <div class="cat-search-wrap" id="catSearchWrap" style="display:none;">
           <input type="text" id="catSearch" placeholder="Search categories..." oninput="filterCategories()" />
         </div>
+        <div class="cat-tools" id="catTools" style="display:none;">
+          <span id="catCount"></span>
+          <button type="button" onclick="selectAllCategories()">Select all</button>
+          <button type="button" onclick="clearCategories()">Clear</button>
+        </div>
         <div class="cat-list" id="catList" style="display:none;"></div>
         <div class="cat-selected" id="catSelected"></div>
       </div>
@@ -761,7 +786,63 @@
       document.getElementById('catSearch').value = '';
       document.getElementById('catSearchWrap').style.display = 'none';
       document.getElementById('catList').style.display = 'none';
+      document.getElementById('catTools').style.display = 'none';
       document.getElementById('btnLoadCatsText').textContent = 'Load Categories';
+      lastCheckKey = null;
+      renderCategoryList();
+      renderSelectedTags();
+    }
+
+    // --- Connection check (shared by Test, Load Categories and Install) ---
+    let lastCheckKey = null;   // request body that last passed the check
+
+    // Validates the form; returns the /api/test body, or null after showing why
+    function getCheckBody() {
+      if (source === 'xtream') {
+        const server = document.getElementById('server').value.trim();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        if (!server || !username || !password) { showToast('Fill in server, username and password first'); return null; }
+        if (!isValidUrl(server)) { showToast('Server URL must be a valid URL (http://...)'); return null; }
+        return { type: 'xtream', server, username, password };
+      }
+      const m3uUrl = document.getElementById('m3uUrl').value.trim();
+      if (!m3uUrl) { showToast('Enter the playlist URL first'); return null; }
+      if (!isValidUrl(m3uUrl)) { showToast('Playlist URL must be a valid URL (http://...)'); return null; }
+      return { type: 'm3u', m3uUrl };
+    }
+
+    // One request: checks the provider and returns its categories / playlist groups
+    async function runCheck(body) {
+      try {
+        const res = await fetch('/api/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          lastCheckKey = JSON.stringify(body);
+          applyCategories(data);
+        }
+        return data;
+      } catch (e) {
+        return { ok: false, error: "Couldn't reach StreamVault — check your internet connection" };
+      }
+    }
+
+    function applyCategories(data) {
+      const items = data.categories
+        ? data.categories.map(c => ({ id: String(c.category_id), name: c.category_name || '' }))
+        : (data.groups || []).map(g => ({ id: g.name, name: g.name, count: g.count }));
+      allCategories = items.sort((a, b) => a.name.localeCompare(b.name));
+      // Keep earlier choices that still exist (e.g. editing an installed setup)
+      selectedCategories = new Set([...selectedCategories].filter(id => allCategories.some(c => c.id === id)));
+      const show = allCategories.length > 0 ? 'block' : 'none';
+      document.getElementById('catSearchWrap').style.display = show;
+      document.getElementById('catList').style.display = show;
+      document.getElementById('catTools').style.display = allCategories.length > 0 ? 'flex' : 'none';
+      document.getElementById('btnLoadCatsText').textContent = `Reload (${allCategories.length} found)`;
       renderCategoryList();
       renderSelectedTags();
     }
@@ -769,35 +850,32 @@
     async function install() {
       let configObj = {};
       const categoryIds = [...selectedCategories].join(',');
+      const body = getCheckBody();
+      if (!body) return;
+
+      const btn = document.getElementById('btnInstall');
+      btn.classList.add('loading');
+
+      // Don't hand Stremio a setup that can't work: check first (skipped if
+      // these exact details already passed Test / Load Categories)
+      if (lastCheckKey !== JSON.stringify(body)) {
+        const check = await runCheck(body);
+        if (!check.ok) {
+          btn.classList.remove('loading');
+          showToast(`Not installed: ${check.error || 'connection failed'}. Check your details and try again.`);
+          return;
+        }
+      }
 
       if (source === 'xtream') {
-        const server = document.getElementById('server').value.trim();
-        const user = document.getElementById('username').value.trim();
-        const pass = document.getElementById('password').value.trim();
-        if (!server || !user || !pass) {
-          showToast('Please fill in all fields');
-          return;
-        }
-        if (!isValidUrl(server)) {
-          showToast('Server URL must be a valid URL (http://...)');
-          return;
-        }
-        configObj = { t: 'xtream', s: server, u: user, p: pass, c: categoryIds };
+        configObj = { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds };
       } else {
-        const url = document.getElementById('m3uUrl').value.trim();
-        if (!url) {
-          showToast('Please enter an M3U URL');
-          return;
-        }
-        if (!isValidUrl(url)) {
-          showToast('Playlist URL must be a valid URL (http://...)');
-          return;
-        }
-        configObj = { t: 'm3u', m: url, c: '' };
+        configObj = { t: 'm3u', m: body.m3uUrl, c: '' };
         // Selected group-titles (empty = whole playlist)
         if (selectedCategories.size > 0) {
           const g = JSON.stringify([...selectedCategories]);
           if (g.length > 2048) {
+            btn.classList.remove('loading');
             showToast('Too many groups selected — pick fewer');
             return;
           }
@@ -810,9 +888,6 @@
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (tz) configObj.z = tz;
       } catch (_) {}
-
-      const btn = document.getElementById('btnInstall');
-      btn.classList.add('loading');
 
       try {
         // Encrypt config server-side so credentials are not visible in URL
@@ -874,35 +949,9 @@
     let allCategories = [];
     let selectedCategories = new Set();
 
-    async function loadCategories() {
-      let endpoint, body;
-      if (source === 'xtream') {
-        const server = document.getElementById('server').value.trim();
-        const user = document.getElementById('username').value.trim();
-        const pass = document.getElementById('password').value.trim();
-        if (!server || !user || !pass) {
-          showToast('Fill in server, username & password first');
-          return;
-        }
-        if (!isValidUrl(server)) {
-          showToast('Server URL must be a valid URL (http://...)');
-          return;
-        }
-        endpoint = '/api/categories';
-        body = { server, username: user, password: pass };
-      } else {
-        const url = document.getElementById('m3uUrl').value.trim();
-        if (!url) {
-          showToast('Enter the playlist URL first');
-          return;
-        }
-        if (!isValidUrl(url)) {
-          showToast('Playlist URL must be a valid URL (http://...)');
-          return;
-        }
-        endpoint = '/api/m3u-groups';
-        body = { m3uUrl: url };
-      }
+    async function loadCategories(quiet) {
+      const body = getCheckBody();
+      if (!body) return;
 
       const btn = document.getElementById('btnLoadCats');
       const btnText = document.getElementById('btnLoadCatsText');
@@ -912,31 +961,27 @@
       btnIcon.classList.add('spinning');
 
       try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        if (data.error) { showToast(data.error); btnText.textContent = 'Load Categories'; return; }
-
-        const items = source === 'xtream'
-          ? (data.live || []).map(c => ({ id: c.category_id, name: c.category_name || '' }))
-          : (data.groups || []).map(g => ({ id: g.name, name: g.name, count: g.count }));
-        allCategories = items.sort((a, b) => a.name.localeCompare(b.name));
-        selectedCategories.clear();
-        renderCategoryList();
-        document.getElementById('catSearchWrap').style.display = 'block';
-        document.getElementById('catList').style.display = 'block';
-        btnText.textContent = `Reload (${allCategories.length} found)`;
-        showToast(`${allCategories.length} categories loaded`, true);
-      } catch (e) {
-        showToast('Failed to load categories');
-        btnText.textContent = 'Load Categories';
+        const data = await runCheck(body);
+        if (!data.ok) { showToast(data.error || 'Failed to load categories'); btnText.textContent = 'Load Categories'; return; }
+        if (!quiet) showToast(`${allCategories.length} categories loaded`, true);
       } finally {
         btn.disabled = false;
         btnIcon.classList.remove('spinning');
       }
+    }
+
+    // Select all = everything currently shown (so "search, then select all" works)
+    function selectAllCategories() {
+      const query = (document.getElementById('catSearch').value || '').toLowerCase();
+      allCategories.filter(c => c.name.toLowerCase().includes(query)).forEach(c => selectedCategories.add(c.id));
+      renderCategoryList();
+      renderSelectedTags();
+    }
+
+    function clearCategories() {
+      selectedCategories.clear();
+      renderCategoryList();
+      renderSelectedTags();
     }
 
     function escapeHtml(str) {
@@ -983,6 +1028,9 @@
     function renderSelectedTags() {
       const container = document.getElementById('catSelected');
       container.innerHTML = '';
+      document.getElementById('catCount').textContent = selectedCategories.size > 0
+        ? `${selectedCategories.size} of ${allCategories.length} selected`
+        : `None selected — all ${allCategories.length} will show`;
       if (selectedCategories.size === 0) return;
       [...selectedCategories].forEach(id => {
         const cat = allCategories.find(c => c.id === id);
@@ -1020,27 +1068,11 @@
       btnText.textContent = 'Testing...';
 
       try {
-        let body = {};
-        if (source === 'xtream') {
-          const server = document.getElementById('server').value.trim();
-          const user = document.getElementById('username').value.trim();
-          const pass = document.getElementById('password').value.trim();
-          if (!server || !user || !pass) { showToast('Fill in all fields first'); return; }
-          if (!isValidUrl(server)) { showToast('Server URL must be a valid URL'); return; }
-          body = { type: 'xtream', server, username: user, password: pass };
-        } else {
-          const url = document.getElementById('m3uUrl').value.trim();
-          if (!url) { showToast('Enter an M3U URL first'); return; }
-          if (!isValidUrl(url)) { showToast('Must be a valid URL'); return; }
-          body = { type: 'm3u', m3uUrl: url };
-        }
+        const body = getCheckBody();
+        if (!body) return;
 
-        const res = await fetch('/api/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
+        // Also fills the category list, so "Load Categories" isn't needed after a test
+        const data = await runCheck(body);
         if (data.ok) {
           btn.classList.add('success');
           btnText.textContent = data.message;
@@ -1071,6 +1103,30 @@
         return false;
       }
     }
+
+    // Opened from Stremio's "Configure" on an installed addon (/<config>/configure):
+    // fill in the saved details and categories so nothing has to be retyped
+    (async function prefillInstalledSetup() {
+      const match = window.location.pathname.match(/^\/([^/]+)\/configure\/?$/);
+      if (!match) return;
+      try {
+        const res = await fetch(`/api/config/${encodeURIComponent(match[1])}`);
+        if (!res.ok) return;
+        const cfg = await res.json();
+        setTab(cfg.type);
+        if (cfg.type === 'xtream') {
+          document.getElementById('server').value = cfg.server || '';
+          document.getElementById('username').value = cfg.username || '';
+          document.getElementById('password').value = cfg.password || '';
+        } else {
+          document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
+        }
+        selectedCategories = new Set((cfg.categories || []).map(String));
+        showToast('Your installed setup is loaded — change it and install again to save', true);
+        // Load the category list with the saved choices ticked
+        if (cfg.categories && cfg.categories.length) loadCategories(true);
+      } catch (_) { /* keep the blank form */ }
+    })();
 
   </script>
 </body>

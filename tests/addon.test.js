@@ -416,6 +416,54 @@ http://example.com/c.m3u8`;
   });
 });
 
+// ─── Configure page: one-step check + edit installed setup ───
+
+describe("configure page API", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("M3U test returns the groups (one download for test + picker)", async () => {
+    const spy = jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([{ name: "Sports", count: 2 }, { name: "News", count: 1 }]);
+    const parse = jest.spyOn(m3u, "parseM3U");
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/check-test.m3u" });
+    expect(res.body).toEqual({ ok: true, message: "Connected! Found 3 channels.", groups: [{ name: "Sports", count: 2 }, { name: "News", count: 1 }] });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(parse).not.toHaveBeenCalled(); // no full channel list held for a test
+  });
+
+  test("M3U test fails clearly for a playlist without live channels", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([]);
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/empty-test.m3u" });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/No live channels/);
+  });
+
+  test("Xtream test returns its categories", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: 7, category_name: "Sport" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const res = await request(app).post("/api/test").send({ type: "xtream", server: "http://example.com", username: "u", password: "p" });
+    expect(res.body.ok).toBe(true);
+    expect(res.body.categories).toEqual([{ category_id: 7, category_name: "Sport" }]);
+  });
+
+  test("GET /api/config returns an install's settings for editing", async () => {
+    const xt = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: "1,2" });
+    const r1 = await request(app).get(`/api/config/${xt.body.config}`);
+    expect(r1.headers["cache-control"]).toBe("no-store");
+    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"] });
+
+    const r2 = await request(app).get(`/api/config/${enc({ t: "m3u", m: "http://e.com/x.m3u", g: JSON.stringify(["News"]) })}`);
+    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"] });
+  });
+
+  test("GET /api/config rejects an invalid link", async () => {
+    const res = await request(app).get("/api/config/garbage");
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── /play redirect ───
 
 describe("/play redirect", () => {

@@ -468,6 +468,21 @@ function formatAccountInfo(info) {
   return parts.length ? `Account: ${parts.join(" · ")}` : "";
 }
 
+// --- API: Read back an install's settings (configure page opened from Stremio) ---
+// Whoever holds the install link can already use these credentials, so returning
+// them to the same link holder exposes nothing new.
+app.get("/api/config/:config", extractConfig, (req, res) => {
+  const c = req.userConfig;
+  res.setHeader("Cache-Control", "no-store");
+  if (c.type === "xtream") {
+    return res.json({
+      type: "xtream", server: c.server, username: c.username, password: c.password,
+      categories: (c.country || "").split(",").filter(Boolean),
+    });
+  }
+  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
+});
+
 // --- API: Test connection to provider ---
 app.post("/api/test", async (req, res) => {
   try {
@@ -491,6 +506,8 @@ app.post("/api/test", async (req, res) => {
         ok: true,
         message: `Connected! Found ${cats.length} live categories.`,
         account: formatAccountInfo(account),
+        // Lets the configure page fill the category picker without a second request
+        categories: cats.map(c => ({ category_id: c.category_id, category_name: c.category_name || "" })),
       });
     } else if (type === "m3u") {
       if (!m3uUrl) {
@@ -499,8 +516,14 @@ app.post("/api/test", async (req, res) => {
       if (!(await validateExternalUrl(m3uUrl))) {
         return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
       }
-      const { channels } = await m3u.parseM3U(m3uUrl);
-      res.json({ ok: true, message: `Connected! Found ${channels.length} channels.` });
+      // Group counts only (no channel list in memory); shared with /api/m3u-groups,
+      // so test + group picker cost one download
+      const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
+      const total = groups.reduce((sum, g) => sum + g.count, 0);
+      if (total === 0) {
+        return res.json({ ok: false, error: "No live channels found in this playlist" });
+      }
+      res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
     } else {
       res.status(400).json({ ok: false, error: "Unknown source type" });
     }
