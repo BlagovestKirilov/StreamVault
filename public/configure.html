@@ -400,6 +400,21 @@
       color: var(--red);
     }
 
+    /* Install unlocks only after a passing Test */
+    .btn-install:disabled,
+    .btn-install:disabled:hover {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .install-hint {
+      margin-top: 8px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
     /* Button */
     .btn-install {
       width: 100%;
@@ -704,6 +719,7 @@
         </svg>
         Install to Stremio
       </button>
+      <p class="install-hint" id="installHint"></p>
 
       <!-- Result -->
       <div class="result" id="result">
@@ -778,26 +794,57 @@
       lastCheckKey = null;
       renderCategoryList();
       renderSelectedTags();
+      updateButtons();
     }
 
     // --- Connection check (shared by Test, Load Categories and Install) ---
     let lastCheckKey = null;   // request body that last passed the check
+    let checking = false;      // a Test / Load Categories request is running
 
-    // Validates the form; returns the /api/test body, or null after showing why
-    function getCheckBody() {
+    // Validates the form; returns the /api/test body, or null (showing why unless quiet)
+    function getCheckBody(quiet) {
+      const fail = (msg) => { if (!quiet) showToast(msg); return null; };
       if (source === 'xtream') {
         const server = document.getElementById('server').value.trim();
         const username = document.getElementById('username').value.trim();
         const password = document.getElementById('password').value.trim();
-        if (!server || !username || !password) { showToast('Fill in server, username and password first'); return null; }
-        if (!isValidUrl(server)) { showToast('Server URL must be a valid URL (http://...)'); return null; }
+        if (!server || !username || !password) return fail('Fill in server, username and password first');
+        if (!isValidUrl(server)) return fail('Server URL must be a valid URL (http://...)');
         return { type: 'xtream', server, username, password };
       }
       const m3uUrl = document.getElementById('m3uUrl').value.trim();
-      if (!m3uUrl) { showToast('Enter the playlist URL first'); return null; }
-      if (!isValidUrl(m3uUrl)) { showToast('Playlist URL must be a valid URL (http://...)'); return null; }
+      if (!m3uUrl) return fail('Enter the playlist URL first');
+      if (!isValidUrl(m3uUrl)) return fail('Playlist URL must be a valid URL (http://...)');
       return { type: 'm3u', m3uUrl };
     }
+
+    // Test / Load Categories need valid details; Install needs a passing Test
+    // for exactly the details currently in the form
+    function updateButtons() {
+      const body = getCheckBody(true);
+      const passed = !!body && lastCheckKey === JSON.stringify(body);
+      document.getElementById('btnTest').disabled = !body || checking;
+      document.getElementById('btnLoadCats').disabled = !body || checking;
+      document.getElementById('btnInstall').disabled = !passed || checking;
+      const hint = document.getElementById('installHint');
+      if (!body) {
+        hint.textContent = source === 'xtream'
+          ? 'Enter a valid server URL (http://...), username and password'
+          : 'Enter a valid playlist URL (http://...)';
+      } else if (!passed) {
+        hint.textContent = 'Test the connection first — Install unlocks when the test passes';
+      } else {
+        hint.textContent = '';
+      }
+      hint.style.display = hint.textContent ? 'block' : 'none';
+    }
+
+    // 'change' too: browser/password-manager autofill doesn't always fire 'input'
+    ['server', 'username', 'password', 'm3uUrl'].forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', updateButtons);
+      el.addEventListener('change', updateButtons);
+    });
 
     // One request: checks the provider and returns its categories / playlist groups
     async function runCheck(body) {
@@ -811,9 +858,12 @@
         if (data.ok) {
           lastCheckKey = JSON.stringify(body);
           applyCategories(data);
+        } else {
+          lastCheckKey = null;
         }
         return data;
       } catch (e) {
+        lastCheckKey = null;
         return { ok: false, error: "Couldn't reach StreamVault — check your internet connection" };
       }
     }
@@ -839,20 +889,15 @@
       const categoryIds = [...selectedCategories].join(',');
       const body = getCheckBody();
       if (!body) return;
+      // Install is only enabled after these exact details passed the test
+      if (lastCheckKey !== JSON.stringify(body)) {
+        updateButtons();
+        showToast('Test the connection first');
+        return;
+      }
 
       const btn = document.getElementById('btnInstall');
       btn.classList.add('loading');
-
-      // Don't hand Stremio a setup that can't work: check first (skipped if
-      // these exact details already passed Test / Load Categories)
-      if (lastCheckKey !== JSON.stringify(body)) {
-        const check = await runCheck(body);
-        if (!check.ok) {
-          btn.classList.remove('loading');
-          showToast(`Not installed: ${check.error || 'connection failed'}. Check your details and try again.`);
-          return;
-        }
-      }
 
       if (source === 'xtream') {
         configObj = { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds };
@@ -943,7 +988,8 @@
       const btn = document.getElementById('btnLoadCats');
       const btnText = document.getElementById('btnLoadCatsText');
       const btnIcon = document.getElementById('btnLoadCatsIcon');
-      btn.disabled = true;
+      checking = true;
+      updateButtons();
       btnText.textContent = 'Loading...';
       btnIcon.classList.add('spinning');
 
@@ -952,7 +998,8 @@
         if (!data.ok) { showToast(data.error || 'Failed to load categories'); btnText.textContent = 'Load Categories'; return; }
         if (!quiet) showToast(`${allCategories.length} categories loaded`, true);
       } finally {
-        btn.disabled = false;
+        checking = false;
+        updateButtons();
         btnIcon.classList.remove('spinning');
       }
     }
@@ -1050,7 +1097,8 @@
     async function testConnection() {
       const btn = document.getElementById('btnTest');
       const btnText = document.getElementById('btnTestText');
-      btn.disabled = true;
+      checking = true;
+      updateButtons();
       btn.className = 'btn-test';
       btnText.textContent = 'Testing...';
 
@@ -1074,7 +1122,8 @@
         btnText.textContent = 'Connection failed';
         showToast('Connection failed: ' + e.message);
       } finally {
-        btn.disabled = false;
+        checking = false;
+        updateButtons();
         setTimeout(() => {
           btn.className = 'btn-test';
           btnText.textContent = 'Test Connection';
@@ -1109,11 +1158,14 @@
           document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
         }
         selectedCategories = new Set((cfg.categories || []).map(String));
+        updateButtons();
         showToast('Your installed setup is loaded — change it and install again to save', true);
-        // Load the category list with the saved choices ticked
-        if (cfg.categories && cfg.categories.length) loadCategories(true);
+        // Test right away: loads the category list (saved choices ticked) and unlocks Install
+        loadCategories(true);
       } catch (_) { /* keep the blank form */ }
     })();
+
+    updateButtons();
 
   </script>
 </body>

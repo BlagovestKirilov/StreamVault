@@ -268,8 +268,10 @@ setInterval(() => {
   for (const [key, val] of m3uCache) {
     if (now - val.ts > M3U_CACHE_TTL) m3uCache.delete(key);
   }
-  for (const [key, val] of xtreamCache) {
-    if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
+  for (const cache of [xtreamCache, accountCache]) {
+    for (const [key, val] of cache) {
+      if (now - val.ts > XTREAM_CACHE_TTL) cache.delete(key);
+    }
   }
 }, 10 * 60 * 1000);
 
@@ -288,6 +290,7 @@ setInterval(() => {
   if (mb > HEAP_CRIT_MB) {
     m3uCache.clear();
     xtreamCache.clear();
+    accountCache.clear();
     memStats.critEvictions++;
     memStats.lastEviction = new Date().toISOString();
     console.warn(`[MEM] heap ${mb.toFixed(0)} MB — cleared all caches`);
@@ -535,6 +538,20 @@ app.get("/api/config/:config", extractConfig, (req, res) => {
   res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
 });
 
+// Why an Xtream account can't be used, or null when it looks fine / is unknown
+// (providers that don't report user_info are never blocked)
+function accountProblem(info) {
+  if (!info || typeof info !== "object") return null;
+  if (String(info.auth) === "0") return "Wrong username or password";
+  const status = String(info.status || "").trim();
+  if (status && status.toLowerCase() !== "active") return `Your account is ${status.toLowerCase().slice(0, 20)}`;
+  const exp = Number(info.exp_date);
+  if (exp > 0 && exp * 1000 < Date.now()) {
+    return `Your account expired on ${new Date(exp * 1000).toISOString().slice(0, 10)}`;
+  }
+  return null;
+}
+
 // --- API: Test connection to provider ---
 app.post("/api/test", async (req, res) => {
   try {
@@ -551,8 +568,17 @@ app.post("/api/test", async (req, res) => {
         xtream.getLiveCategories(config),
         xtream.getAccountInfo(config).catch(() => null),
       ]);
+      // Many panels answer a bad login with an empty list instead of an error, so
+      // the account status is what tells a wrong password / expired account apart
+      const problem = accountProblem(account);
+      if (problem) {
+        return res.json({ ok: false, error: problem });
+      }
       if (!Array.isArray(cats)) {
         return res.json({ ok: false, error: "Invalid response from server" });
+      }
+      if (cats.length === 0) {
+        return res.json({ ok: false, error: "No live channels on this account" });
       }
       res.json({
         ok: true,
@@ -711,6 +737,7 @@ app.get("/stats", (req, res) => {
     caches: {
       m3u: `${m3uCache.size}/${M3U_CACHE_MAX}`,
       xtream: `${xtreamCache.size}/${XTREAM_CACHE_MAX}`,
+      accounts: `${accountCache.size}/${XTREAM_CACHE_MAX}`,
       genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
       inflightDownloads: inflight.size,
     },
@@ -916,6 +943,30 @@ function epgTimeRange(e, timezone) {
   return start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
 }
 
+// Account info (expiry) shown on channel pages — tiny, cached like the catalog
+const accountCache = new Map();
+async function getXtreamAccount(config) {
+  const key = `${config.server}_${config.username}`;
+  const cached = accountCache.get(key);
+  if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) return cached.data;
+  return once(`account:${key}`, async () => {
+    const info = await xtream.getAccountInfo(config).catch(() => null);
+    setCapped(accountCache, key, { data: info, ts: Date.now() }, XTREAM_CACHE_MAX);
+    return info;
+  });
+}
+
+// "🗓 Subscription expires 2026-12-01" for the channel page, or "" when unknown
+function subscriptionLine(info) {
+  if (!info || typeof info !== "object") return "";
+  const status = String(info.status || "").trim();
+  if (status && status.toLowerCase() !== "active") return `⚠️ Your IPTV account is ${status.toLowerCase().slice(0, 20)}`;
+  const exp = Number(info.exp_date);
+  if (!(exp > 0)) return "";
+  const date = new Date(exp * 1000).toISOString().slice(0, 10);
+  return exp * 1000 < Date.now() ? `⚠️ Subscription expired on ${date}` : `🗓 Subscription expires ${date}`;
+}
+
 async function getXtreamMeta(config, type, id) {
   // Only live TV channels are supported
   if (type !== "tv") return null;
@@ -930,6 +981,9 @@ async function getXtreamMeta(config, type, id) {
   const poster = item ? item.poster : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
+  // Subscription expiry (cached; fetched alongside the EPG)
+  const accountPromise = getXtreamAccount(config);
+
   // Fetch EPG for live channels
   try {
     const epg = await xtream.getShortEPG(config, streamId);
@@ -943,6 +997,9 @@ async function getXtreamMeta(config, type, id) {
       description = "📺 TV Guide:\n" + lines.join("\n");
     }
   } catch (_) {}
+
+  const subscription = subscriptionLine(await accountPromise);
+  if (subscription) description += `\n\n${subscription}`;
 
   // Not in the (just loaded) catalog → the provider doesn't list it in the
   // user's categories; refetching the full stream list would only spike memory
