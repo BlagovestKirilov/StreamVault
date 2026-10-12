@@ -1154,6 +1154,17 @@ function parseExtra(extraStr) {
   return params;
 }
 
+// --- Fallback: people opening the site in a browser land on the configure page ---
+// ("/" or any unknown page). Unknown API/addon (.json) calls get a JSON 404 instead,
+// so Stremio and the configure page still see a real error.
+app.use((req, res) => {
+  const isApiCall = req.path.startsWith("/api/") || req.path.startsWith("/public/") || req.path.endsWith(".json");
+  if (req.method === "GET" && !isApiCall) {
+    return res.redirect(302, "/configure");
+  }
+  res.status(404).json({ error: "Not found" });
+});
+
 // --- Start server ---
 if (require.main === module) {
   app.listen(PORT, "0.0.0.0", () => {

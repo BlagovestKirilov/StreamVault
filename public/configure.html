@@ -358,56 +358,48 @@
     }
     .cat-tag .remove-tag:hover { opacity: 1; }
 
-    /* Test Connection button */
+    /* Test Connection: same primary look as Install. Only one of the two is
+       shown — Test until it passes for the current details, then Install */
     .btn-test {
       width: 100%;
-      padding: 14px;
-      margin-bottom: 8px;
-      background: transparent;
-      color: var(--accent);
-      border: 1.5px solid var(--accent);
+      padding: 16px;
+      margin-top: 8px;
+      background: linear-gradient(135deg, var(--accent), #6345e0);
+      color: #fff;
+      border: none;
       border-radius: 14px;
-      font-size: 0.92rem;
-      font-weight: 600;
+      font-size: 1rem;
+      font-weight: 700;
       cursor: pointer;
       transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       -webkit-tap-highlight-color: transparent;
     }
     .btn-test:hover {
-      background: rgba(124,92,252,0.08);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px var(--accent-glow);
     }
     .btn-test:active {
-      transform: scale(0.98);
+      transform: translateY(0) scale(0.98);
     }
-    .btn-test:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .btn-test svg {
-      width: 18px;
-      height: 18px;
-    }
-    .btn-test.success {
-      border-color: var(--green);
-      color: var(--green);
-    }
-    .btn-test.error {
-      border-color: var(--red);
-      color: var(--red);
-    }
-
-    /* Install unlocks only after a passing Test */
-    .btn-install:disabled,
-    .btn-install:disabled:hover {
+    .btn-test:disabled,
+    .btn-test:disabled:hover {
       opacity: 0.45;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
     }
+    .btn-test svg {
+      width: 20px;
+      height: 20px;
+    }
+    .btn-test.error {
+      background: var(--red);
+    }
+
     .install-hint {
       margin-top: 8px;
       text-align: center;
@@ -818,21 +810,26 @@
       return { type: 'm3u', m3uUrl };
     }
 
-    // Test / Load Categories need valid details; Install needs a passing Test
-    // for exactly the details currently in the form
+    // One main button: "Test Connection" until the test passes for exactly the
+    // details in the form, then "Install to Stremio". Editing anything after a
+    // pass brings Test back. Test / Load Categories need valid details.
     function updateButtons() {
       const body = getCheckBody(true);
       const passed = !!body && lastCheckKey === JSON.stringify(body);
-      document.getElementById('btnTest').disabled = !body || checking;
+      const btnTest = document.getElementById('btnTest');
+      const btnInstall = document.getElementById('btnInstall');
+      btnTest.style.display = passed ? 'none' : 'flex';
+      btnInstall.style.display = passed ? 'flex' : 'none';
+      btnTest.disabled = !body || checking;
+      btnInstall.disabled = checking;
       document.getElementById('btnLoadCats').disabled = !body || checking;
-      document.getElementById('btnInstall').disabled = !passed || checking;
       const hint = document.getElementById('installHint');
       if (!body) {
         hint.textContent = source === 'xtream'
           ? 'Enter a valid server URL (http://...), username and password'
           : 'Enter a valid playlist URL (http://...)';
       } else if (!passed) {
-        hint.textContent = 'Test the connection first — Install unlocks when the test passes';
+        hint.textContent = 'Install becomes available after a successful test';
       } else {
         hint.textContent = '';
       }
@@ -1109,8 +1106,7 @@
         // Also fills the category list, so "Load Categories" isn't needed after a test
         const data = await runCheck(body);
         if (data.ok) {
-          btn.classList.add('success');
-          btnText.textContent = data.message;
+          // The button swaps to "Install to Stremio" (updateButtons in finally)
           showToast(data.account ? `${data.message} ${data.account}` : data.message, true);
         } else {
           btn.classList.add('error');

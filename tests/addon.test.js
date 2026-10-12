@@ -518,6 +518,22 @@ describe("Xtream account checks", () => {
   });
 });
 
+// ─── Browser fallback ───
+
+describe("unknown pages", () => {
+  test.each(["/", "/index.html", "/some/old/link"])("GET %s redirects to /configure", async (path) => {
+    const res = await request(app).get(path);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("/configure");
+  });
+
+  test.each(["/api/nope", "/x/unknown.json"])("GET %s stays a JSON 404", async (path) => {
+    const res = await request(app).get(path);
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Not found" });
+  });
+});
+
 // ─── Stats history + failure tracking ───
 
 describe("stats history and failures", () => {
