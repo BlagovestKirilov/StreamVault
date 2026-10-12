@@ -1001,10 +1001,11 @@
       }
     }
 
-    // Select all = everything currently shown (so "search, then select all" works)
+    // Select all = exactly what the search currently shows: it replaces the
+    // selection, so a new search + Select all doesn't keep the previous results
     function selectAllCategories() {
       const query = (document.getElementById('catSearch').value || '').toLowerCase();
-      allCategories.filter(c => c.name.toLowerCase().includes(query)).forEach(c => selectedCategories.add(c.id));
+      selectedCategories = new Set(allCategories.filter(c => c.name.toLowerCase().includes(query)).map(c => c.id));
       renderCategoryList();
       renderSelectedTags();
     }
