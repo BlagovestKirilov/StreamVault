@@ -739,9 +739,18 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
 });
 
 // --- Stream redirect (gives VLC a readable title from the URL path) ---
-app.get("/play/:config/:streamType/:streamId/:ext/:name", extractConfig, (req, res) => {
+// Only the exact shape getXtreamStreams generates is redirected, so the route
+// can't be used as a general-purpose redirector to arbitrary paths/schemes
+const PLAY_EXTS = new Set(["ts", "m3u8"]);
+app.get("/play/:config/:streamType/:streamId/:ext/:name", extractConfig, async (req, res) => {
   const config = req.userConfig;
   const { streamType, streamId, ext } = req.params;
+  if (config.type !== "xtream" || streamType !== "live" || !/^\d+$/.test(streamId) || !PLAY_EXTS.has(ext)) {
+    return res.status(400).json({ error: "Invalid stream" });
+  }
+  if (!(await validateExternalUrl(config.server))) {
+    return res.status(400).json({ error: "Invalid or blocked server URL" });
+  }
   const server = config.server.replace(/\/+$/, "");
   const url = `${server}/${streamType}/${config.username}/${config.password}/${streamId}.${ext}`;
   res.redirect(302, url);

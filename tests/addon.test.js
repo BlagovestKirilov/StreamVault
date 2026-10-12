@@ -416,6 +416,35 @@ http://example.com/c.m3u8`;
   });
 });
 
+// ─── /play redirect ───
+
+describe("/play redirect", () => {
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const xt = enc({ t: "xtream", s: "http://example.com:8080", u: "user", p: "pass" });
+
+  test("redirects a valid live stream to the provider", async () => {
+    const res = await request(app).get(`/play/${xt}/live/123/ts/Diema%20Sport`);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("http://example.com:8080/live/user/pass/123.ts");
+  });
+
+  test.each([
+    ["non-live type", `/play/${xt}/movie/123/ts/x`],
+    ["non-numeric id", `/play/${xt}/live/..%2F..%2Fevil/ts/x`],
+    ["unknown extension", `/play/${xt}/live/123/html/x`],
+  ])("rejects %s", async (_, path) => {
+    const res = await request(app).get(path);
+    expect(res.status).toBe(400);
+  });
+
+  test("rejects a private server and M3U configs", async () => {
+    const priv = enc({ t: "xtream", s: "http://192.168.1.1", u: "u", p: "p" });
+    expect((await request(app).get(`/play/${priv}/live/1/ts/x`)).status).toBe(400);
+    const m3uCfg = enc({ t: "m3u", m: "http://example.com/x.m3u" });
+    expect((await request(app).get(`/play/${m3uCfg}/live/1/ts/x`)).status).toBe(400);
+  });
+});
+
 // ─── Xtream account info + EPG timezone ───
 
 describe("formatAccountInfo", () => {
