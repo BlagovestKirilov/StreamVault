@@ -760,12 +760,14 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
 
   const streams = [
     {
-      title: tvName,
+      name: "StreamVault\nTS",
+      title: `${tvName}\nMPEG-TS (best for VLC)`,
       url: tsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
     {
-      title: tvName,
+      name: "StreamVault\nHLS",
+      title: `${tvName}\nHLS / m3u8 (fallback)`,
       url: hlsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     }
