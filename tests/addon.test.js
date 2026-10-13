@@ -518,6 +518,57 @@ describe("Xtream account checks", () => {
   });
 });
 
+// ─── Error tiles instead of an empty catalog ───
+
+describe("catalog error tiles", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test.each([
+    ["Request failed with status code 503", "iptv_notice_provider_down", "Provider not responding"],
+    ["Request failed with status code 512", "iptv_notice_provider_down", "Provider not responding"],
+    ["Request failed with status code 403", "iptv_notice_provider_refused", "Provider refused access"],
+    ["Request failed with status code 404", "iptv_notice_not_found", "Playlist not found"],
+    ["Invalid or blocked URL", "iptv_notice_bad_address", "Address doesn't work"],
+    ["timeout of 30000ms exceeded", "iptv_notice_provider_down", "Provider not responding"],
+    ["something odd", "iptv_notice_unknown", "Couldn't load channels"],
+  ])("'%s' shows the %s tile", async (message, id, name) => {
+    jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error(message));
+    const cfg = enc({ t: "m3u", m: `http://example.com/tile-${id}-${message.length}.m3u` });
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(res.body.metas).toHaveLength(1);
+    expect(res.body.metas[0]).toMatchObject({ id, name: `⚠️ ${name}`, type: "tv" });
+  });
+
+  test("no tile on later pages", async () => {
+    jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("Request failed with status code 503"));
+    const cfg = enc({ t: "m3u", m: "http://example.com/tile-page2.m3u" });
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live/skip=100.json`);
+    expect(res.body.metas).toEqual([]);
+  });
+
+  test("opening a tile explains it and it has no streams", async () => {
+    const cfg = enc({ t: "m3u", m: "http://example.com/x.m3u" });
+    const meta = await request(app).get(`/${cfg}/meta/tv/iptv_notice_provider_down.json`);
+    expect(meta.body.meta.description).toMatch(/usually temporary/);
+    const streams = await request(app).get(`/${cfg}/stream/tv/iptv_notice_provider_down.json`);
+    expect(streams.body.streams).toEqual([]);
+  });
+
+  test("an expired Xtream account with an empty list shows the account tile", async () => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Expired" });
+    const cfg = enc({ t: "xtream", s: "http://example.com", u: "tile-expired", p: "p" });
+    const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(cat.body.metas).toEqual([expect.objectContaining({ id: "iptv_notice_account", name: "⚠️ Your account is expired" })]);
+    const meta = await request(app).get(`/${cfg}/meta/tv/iptv_notice_account.json`);
+    expect(meta.body.meta.description).toMatch(/^Your account is expired\. Renew/);
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
@@ -567,7 +618,7 @@ describe("stats history and failures", () => {
     const before = (await todayRow()) || { catalogErrors: 0 };
 
     const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
-    expect(res.body.metas).toEqual([]);
+    expect(res.body.metas.map(m => m.id)).toEqual(["iptv_notice_bad_address"]);
 
     const stats = (await request(app).get("/stats")).body;
     const after = stats.history.find(r => r.date === today());

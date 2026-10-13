@@ -776,6 +776,12 @@ async function catalogHandler(req, res) {
 
     if (config.type === "xtream") {
       metas = await getXtreamCatalog(config, type);
+      // Expired/disabled accounts often return an empty list rather than an
+      // error — say so instead of showing an empty catalog
+      if (metas.length === 0 && skip === 0 && type === "tv") {
+        const problem = accountProblem(await getXtreamAccount(config));
+        if (problem) return res.json({ metas: [noticeMeta("account", type, problem)] });
+      }
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
     }
@@ -803,8 +809,77 @@ async function catalogHandler(req, res) {
   } catch (e) {
     console.error("Catalog error:", e.message);
     recordError("catalog", req.userConfig, e);
-    res.json({ metas: [] });
+    // Instead of an empty catalog, show one tile explaining what went wrong
+    // (first page only, so scrolling doesn't repeat it)
+    const firstPage = !/(^|&)skip=[1-9]/.test(req.path.split("/").pop() || "");
+    res.json({ metas: firstPage ? [noticeMeta(classifyError(e), req.params.type)] : [] });
   }
+}
+
+// --- Error tiles: tell the user why their catalog is empty ---
+const NOTICES = {
+  provider_down: {
+    name: "Provider not responding",
+    description: "Your IPTV provider's server returned an error or didn't respond. This is usually temporary — try again in a few minutes.",
+  },
+  provider_refused: {
+    name: "Provider refused access",
+    description: "Your IPTV provider refused the connection. Check that your subscription is active and your login is correct. If it keeps happening, contact your provider.",
+  },
+  not_found: {
+    name: "Playlist not found",
+    description: "Your provider says this playlist or server address doesn't exist. Open Stremio's Addons page, click Configure on StreamVault and check the address.",
+  },
+  bad_address: {
+    name: "Address doesn't work",
+    description: "The server or playlist address in your setup can't be reached. Open Stremio's Addons page, click Configure on StreamVault and check the address.",
+  },
+  account: {
+    name: "Account problem",
+    description: "", // filled with the specific reason (expired, wrong login, ...)
+  },
+  unknown: {
+    name: "Couldn't load channels",
+    description: "Something went wrong loading your channels. Try again later, or click Configure on StreamVault in Stremio's Addons page to check your details.",
+  },
+};
+
+function classifyError(e) {
+  const msg = String((e && e.message) || "");
+  const status = Number((msg.match(/status code (\d{3})/) || [])[1]);
+  if (status === 401 || status === 403) return "provider_refused";
+  if (status === 404) return "not_found";
+  if (status >= 500) return "provider_down";
+  if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
+  if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "provider_down";
+  return "unknown";
+}
+
+function noticeMeta(kind, type, detail) {
+  const notice = NOTICES[kind] || NOTICES.unknown;
+  const name = kind === "account" && detail ? detail : notice.name;
+  const description = kind === "account"
+    ? `${detail || "There is a problem with your IPTV account"}. Renew or check your subscription with your provider, then reopen Stremio.`
+    : notice.description;
+  return {
+    id: `iptv_notice_${kind}`,
+    type: type || "tv",
+    name: `⚠️ ${name}`,
+    poster: makePosterUrl(name),
+    posterShape: "square",
+    description,
+  };
+}
+
+// Opening an error tile shows its full explanation (it has no streams).
+// The account tile re-reads the (cached) account to name the exact problem.
+async function noticeMetaForAccount(config, id, type) {
+  const kind = id.slice("iptv_notice_".length);
+  if (kind === "account") {
+    const problem = config.type === "xtream" ? accountProblem(await getXtreamAccount(config)) : null;
+    return noticeMeta("account", type, problem);
+  }
+  return noticeMeta(NOTICES[kind] ? kind : "unknown", type);
 }
 
 // Meta handler
@@ -812,6 +887,10 @@ app.get("/:config/meta/:type/:id.json", extractConfig, async (req, res) => {
   try {
     const config = req.userConfig;
     const { type, id } = req.params;
+
+    if (id.startsWith("iptv_notice_")) {
+      return res.json({ meta: await noticeMetaForAccount(config, id, type) });
+    }
 
     let meta = null;
 
@@ -838,6 +917,9 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
   try {
     const config = req.userConfig;
     const { type, id } = req.params;
+
+    // Error tiles have nothing to play and aren't real stream requests
+    if (id.startsWith("iptv_notice_")) return res.json({ streams: [] });
 
     let streams = [];
 
