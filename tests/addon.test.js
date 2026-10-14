@@ -927,16 +927,30 @@ describe("configure visit counting", () => {
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
-  test.each(["/", "/index.html", "/some/old/link"])("GET %s redirects to /configure", async (path) => {
+  test.each(["/", "/some/old/link", "/home"])("GET %s redirects to /configure", async (path) => {
     const res = await request(app).get(path);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("/configure");
   });
 
-  test.each(["/api/nope", "/x/unknown.json"])("GET %s stays a JSON 404", async (path) => {
-    const res = await request(app).get(path);
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: "Not found" });
+  test.each(["/api/nope", "/x/unknown.json", "/robots.txt", "/index.html", "/icon-192.png"])(
+    "GET %s stays a JSON 404 (never a second configure page)", async (path) => {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: "Not found" });
+    });
+
+  test.each(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"])(
+    "GET %s returns the logo (browsers ask for it on every visit)", async (path) => {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/image\/png/);
+      expect(res.headers["cache-control"]).toMatch(/max-age=604800/);
+    });
+
+  test("the configure page points browsers at its icon", async () => {
+    const res = await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.70");
+    expect(res.text).toContain('<link rel="icon" type="image/png" href="/public/img/logo.png" />');
   });
 });
 

@@ -107,6 +107,14 @@ function safeError(e) {
 // Cached by browsers/Stremio for a week so repeat visits don't re-download images
 app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d" }));
 
+// Browsers ask for these icons on their own. Without them the "unknown page →
+// /configure" fallback sent them the configure page, so every visit downloaded
+// (and counted) the page twice.
+const ICON_FILE = path.join(__dirname, "public", "img", "logo.png");
+app.get(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"], (req, res) => {
+  res.sendFile(ICON_FILE, { maxAge: "7d" });
+});
+
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 // STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
 const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : __dirname);
@@ -1460,7 +1468,10 @@ function safeDecode(s) {
 // so Stremio and the configure page still see a real error.
 app.use((req, res) => {
   const isApiCall = req.path.startsWith("/api/") || req.path.startsWith("/public/") || req.path.endsWith(".json");
-  if (req.method === "GET" && !isApiCall) {
+  // Only page-like paths redirect; a missing file (robots.txt, some-icon.png, ...)
+  // is a plain 404 rather than a second download of the configure page
+  const looksLikeFile = /\.[a-z0-9]{1,5}$/i.test(req.path);
+  if (req.method === "GET" && !isApiCall && !looksLikeFile) {
     return res.redirect(302, "/configure");
   }
   noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path) });
