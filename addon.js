@@ -747,8 +747,10 @@ function channelPoster(logo, name) {
   return squareLogo(logo, nameTile) || nameTile;
 }
 
-// Cached Xtream channel { id, type, name, logo, genres? } → what Stremio gets
-function xtreamCatalogMeta({ logo, ...item }) {
+// Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
+// only for the channels actually sent (one page), so the long poster links are
+// never built for a whole 10k-channel list or kept in the caches.
+function catalogMeta({ logo, ...item }) {
   return { ...item, poster: channelPoster(logo, item.name), posterShape: "square" };
 }
 
@@ -934,8 +936,8 @@ async function catalogHandler(req, res) {
 
     // Paginate
     metas = metas.slice(skip, skip + PAGE_SIZE);
-    // Cached Xtream entries hold the raw logo; build posters for this page only
-    if (config.type === "xtream") metas = metas.map(xtreamCatalogMeta);
+    // Channels carry the raw logo; build posters for this page only
+    metas = metas.map(catalogMeta);
 
     res.json({ metas });
   } catch (e) {
@@ -1130,7 +1132,7 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     const logo = item.stream_icon || item.cover || "";
     const category = categoryNames.get(String(item.category_id));
     // Cached as the raw logo; the (much longer) poster link is built only for the
-    // channels actually sent — see xtreamPoster() — so the cache stays small
+    // channels actually sent — see catalogMeta() — so the cache stays small
     const meta = {
       id: `iptv_${type}_${item.stream_id}`,
       type: type,
@@ -1280,16 +1282,14 @@ async function getM3UCatalog(config, type) {
 
   const { channels } = await getCachedM3U(config);
 
-  return channels.filter((ch) => ch.type === "tv").map((ch) => {
-    return {
-      id: `iptv_tv_${ch.id}`,
-      type: "tv",
-      name: ch.name,
-      poster: channelPoster(ch.logo, ch.name),
-      posterShape: "square",
-      genres: [ch.group],
-    };
-  });
+  // Raw logo here; catalogMeta() builds the poster for the page that's sent
+  return channels.filter((ch) => ch.type === "tv").map((ch) => ({
+    id: `iptv_tv_${ch.id}`,
+    type: "tv",
+    name: ch.name,
+    logo: ch.logo,
+    genres: [ch.group],
+  }));
 }
 
 async function getM3UMeta(config, type, id) {
