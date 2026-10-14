@@ -108,7 +108,8 @@ function safeError(e) {
 app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d" }));
 
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
-const STATS_DIR = fs.existsSync("/data") ? "/data" : __dirname;
+// STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
+const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : __dirname);
 const STATS_FILE = path.join(STATS_DIR, "stats.json");
 const PROCESS_START = new Date().toISOString();
 let stats = {
@@ -237,15 +238,28 @@ function recordError(where, config, e) {
   if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.pop();
 }
 
+// Saves write a temp file and rename it over stats.json. A rename is all-or-nothing,
+// so a crash/deploy mid-save leaves the previous stats.json intact instead of a
+// half-written file (which would fail to load and reset all stats to zero).
+let saving = false;
+
 function saveStats() {
-  const toSave = saveStatsData();
-  fs.promises.writeFile(STATS_FILE, JSON.stringify(toSave, null, 2)).catch(() => {});
+  if (saving) return; // previous save still running — the next interval saves again
+  saving = true;
+  const tmp = `${STATS_FILE}.tmp`;
+  fs.promises.writeFile(tmp, JSON.stringify(saveStatsData(), null, 2))
+    .then(() => fs.promises.rename(tmp, STATS_FILE))
+    .catch(() => {})
+    .finally(() => { saving = false; });
 }
 
+// On shutdown: sync (the process exits right after) and its own temp file, since an
+// async save may be writing stats.json.tmp at this very moment
 function saveStatsSync() {
   try {
-    const toSave = saveStatsData();
-    fs.writeFileSync(STATS_FILE, JSON.stringify(toSave, null, 2));
+    const tmp = `${STATS_FILE}.exit.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(saveStatsData(), null, 2));
+    fs.renameSync(tmp, STATS_FILE);
   } catch (_) {}
 }
 
@@ -1317,4 +1331,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange };
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats };

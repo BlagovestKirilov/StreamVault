@@ -665,6 +665,60 @@ describe("per-day error codes", () => {
   });
 });
 
+// ─── Stats file saving (atomic, no overlap) ───
+
+describe("stats file saving", () => {
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const { spawnSync } = require("child_process");
+  const root = path.join(__dirname, "..");
+  // Runs a snippet in a fresh Node process whose stats live in a throwaway folder
+  const run = (dir, code) => spawnSync(process.execPath, ["-e", code], {
+    cwd: root, env: { ...process.env, STATS_DIR: dir }, encoding: "utf8", timeout: 15000,
+  });
+  const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
+
+  test("shutdown save writes a complete stats.json and leaves no temp files", () => {
+    const dir = tmpDir();
+    const r = run(dir, "require('./addon'); process.emit('SIGTERM');");
+    expect(r.status).toBe(0);
+    expect(fs.readdirSync(dir)).toEqual(["stats.json"]);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8"));
+    expect(saved).toHaveProperty("history");
+  });
+
+  test("a crash mid-save keeps the previous stats.json intact", () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({ installs: 42, users: [], history: {} }));
+    // Simulate dying half-way: only part of the temp file gets written, rename never happens
+    fs.writeFileSync(path.join(dir, "stats.json.tmp"), '{"installs": 4');
+    const r = run(dir, "const { app } = require('./addon'); require('supertest')(app).get('/stats').then(x => { console.log(x.body.installs); process.exit(0); });");
+    expect(r.stdout.trim().split("\n").pop()).toBe("42");
+  });
+
+  test("overlapping saves are skipped, and the async save is atomic", () => {
+    const dir = tmpDir();
+    const r = run(dir, `
+      const fs = require('fs');
+      const { saveStats } = require('./addon');
+      const writes = [], renames = [];
+      const w = fs.promises.writeFile, rn = fs.promises.rename;
+      fs.promises.writeFile = (...a) => { writes.push(a[0]); return w(...a); };
+      fs.promises.rename = (...a) => { renames.push(a.map(p => require('path').basename(p))); return rn(...a); };
+      saveStats(); saveStats(); saveStats();            // 2nd and 3rd overlap the 1st
+      setTimeout(() => {
+        saveStats();                                    // 1st finished → allowed again
+        setTimeout(() => { console.log(JSON.stringify({ writes: writes.length, renames })); process.exit(0); }, 300);
+      }, 300);
+    `);
+    const out = JSON.parse(r.stdout.trim().split("\n").pop());
+    expect(out.writes).toBe(2);
+    expect(out.renames).toEqual([["stats.json.tmp", "stats.json"], ["stats.json.tmp", "stats.json"]]);
+    expect(fs.readdirSync(dir)).toEqual(["stats.json"]);
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
