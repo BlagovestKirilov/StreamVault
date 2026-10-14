@@ -179,6 +179,12 @@ const MAX_RECENT_ERRORS = 20;
 const recentErrors = [];        // provider failures
 const recentUnknownPaths = [];  // requests StreamVault answered 404 (paths masked)
 const recentEmptyStreams = [];  // stream requests that returned nothing, and why
+const recentUnconfigured = [];  // requests from installs without settings (+ which app)
+
+// Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
+function userAgent(req) {
+  return String(req.get("user-agent") || "none").slice(0, 150);
+}
 
 function noteRecent(list, entry) {
   list.unshift({ at: new Date().toISOString(), ...entry });
@@ -942,7 +948,29 @@ app.get("/stats", limitStats, (req, res) => {
     recentErrors,
     recentUnknownPaths,
     recentEmptyStreams,
+    recentUnconfigured,
   });
+});
+
+// --- Addon installed without configuring (bare /manifest.json) ---
+// Some apps/tools ignore configurationRequired and install the bare manifest, then
+// ask /catalog/... with no settings in the path. Instead of a 404 (an empty
+// catalog with no hint), answer with one tile telling the user to configure.
+// Logged with the User-Agent to learn which apps do this.
+function serveUnconfigured(req, res, body) {
+  countToday("unconfigured");
+  noteRecent(recentUnconfigured, { path: maskPath(req.path), userAgent: userAgent(req) });
+  res.json(body);
+}
+app.get(["/catalog/:type/:id.json", "/catalog/:type/:id/:extra.json"], limitAddon, (req, res) => {
+  const firstPage = !/(^|&)skip=[1-9]/.test(req.params.extra || "");
+  serveUnconfigured(req, res, { metas: firstPage ? [noticeMeta("setup", req.params.type)] : [] });
+});
+app.get("/meta/:type/:id.json", limitAddon, (req, res) => {
+  serveUnconfigured(req, res, { meta: noticeMeta("setup", req.params.type) });
+});
+app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
+  serveUnconfigured(req, res, { streams: [] });
 });
 
 // Catalog handler (with extra params like search=X)
@@ -1036,6 +1064,10 @@ const NOTICES = {
   account: {
     name: "Account problem",
     description: "", // filled with the specific reason (expired, wrong login, ...)
+  },
+  setup: {
+    name: "Set up StreamVault first",
+    description: "StreamVault was added without your playlist. Open Stremio → Addons → StreamVault → ⚙️ Configure, enter your playlist link or Xtream login, and install again.",
   },
   unknown: {
     name: "Couldn't load channels",
@@ -1474,7 +1506,7 @@ app.use((req, res) => {
   if (req.method === "GET" && !isApiCall && !looksLikeFile) {
     return res.redirect(302, "/configure");
   }
-  noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path) });
+  noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path), userAgent: userAgent(req) });
   res.status(404).json({ error: "Not found" });
 });
 

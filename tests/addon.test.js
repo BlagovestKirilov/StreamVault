@@ -906,6 +906,36 @@ http://example.com/2.m3u8`));
   });
 });
 
+// ─── Addon installed without configuring ───
+
+describe("installs without settings (bare manifest)", () => {
+  const stats = async () => (await request(app).get("/stats")).body;
+
+  test("bare catalog gets a 'Set up StreamVault first' tile, logged with the app's User-Agent", async () => {
+    const before = (await stats()).history[0].unconfigured || 0;
+    const res = await request(app).get("/catalog/tv/iptv_live.json").set("User-Agent", "StremioTV/1.0 (old build)");
+    expect(res.status).toBe(200);
+    expect(res.body.metas).toEqual([expect.objectContaining({ id: "iptv_notice_setup", name: "⚠️ Set up StreamVault first" })]);
+
+    const s = await stats();
+    expect(s.history[0].unconfigured).toBe(before + 1);
+    expect(s.recentUnconfigured[0]).toMatchObject({ path: "/catalog/tv/iptv_live.json", userAgent: "StremioTV/1.0 (old build)" });
+  });
+
+  test("bare search/next pages, channel page and stream are handled too", async () => {
+    expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
+    expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
+    const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
+    expect(meta.description).toMatch(/Configure/);
+    expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
+  });
+
+  test("other unknown paths are still 404 and now show the User-Agent", async () => {
+    await request(app).get("/x/other.json").set("User-Agent", "SomeBot/2.0");
+    expect((await stats()).recentUnknownPaths[0]).toMatchObject({ path: "/x/other.json", userAgent: "SomeBot/2.0" });
+  });
+});
+
 // ─── Configure page visit counting ───
 
 describe("configure visit counting", () => {
