@@ -696,17 +696,31 @@ describe("stats file saving", () => {
     expect(r.stdout.trim().split("\n").pop()).toBe("42");
   });
 
-  test("older days saved with flat error counts are converted on load", () => {
+  test("error counts saved before endpoint tracking are dropped on load", () => {
     const dir = tmpDir();
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const day1 = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const day2 = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
     fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
-      users: [], history: { [yesterday]: { launches: 3, providerErrors: { "503": 2 }, responseErrors: { "429": 1 } } },
+      users: [], history: {
+        // flat counts (saved before the per-endpoint split)
+        [day1]: { launches: 3, providerErrors: { "503": 2 }, responseErrors: { "429": 1 } },
+        // already wrapped under the old label, plus real per-endpoint counts
+        [day2]: {
+          launches: 5,
+          providerErrors: { "(before endpoint tracking)": { "403": 8 }, "catalog (m3u)": { "503": 1 } },
+          responseErrors: { "(before endpoint tracking)": { "404": 53 }, "unknown path": { "404": 2 } },
+        },
+      },
     }));
-    const r = run(dir, "const { app } = require('./addon'); require('supertest')(app).get('/stats').then(x => { console.log(JSON.stringify(x.body.history.find(h => h.date === '" + yesterday + "'))); process.exit(0); });");
-    const row = JSON.parse(r.stdout.trim().split("\n").pop());
-    expect(row.providerErrors).toEqual({ "(before endpoint tracking)": { "503": 2 } });
-    expect(row.responseErrors).toEqual({ "(before endpoint tracking)": { "429": 1 } });
-    expect(row.launches).toBe(3);
+    const r = run(dir, "const { app } = require('./addon'); require('supertest')(app).get('/stats').then(x => { console.log(JSON.stringify(x.body.history)); process.exit(0); });");
+    const rows = JSON.parse(r.stdout.trim().split("\n").pop());
+    const row1 = rows.find(h => h.date === day1);
+    const row2 = rows.find(h => h.date === day2);
+    expect(row1.providerErrors).toEqual({});
+    expect(row1.responseErrors).toEqual({});
+    expect(row1.launches).toBe(3);
+    expect(row2.providerErrors).toEqual({ "catalog (m3u)": { "503": 1 } });
+    expect(row2.responseErrors).toEqual({ "unknown path": { "404": 2 } });
   });
 
   test("overlapping saves are skipped, and the async save is atomic", () => {

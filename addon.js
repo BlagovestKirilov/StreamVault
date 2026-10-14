@@ -189,14 +189,15 @@ function dayRow() {
   return stats.history[day];
 }
 
-// Rows saved before errors were split by endpoint hold flat { "503": 2 } counts;
-// keep those under one label so every row has the { where: { code: n } } shape.
-// Runs on every row when stats.json loads (function declaration → hoisted).
+// Rows saved before errors were split by endpoint hold flat { "503": 2 } counts
+// (only a few minutes on 2026-10-14) — drop those so every row has the
+// { where: { code: n } } shape. Runs on every row when stats.json loads
+// (function declaration → hoisted). Can be removed once that deploy has run.
 function normalizeErrorMaps(row) {
   for (const name of ["providerErrors", "responseErrors"]) {
     const map = row[name];
-    if (!map) row[name] = {};
-    else if (Object.values(map).some(v => typeof v === "number")) row[name] = { "(before endpoint tracking)": map };
+    if (!map || Object.values(map).some(v => typeof v === "number")) row[name] = {};
+    else delete map["(before endpoint tracking)"];
   }
 }
 
