@@ -807,9 +807,15 @@ describe("parallel download limit", () => {
 
     expect(peak).toBe(4);
     expect(results.every(r => r.body.metas.length === 1)).toBe(true);
-    const caches = (await request(app).get("/stats")).body.caches;
-    expect(caches.downloadsRunning).toBe("0/4");
-    expect(caches.downloadsWaiting).toBe(0);
+    const stats = (await request(app).get("/stats")).body;
+    expect(stats.caches.downloadsRunning).toBe("0/4");
+    expect(stats.caches.downloadsWaiting).toBe(0);
+
+    // per-day counters: every download, the ones that waited, and the longest wait
+    const today = stats.history.find(h => h.date === new Date().toISOString().slice(0, 10));
+    expect(today.downloads).toBeGreaterThanOrEqual(10);
+    expect(today.downloadsQueued).toBeGreaterThanOrEqual(6);
+    expect(today.longestDownloadWaitMs).toBeGreaterThanOrEqual(50);
   });
 
   test("a failing download frees its slot", async () => {

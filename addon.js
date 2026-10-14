@@ -312,8 +312,14 @@ let downloadsRunning = 0;
 const downloadQueue = []; // resolve callbacks of waiting downloads, in order
 
 async function withDownloadSlot(download) {
+  countToday("downloads");
   if (downloadsRunning >= MAX_PARALLEL_DOWNLOADS) {
+    // All slots busy: count it and how long this one waited (stats history)
+    countToday("downloadsQueued");
+    const waitStart = Date.now();
     await new Promise(resolve => downloadQueue.push(resolve));
+    const row = dayRow();
+    row.longestDownloadWaitMs = Math.max(row.longestDownloadWaitMs || 0, Date.now() - waitStart);
   } else {
     downloadsRunning++;
   }
