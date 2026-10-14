@@ -569,8 +569,8 @@ function extractConfig(req, res, next) {
 }
 
 // --- Serve configuration page for Stremio ---
-// Almost every visit showed up twice within a second (a HEAD request before the
-// GET, or the app loading the page twice), doubling "configures". Count real
+// Almost every visit used to show up twice (the browser's /favicon.ico request
+// was redirected here — fixed by serving the icon). As a safety net, count real
 // page loads only: no HEAD, and one per IP per CONFIGURE_DEDUPE_MS.
 const CONFIGURE_DEDUPE_MS = 10 * 1000;
 const lastConfigureAt = new Map(); // ip -> time of the last counted visit
