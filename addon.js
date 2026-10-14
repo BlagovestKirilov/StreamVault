@@ -64,11 +64,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- Count every error response StreamVault sends, per day and status code ---
-// (400 bad config, 404, 429 rate-limited, ...) — saved with the stats history
+// --- Count every error response StreamVault sends, per day, endpoint and status ---
+// (400 bad config, 404, 429 rate-limited, ...) — saved with the stats history.
+// The endpoint is the route pattern ("GET /:config/catalog/:type/:id.json"), never
+// the raw URL: that keeps the list short and users' install links out of stats.
 app.use((req, res, next) => {
   res.on("finish", () => {
-    if (res.statusCode >= 400 && req.path !== "/health") countCode("responseErrors", String(res.statusCode));
+    if (res.statusCode < 400 || req.path === "/health") return;
+    const endpoint = req.route ? `${req.method} ${req.route.path}` : "unknown path";
+    countCode("responseErrors", endpoint, String(res.statusCode));
   });
   next();
 });
@@ -86,7 +90,7 @@ const { getIp, rateLimit } = require("./ratelimit");
 const MINUTE = 60 * 1000;
 const limitProviderChecks = rateLimit("provider-check", 10, MINUTE); // each downloads from the provider
 const limitConfig = rateLimit("config", 30, MINUTE);
-const limitStats = rateLimit("stats", 20, MINUTE);                   // slows guessing STATS_SECRET
+const limitStats = rateLimit("stats", 5, MINUTE);                    // slows guessing STATS_SECRET
 const limitAddon = rateLimit("addon", 300, MINUTE);                  // Stremio bursts + shared IPs
 
 // --- Helper: sanitize error messages (never leak URLs/credentials) ---
@@ -174,11 +178,20 @@ function dayRow() {
     stats.history[day] = {
       launches: 0, installs: 0, configures: 0, searches: 0, streams: 0,
       catalogErrors: 0, metaErrors: 0, streamErrors: 0, emptyStreams: 0,
-      providerErrors: {}, // what users' providers returned: { "503": 2, "bad_address": 1 }
-      responseErrors: {}, // what StreamVault answered with status >= 400: { "429": 3 }
+      // what users' providers returned, by where it happened: { catalog: { "503": 2 } }
+      providerErrors: {},
+      // what StreamVault answered with status >= 400, by endpoint: { "POST /api/test": { "429": 3 } }
+      responseErrors: {},
     };
   }
-  return stats.history[day];
+  const row = stats.history[day];
+  // Rows saved before errors were split by endpoint hold flat { "503": 2 } counts
+  for (const name of ["providerErrors", "responseErrors"]) {
+    const map = row[name];
+    if (!map) row[name] = {};
+    else if (Object.values(map).some(v => typeof v === "number")) row[name] = { "(before endpoint tracking)": map };
+  }
+  return row;
 }
 
 function countToday(field) {
@@ -186,14 +199,19 @@ function countToday(field) {
   row[field] = (row[field] || 0) + 1;
 }
 
-// Per-day count by code. A map only takes so many distinct keys, so a provider
-// sending random status codes can't bloat stats.json — extras go to "other".
-const MAX_CODES_PER_DAY = 30;
-function countCode(mapName, code) {
-  const row = dayRow();
-  const map = row[mapName] || (row[mapName] = {});
-  const key = map[code] !== undefined || Object.keys(map).length < MAX_CODES_PER_DAY ? code : "other";
-  map[key] = (map[key] || 0) + 1;
+// Per-day count by where + code: row[mapName][where][code]. Each level only takes
+// so many distinct keys, so random status codes can't bloat stats.json — extras
+// go to "other".
+const MAX_KEYS_PER_LEVEL = 30;
+function boundedKey(obj, key) {
+  return obj[key] !== undefined || Object.keys(obj).length < MAX_KEYS_PER_LEVEL ? key : "other";
+}
+function countCode(mapName, where, code) {
+  const map = dayRow()[mapName];
+  const w = boundedKey(map, where);
+  const codes = map[w] || (map[w] = {});
+  const c = boundedKey(codes, code);
+  codes[c] = (codes[c] || 0) + 1;
 }
 
 // Provider failure → HTTP status ("503") or, without one, what went wrong
@@ -209,7 +227,7 @@ function providerErrorKey(e) {
 // where = "catalog" | "meta" | "stream"
 function recordError(where, config, e) {
   countToday(`${where}Errors`);
-  countCode("providerErrors", providerErrorKey(e));
+  countCode("providerErrors", `${where} (${(config && config.type) || "unknown"})`, providerErrorKey(e));
   recentErrors.unshift({
     at: new Date().toISOString(),
     where,
@@ -612,15 +630,15 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       // the account status is what tells a wrong password / expired account apart
       const problem = accountProblem(account);
       if (problem) {
-        countCode("providerErrors", "account");
+        countCode("providerErrors", "test (xtream)", "account");
         return res.json({ ok: false, error: problem });
       }
       if (!Array.isArray(cats)) {
-        countCode("providerErrors", "invalid_response");
+        countCode("providerErrors", "test (xtream)", "invalid_response");
         return res.json({ ok: false, error: "Invalid response from server" });
       }
       if (cats.length === 0) {
-        countCode("providerErrors", "no_channels");
+        countCode("providerErrors", "test (xtream)", "no_channels");
         return res.json({ ok: false, error: "No live channels on this account" });
       }
       res.json({
@@ -642,7 +660,7 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
       const total = groups.reduce((sum, g) => sum + g.count, 0);
       if (total === 0) {
-        countCode("providerErrors", "no_channels");
+        countCode("providerErrors", "test (m3u)", "no_channels");
         return res.json({ ok: false, error: "No live channels found in this playlist" });
       }
       res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
@@ -650,7 +668,7 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       res.status(400).json({ ok: false, error: "Unknown source type" });
     }
   } catch (e) {
-    countCode("providerErrors", providerErrorKey(e));
+    countCode("providerErrors", `test (${req.body && req.body.type === "xtream" ? "xtream" : "m3u"})`, providerErrorKey(e));
     res.json({ ok: false, error: safeError(e) });
   }
 });

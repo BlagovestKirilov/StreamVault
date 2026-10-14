@@ -621,7 +621,7 @@ describe("per-day error codes", () => {
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const today = () => new Date().toISOString().slice(0, 10);
   const row = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today()) || {};
-  const n = (map, key) => (map && map[key]) || 0;
+  const n = (map, where, code) => (map && map[where] && map[where][code]) || 0;
   afterEach(() => jest.restoreAllMocks());
 
   test("provider errors are counted by status code or kind", async () => {
@@ -634,9 +634,10 @@ describe("per-day error codes", () => {
     await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/codes-403.m3u" });
 
     const after = await row();
-    expect(n(after.providerErrors, "503") - n(before.providerErrors, "503")).toBe(1);
-    expect(n(after.providerErrors, "bad_address") - n(before.providerErrors, "bad_address")).toBe(1);
-    expect(n(after.providerErrors, "403") - n(before.providerErrors, "403")).toBe(1);
+    const diff = (where, code) => n(after.providerErrors, where, code) - n(before.providerErrors, where, code);
+    expect(diff("catalog (m3u)", "503")).toBe(1);
+    expect(diff("catalog (m3u)", "bad_address")).toBe(1);
+    expect(diff("test (m3u)", "403")).toBe(1);
   });
 
   test("StreamVault's own error responses are counted by status (400, 404, 429)", async () => {
@@ -646,9 +647,21 @@ describe("per-day error codes", () => {
     const ip = "203.0.113.40";
     for (let i = 0; i < 11; i++) await request(app).post("/api/test").set("Fly-Client-IP", ip).send({ type: "m3u" }); // 10×400 + 429
     const after = await row();
-    expect(n(after.responseErrors, "400") - n(before.responseErrors, "400")).toBe(11);
-    expect(n(after.responseErrors, "404") - n(before.responseErrors, "404")).toBe(1);
-    expect(n(after.responseErrors, "429") - n(before.responseErrors, "429")).toBe(1);
+    const diff = (where, code) => n(after.responseErrors, where, code) - n(before.responseErrors, where, code);
+    expect(diff("GET /:config/manifest.json", "400")).toBe(1);
+    expect(diff("POST /api/test", "400")).toBe(10);
+    expect(diff("POST /api/test", "429")).toBe(1);
+    expect(diff("unknown path", "404")).toBe(1);
+    // raw URLs (which can contain install links) are never stored
+    expect(JSON.stringify(after.responseErrors)).not.toContain("garbage");
+  });
+
+  test("/stats allows 5 requests per minute per IP", async () => {
+    const ip = "203.0.113.50";
+    for (let i = 0; i < 5; i++) {
+      expect((await request(app).get("/stats").set("Fly-Client-IP", ip)).status).toBe(200);
+    }
+    expect((await request(app).get("/stats").set("Fly-Client-IP", ip)).status).toBe(429);
   });
 });
 
