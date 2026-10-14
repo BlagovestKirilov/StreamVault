@@ -2,7 +2,7 @@
  * ratelimit.js — client IP detection and per-IP request limits.
  *
  * In-memory fixed windows (one process, one machine). Over the limit a request
- * gets 429 + Retry-After; StreamVault's response-code stats count those.
+ * gets 429; StreamVault's response-code stats count those.
  */
 
 // The client can't be trusted with X-Forwarded-For: anything it sends ends up at
@@ -49,10 +49,8 @@ function rateLimit(name, max, windowMs) {
     w.count++;
     if (w.count <= max) return next();
 
-    const retryAfter = Math.max(1, Math.ceil((w.resetAt - now) / 1000));
-    res.setHeader("Retry-After", String(retryAfter));
     // ok:false so the configure page shows the message like any failed check
-    res.status(429).json({ ok: false, error: `Too many requests — try again in ${retryAfter} seconds` });
+    res.status(429).json({ ok: false, error: "Too many requests" });
   };
 }
 

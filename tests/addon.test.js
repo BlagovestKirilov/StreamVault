@@ -584,8 +584,7 @@ describe("rate limiting", () => {
     const blocked = await request(app).post("/api/test").set("Fly-Client-IP", ip).send(testBody);
     expect(blocked.status).toBe(429);
     expect(blocked.body.ok).toBe(false);
-    expect(blocked.body.error).toMatch(/Too many requests/);
-    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+    expect(blocked.body.error).toBe("Too many requests");
 
     // same group, other endpoint → also blocked; other group → fine
     expect((await request(app).post("/api/m3u-groups").set("Fly-Client-IP", ip).send({})).status).toBe(429);
