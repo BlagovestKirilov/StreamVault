@@ -561,18 +561,26 @@ function extractConfig(req, res, next) {
 }
 
 // --- Serve configuration page for Stremio ---
-app.get("/configure", (req, res) => {
-  stats.configures++;
-  countToday("configures");
-  console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
+// Almost every visit showed up twice within a second (a HEAD request before the
+// GET, or the app loading the page twice), doubling "configures". Count real
+// page loads only: no HEAD, and one per IP per CONFIGURE_DEDUPE_MS.
+const CONFIGURE_DEDUPE_MS = 10 * 1000;
+const lastConfigureAt = new Map(); // ip -> time of the last counted visit
+
+function serveConfigure(req, res) {
+  const ip = getIp(req);
+  const now = Date.now();
+  const counted = req.method === "GET" && !(now - (lastConfigureAt.get(ip) || 0) < CONFIGURE_DEDUPE_MS);
+  if (counted) {
+    stats.configures++;
+    countToday("configures");
+    setCapped(lastConfigureAt, ip, now, 10000);
+  }
+  console.log(`[CONFIGURE] ${req.method} ${ip} opened configure page${counted ? "" : " (repeat, not counted)"}`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
-});
-app.get("/:config/configure", (req, res) => {
-  stats.configures++;
-  countToday("configures");
-  console.log(`[CONFIGURE] ${getIp(req)} opened configure page`);
-  res.sendFile(path.join(__dirname, "public", "configure.html"));
-});
+}
+app.get("/configure", serveConfigure);
+app.get("/:config/configure", serveConfigure);
 
 // --- API: Fetch categories from provider ---
 app.post("/api/categories", limitProviderChecks, async (req, res) => {

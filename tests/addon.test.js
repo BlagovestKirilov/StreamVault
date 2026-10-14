@@ -906,6 +906,24 @@ http://example.com/2.m3u8`));
   });
 });
 
+// ─── Configure page visit counting ───
+
+describe("configure visit counting", () => {
+  const configures = async () => (await request(app).get("/stats")).body.configures;
+
+  test("HEAD and a quick repeat from the same IP count once; another IP counts", async () => {
+    const before = await configures();
+    await request(app).head("/configure").set("Fly-Client-IP", "198.51.100.61");
+    await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.61");
+    await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.61");
+    expect(await configures()).toBe(before + 1);
+    const page = await request(app).get("/e-abc/configure").set("Fly-Client-IP", "198.51.100.62");
+    expect(page.status).toBe(200);
+    expect(page.text).toContain("<html");
+    expect(await configures()).toBe(before + 2);
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
