@@ -64,6 +64,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Count every error response StreamVault sends, per day and status code ---
+// (400 bad config, 404, 429 rate-limited, ...) — saved with the stats history
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    if (res.statusCode >= 400 && req.path !== "/health") countCode("responseErrors", String(res.statusCode));
+  });
+  next();
+});
+
 // --- JSON body parser (with size limit) ---
 app.use(express.json({ limit: "16kb" }));
 
@@ -72,10 +81,13 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// --- Helper: extract client IP ---
-function getIp(req) {
-  return (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "unknown";
-}
+// --- Client IP + per-IP limits (see ratelimit.js) ---
+const { getIp, rateLimit } = require("./ratelimit");
+const MINUTE = 60 * 1000;
+const limitProviderChecks = rateLimit("provider-check", 10, MINUTE); // each downloads from the provider
+const limitConfig = rateLimit("config", 30, MINUTE);
+const limitStats = rateLimit("stats", 20, MINUTE);                   // slows guessing STATS_SECRET
+const limitAddon = rateLimit("addon", 300, MINUTE);                  // Stremio bursts + shared IPs
 
 // --- Helper: sanitize error messages (never leak URLs/credentials) ---
 function safeError(e) {
@@ -162,6 +174,8 @@ function dayRow() {
     stats.history[day] = {
       launches: 0, installs: 0, configures: 0, searches: 0, streams: 0,
       catalogErrors: 0, metaErrors: 0, streamErrors: 0, emptyStreams: 0,
+      providerErrors: {}, // what users' providers returned: { "503": 2, "bad_address": 1 }
+      responseErrors: {}, // what StreamVault answered with status >= 400: { "429": 3 }
     };
   }
   return stats.history[day];
@@ -172,9 +186,30 @@ function countToday(field) {
   row[field] = (row[field] || 0) + 1;
 }
 
+// Per-day count by code. A map only takes so many distinct keys, so a provider
+// sending random status codes can't bloat stats.json — extras go to "other".
+const MAX_CODES_PER_DAY = 30;
+function countCode(mapName, code) {
+  const row = dayRow();
+  const map = row[mapName] || (row[mapName] = {});
+  const key = map[code] !== undefined || Object.keys(map).length < MAX_CODES_PER_DAY ? code : "other";
+  map[key] = (map[key] || 0) + 1;
+}
+
+// Provider failure → HTTP status ("503") or, without one, what went wrong
+function providerErrorKey(e) {
+  const msg = String((e && e.message) || "");
+  const status = (msg.match(/status code (\d{3})/) || [])[1];
+  if (status) return status;
+  if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
+  if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "timeout";
+  return "other";
+}
+
 // where = "catalog" | "meta" | "stream"
 function recordError(where, config, e) {
   countToday(`${where}Errors`);
+  countCode("providerErrors", providerErrorKey(e));
   recentErrors.unshift({
     at: new Date().toISOString(),
     where,
@@ -450,7 +485,7 @@ app.get("/:config/configure", (req, res) => {
 });
 
 // --- API: Fetch categories from provider ---
-app.post("/api/categories", async (req, res) => {
+app.post("/api/categories", limitProviderChecks, async (req, res) => {
   try {
     const { server, username, password } = req.body;
     if (!server || !username || !password) {
@@ -469,7 +504,7 @@ app.post("/api/categories", async (req, res) => {
 
 // --- API: List M3U groups (configure page group picker) ---
 // Counts only — no channels are kept in memory, and concurrent clicks share one download
-app.post("/api/m3u-groups", async (req, res) => {
+app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
   try {
     const { m3uUrl } = req.body || {};
     if (!m3uUrl) {
@@ -487,7 +522,7 @@ app.post("/api/m3u-groups", async (req, res) => {
 
 // --- API: Encrypt config for secure URL ---
 const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
-app.post("/api/encrypt", (req, res) => {
+app.post("/api/encrypt", limitConfig, (req, res) => {
   try {
     const configObj = req.body;
     if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
@@ -531,7 +566,7 @@ function formatAccountInfo(info) {
 // --- API: Read back an install's settings (configure page opened from Stremio) ---
 // Whoever holds the install link can already use these credentials, so returning
 // them to the same link holder exposes nothing new.
-app.get("/api/config/:config", extractConfig, (req, res) => {
+app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
   const c = req.userConfig;
   res.setHeader("Cache-Control", "no-store");
   if (c.type === "xtream") {
@@ -558,7 +593,7 @@ function accountProblem(info) {
 }
 
 // --- API: Test connection to provider ---
-app.post("/api/test", async (req, res) => {
+app.post("/api/test", limitProviderChecks, async (req, res) => {
   try {
     const { type, server, username, password, m3uUrl } = req.body;
     if (type === "xtream") {
@@ -577,12 +612,15 @@ app.post("/api/test", async (req, res) => {
       // the account status is what tells a wrong password / expired account apart
       const problem = accountProblem(account);
       if (problem) {
+        countCode("providerErrors", "account");
         return res.json({ ok: false, error: problem });
       }
       if (!Array.isArray(cats)) {
+        countCode("providerErrors", "invalid_response");
         return res.json({ ok: false, error: "Invalid response from server" });
       }
       if (cats.length === 0) {
+        countCode("providerErrors", "no_channels");
         return res.json({ ok: false, error: "No live channels on this account" });
       }
       res.json({
@@ -604,6 +642,7 @@ app.post("/api/test", async (req, res) => {
       const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
       const total = groups.reduce((sum, g) => sum + g.count, 0);
       if (total === 0) {
+        countCode("providerErrors", "no_channels");
         return res.json({ ok: false, error: "No live channels found in this playlist" });
       }
       res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
@@ -611,6 +650,7 @@ app.post("/api/test", async (req, res) => {
       res.status(400).json({ ok: false, error: "Unknown source type" });
     }
   } catch (e) {
+    countCode("providerErrors", providerErrorKey(e));
     res.json({ ok: false, error: safeError(e) });
   }
 });
@@ -627,12 +667,12 @@ function makePosterUrl(name) {
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
-app.get("/manifest.json", (req, res) => {
+app.get("/manifest.json", limitAddon, (req, res) => {
   res.json(BASE_MANIFEST);
 });
 
 // Configured manifest (user completed install)
-app.get("/:config/manifest.json", extractConfig, async (req, res) => {
+app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) => {
   const ip = getIp(req);
   const isNew = !stats.users.has(ip);
   if (isNew) {
@@ -699,7 +739,7 @@ async function getGenresWithin(config, cacheKey, ms) {
 }
 
 // --- Stats dashboard (protected by STATS_SECRET env var) ---
-app.get("/stats", (req, res) => {
+app.get("/stats", limitStats, (req, res) => {
   if (STATS_SECRET && req.query.key !== STATS_SECRET) {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -757,9 +797,9 @@ app.get("/stats", (req, res) => {
 });
 
 // Catalog handler (with extra params like search=X)
-app.get("/:config/catalog/:type/:id/:extra.json", extractConfig, catalogHandler);
+app.get("/:config/catalog/:type/:id/:extra.json", limitAddon, extractConfig, catalogHandler);
 // Catalog handler (no extra params)
-app.get("/:config/catalog/:type/:id.json", extractConfig, catalogHandler);
+app.get("/:config/catalog/:type/:id.json", limitAddon, extractConfig, catalogHandler);
 
 async function catalogHandler(req, res) {
   try {
@@ -845,13 +885,13 @@ const NOTICES = {
 };
 
 function classifyError(e) {
-  const msg = String((e && e.message) || "");
-  const status = Number((msg.match(/status code (\d{3})/) || [])[1]);
+  const key = providerErrorKey(e);
+  const status = Number(key);
   if (status === 401 || status === 403) return "provider_refused";
   if (status === 404) return "not_found";
   if (status >= 500) return "provider_down";
-  if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
-  if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "provider_down";
+  if (key === "bad_address") return "bad_address";
+  if (key === "timeout") return "provider_down";
   return "unknown";
 }
 
@@ -883,7 +923,7 @@ async function noticeMetaForAccount(config, id, type) {
 }
 
 // Meta handler
-app.get("/:config/meta/:type/:id.json", extractConfig, async (req, res) => {
+app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, res) => {
   try {
     const config = req.userConfig;
     const { type, id } = req.params;
@@ -913,7 +953,7 @@ app.get("/:config/meta/:type/:id.json", extractConfig, async (req, res) => {
 });
 
 // Stream handler
-app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
+app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req, res) => {
   try {
     const config = req.userConfig;
     const { type, id } = req.params;
@@ -946,7 +986,7 @@ app.get("/:config/stream/:type/:id.json", extractConfig, async (req, res) => {
 // Only the exact shape getXtreamStreams generates is redirected, so the route
 // can't be used as a general-purpose redirector to arbitrary paths/schemes
 const PLAY_EXTS = new Set(["ts", "m3u8"]);
-app.get("/play/:config/:streamType/:streamId/:ext/:name", extractConfig, async (req, res) => {
+app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, extractConfig, async (req, res) => {
   const config = req.userConfig;
   const { streamType, streamId, ext } = req.params;
   if (config.type !== "xtream" || streamType !== "live" || !/^\d+$/.test(streamId) || !PLAY_EXTS.has(ext)) {

@@ -569,6 +569,89 @@ describe("catalog error tiles", () => {
   });
 });
 
+// ─── Rate limiting ───
+
+describe("rate limiting", () => {
+  const { getIp } = require("../ratelimit");
+  const testBody = { type: "m3u" }; // fails validation fast (400), no network
+
+  test("11th provider check from one IP in a minute gets 429; other groups unaffected", async () => {
+    const ip = "203.0.113.10";
+    for (let i = 0; i < 10; i++) {
+      const ok = await request(app).post("/api/test").set("Fly-Client-IP", ip).send(testBody);
+      expect(ok.status).toBe(400);
+    }
+    const blocked = await request(app).post("/api/test").set("Fly-Client-IP", ip).send(testBody);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.ok).toBe(false);
+    expect(blocked.body.error).toMatch(/Too many requests/);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+
+    // same group, other endpoint → also blocked; other group → fine
+    expect((await request(app).post("/api/m3u-groups").set("Fly-Client-IP", ip).send({})).status).toBe(429);
+    expect((await request(app).post("/api/encrypt").set("Fly-Client-IP", ip).send({ t: "m3u", m: "http://example.com/x" })).status).toBe(200);
+  });
+
+  test("each client IP has its own budget; a forged X-Forwarded-For doesn't get a new one", async () => {
+    const ip = "203.0.113.20";
+    for (let i = 0; i < 10; i++) await request(app).post("/api/test").set("Fly-Client-IP", ip).send(testBody);
+    const forged = await request(app).post("/api/test").set("Fly-Client-IP", ip).set("X-Forwarded-For", "9.9.9.9").send(testBody);
+    expect(forged.status).toBe(429);
+    const otherIp = await request(app).post("/api/test").set("Fly-Client-IP", "203.0.113.21").send(testBody);
+    expect(otherIp.status).toBe(400);
+  });
+
+  test("/health is never limited", async () => {
+    for (let i = 0; i < 30; i++) {
+      expect((await request(app).get("/health").set("Fly-Client-IP", "203.0.113.30")).status).toBe(200);
+    }
+  });
+
+  test("getIp prefers Fly-Client-IP and ignores X-Forwarded-For", () => {
+    const req = (headers, remoteAddress = "10.0.0.1") => ({ headers, socket: { remoteAddress } });
+    expect(getIp(req({ "fly-client-ip": "198.51.100.7", "x-forwarded-for": "1.2.3.4" }))).toBe("198.51.100.7");
+    expect(getIp(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("10.0.0.1");
+  });
+});
+
+// ─── Error codes per day ───
+
+describe("per-day error codes", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const today = () => new Date().toISOString().slice(0, 10);
+  const row = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today()) || {};
+  const n = (map, key) => (map && map[key]) || 0;
+  afterEach(() => jest.restoreAllMocks());
+
+  test("provider errors are counted by status code or kind", async () => {
+    const before = await row();
+    jest.spyOn(m3u, "parseM3U").mockRejectedValueOnce(new Error("Request failed with status code 503"));
+    await request(app).get(`/${enc({ t: "m3u", m: "http://example.com/codes-503.m3u" })}/catalog/tv/iptv_live.json`);
+    jest.spyOn(m3u, "parseM3U").mockRejectedValueOnce(new Error("getaddrinfo ENOTFOUND nowhere.example"));
+    await request(app).get(`/${enc({ t: "m3u", m: "http://example.com/codes-dns.m3u" })}/catalog/tv/iptv_live.json`);
+    jest.spyOn(m3u, "parseM3UGroups").mockRejectedValueOnce(new Error("Request failed with status code 403"));
+    await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/codes-403.m3u" });
+
+    const after = await row();
+    expect(n(after.providerErrors, "503") - n(before.providerErrors, "503")).toBe(1);
+    expect(n(after.providerErrors, "bad_address") - n(before.providerErrors, "bad_address")).toBe(1);
+    expect(n(after.providerErrors, "403") - n(before.providerErrors, "403")).toBe(1);
+  });
+
+  test("StreamVault's own error responses are counted by status (400, 404, 429)", async () => {
+    const before = await row();
+    await request(app).get("/garbage/manifest.json");                 // 400 invalid config
+    await request(app).get("/api/nope");                              // 404
+    const ip = "203.0.113.40";
+    for (let i = 0; i < 11; i++) await request(app).post("/api/test").set("Fly-Client-IP", ip).send({ type: "m3u" }); // 10×400 + 429
+    const after = await row();
+    expect(n(after.responseErrors, "400") - n(before.responseErrors, "400")).toBe(11);
+    expect(n(after.responseErrors, "404") - n(before.responseErrors, "404")).toBe(1);
+    expect(n(after.responseErrors, "429") - n(before.responseErrors, "429")).toBe(1);
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
