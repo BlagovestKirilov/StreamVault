@@ -55,7 +55,8 @@ Three formats for the `:config` segment (`parseConfigPath`): **encrypted** `e-<h
 ### Memory (the server has crashed from OOM before — keep it bounded)
 
 - Fly VM 1 GB, `--max-old-space-size=640`. Heap watchdog every 10s: >450 MB evicts half the M3U cache, >550 MB clears all caches.
-- Caches: M3U playlists 10 min TTL, max 3 entries (key = URL + selected groups); Xtream catalogs 4h, max 25; genres 6h, max 500. A capped 10k-channel parse ≈ 5 MB heap.
+- Caches: M3U playlists 10 min TTL, max 15 entries (key = URL + selected groups); Xtream catalogs 4h, max 25 (raw logos only — poster links built per response); genres 6h, max 500. A capped 10k-channel parse ≈ 5 MB heap.
+- `withDownloadSlot()`: at most 4 big provider downloads (whole M3U playlists, full Xtream channel lists) run at once across all users; the rest queue. `/stats` → `caches.downloadsRunning` / `downloadsWaiting`. Never call it from inside another slot (deadlock).
 - `once(key, load)` dedupes concurrent cache misses so one playlist is downloaded once, not per request.
 - M3U parse stops at 10k live channels; Xtream responses capped at 50 MB.
 - Don't add per-user downloads of large files (e.g. XMLTV EPG) without strict size/concurrency limits.

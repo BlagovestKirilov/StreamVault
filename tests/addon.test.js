@@ -785,6 +785,42 @@ http://example.com/b.m3u8`));
   });
 });
 
+// ─── Global download limit ───
+
+describe("parallel download limit", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("at most 4 playlist downloads run at once; the rest wait and still finish", async () => {
+    let running = 0, peak = 0;
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => {
+      running++; peak = Math.max(peak, running);
+      await new Promise(r => setTimeout(r, 60));
+      running--;
+      return m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="x",X\nhttp://example.com/x.m3u8`);
+    });
+    // 10 different users' playlists at the same moment (different URLs → no sharing)
+    const reqs = Array.from({ length: 10 }, (_, i) =>
+      request(app).get(`/${enc({ t: "m3u", m: `http://example.com/slots-${i}.m3u` })}/catalog/tv/iptv_live.json`));
+    const results = await Promise.all(reqs);
+
+    expect(peak).toBe(4);
+    expect(results.every(r => r.body.metas.length === 1)).toBe(true);
+    const caches = (await request(app).get("/stats")).body.caches;
+    expect(caches.downloadsRunning).toBe("0/4");
+    expect(caches.downloadsWaiting).toBe(0);
+  });
+
+  test("a failing download frees its slot", async () => {
+    jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("Request failed with status code 503"));
+    const reqs = Array.from({ length: 6 }, (_, i) =>
+      request(app).get(`/${enc({ t: "m3u", m: `http://example.com/slots-fail-${i}.m3u` })}/catalog/tv/iptv_live.json`));
+    await Promise.all(reqs);
+    expect((await request(app).get("/stats")).body.caches.downloadsRunning).toBe("0/4");
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {

@@ -279,7 +279,9 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
-const M3U_CACHE_MAX = 3;
+// A full (10k-channel cap) playlist measured ~5 MB parsed → 15 ≈ 75 MB worst case,
+// well under the 450 MB watchdog; fewer re-downloads as users grow
+const M3U_CACHE_MAX = 15;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 const XTREAM_CACHE_MAX = 25;
@@ -302,6 +304,29 @@ function once(key, load) {
   return p;
 }
 
+// At most this many large provider downloads (whole playlists / full Xtream
+// channel lists) run at the same time across all users; the rest wait their
+// turn. Per-IP limits can't stop many users downloading at once on 1 shared CPU.
+const MAX_PARALLEL_DOWNLOADS = 4;
+let downloadsRunning = 0;
+const downloadQueue = []; // resolve callbacks of waiting downloads, in order
+
+async function withDownloadSlot(download) {
+  if (downloadsRunning >= MAX_PARALLEL_DOWNLOADS) {
+    await new Promise(resolve => downloadQueue.push(resolve));
+  } else {
+    downloadsRunning++;
+  }
+  try {
+    return await download();
+  } finally {
+    // Hand the slot straight to the next waiter (running count unchanged), or free it
+    const next = downloadQueue.shift();
+    if (next) next();
+    else downloadsRunning--;
+  }
+}
+
 async function getCachedM3U(config) {
   const groups = config.groups || [];
   // Same playlist with a different group selection is a different (smaller) entry
@@ -311,7 +336,7 @@ async function getCachedM3U(config) {
     return cached.data;
   }
   return once(`m3u:${key}`, async () => {
-    const data = await m3u.parseM3U(config.url, groups);
+    const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
     setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   });
@@ -546,7 +571,7 @@ app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
     if (!(await validateExternalUrl(m3uUrl))) {
       return res.status(400).json({ error: "Invalid or blocked M3U URL" });
     }
-    const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
+    const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
     res.json({ groups });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -672,7 +697,7 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       }
       // Group counts only (no channel list in memory); shared with /api/m3u-groups,
       // so test + group picker cost one download
-      const groups = await once(`groups:${m3uUrl}`, () => m3u.parseM3UGroups(m3uUrl));
+      const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
       const total = groups.reduce((sum, g) => sum + g.count, 0);
       if (total === 0) {
         countCode("providerErrors", "test (m3u)", "no_channels");
@@ -842,6 +867,8 @@ app.get("/stats", limitStats, (req, res) => {
       accounts: `${accountCache.size}/${XTREAM_CACHE_MAX}`,
       genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
       inflightDownloads: inflight.size,
+      downloadsRunning: `${downloadsRunning}/${MAX_PARALLEL_DOWNLOADS}`,
+      downloadsWaiting: downloadQueue.length,
     },
     // Newest first; dau is live for recent days, frozen in the row for older ones
     history: Object.keys(stats.history).sort().reverse().map(date => {
@@ -1077,14 +1104,12 @@ async function getXtreamCatalog(config, type) {
 async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
   // Category names (for the genre filter) are fetched alongside; failure just means no genres
   const categoriesPromise = xtream.getLiveCategories(config).catch(() => []);
-  let items = [];
-  if (categoryIds.length === 0) {
-    items = await xtream.getLiveStreams(config);
-  } else {
-    const fetches = categoryIds.map(catId => xtream.getLiveStreams(config, catId));
-    const results = await Promise.all(fetches);
-    items = results.filter(Array.isArray).flat();
-  }
+  // One download slot per catalog load (a user's selected categories together)
+  let items = await withDownloadSlot(async () => {
+    if (categoryIds.length === 0) return xtream.getLiveStreams(config);
+    const results = await Promise.all(categoryIds.map(catId => xtream.getLiveStreams(config, catId)));
+    return results.filter(Array.isArray).flat();
+  });
   const categories = await categoriesPromise;
 
   // Guard: API may return an object/error instead of an array
