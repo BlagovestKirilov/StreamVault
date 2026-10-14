@@ -827,6 +827,85 @@ describe("parallel download limit", () => {
   });
 });
 
+// ─── Fixes from live stats (2026-10-14) ───
+
+describe("live-stats fixes", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const stats = async () => (await request(app).get("/stats")).body;
+  afterEach(() => jest.restoreAllMocks());
+
+  test("an emoji at the name cut-off no longer breaks the catalog (was 'URI malformed')", async () => {
+    // 29 characters, then an emoji: the old substring(0, 30) cut it in half
+    const name = "Sport Channel HD Premium 4K S📺 extra";
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 tvg-id="e1" tvg-logo="https://cdn.example.com/e1.png",${name}
+http://example.com/1.m3u8
+#EXTINF:-1 tvg-id="e2",${name}
+http://example.com/2.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/emoji-names.m3u" });
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(res.body.metas.map(m => m.name)).toEqual([name, name]);
+    expect(res.body.metas[1].poster).toMatch(/^https:\/\/ui-avatars\.com\//);
+  });
+
+  test("broken % encoding in a catalog extra is kept as text instead of throwing", () => {
+    expect(parseExtra("genre=100% Sport&skip=0.json")).toEqual({ genre: "100% Sport", skip: "0" });
+    expect(parseExtra("genre=100%25%20Sport.json")).toEqual({ genre: "100% Sport" });
+    expect(parseExtra("search=a=b.json")).toEqual({ search: "a=b" });
+  });
+
+  test("a failed provider isn't asked again for 2 minutes (negative cache)", async () => {
+    const spy = jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("Request failed with status code 521"));
+    const cfg = enc({ t: "m3u", m: "http://example.com/dead-provider.m3u" });
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+      expect(res.body.metas[0].id).toBe("iptv_notice_provider_down"); // users still see why
+    }
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect((await stats()).caches.failedProviders).toBeGreaterThanOrEqual(1);
+  });
+
+  test("https/http mix-up and provider 429 get their own tiles", async () => {
+    jest.spyOn(m3u, "parseM3U")
+      .mockRejectedValueOnce(new Error("write EPROTO D05DB5D3327F0000:error:0A00010B:SSL routines:tls_validate_record_header:wrong version number"))
+      .mockRejectedValueOnce(new Error("Request failed with status code 429"));
+    const tls = await request(app).get(`/${enc({ t: "m3u", m: "https://example.com/tls.m3u" })}/catalog/tv/iptv_live.json`);
+    expect(tls.body.metas[0]).toMatchObject({ id: "iptv_notice_https_mismatch", name: "⚠️ Use http:// not https://" });
+    const limited = await request(app).get(`/${enc({ t: "m3u", m: "http://example.com/limited.m3u" })}/catalog/tv/iptv_live.json`);
+    expect(limited.body.metas[0]).toMatchObject({ id: "iptv_notice_provider_limited", name: "⚠️ Provider is limiting requests" });
+    const meta = await request(app).get(`/${enc({ t: "m3u", m: "http://example.com/x.m3u" })}/meta/tv/iptv_notice_https_mismatch.json`);
+    expect(meta.body.meta.description).toMatch(/start with http:\/\//);
+  });
+
+  test("Test Connection explains the https/http mix-up and provider 429", async () => {
+    jest.spyOn(m3u, "parseM3UGroups")
+      .mockRejectedValueOnce(new Error("write EPROTO ...:SSL routines:tls_validate_record_header:wrong version number"))
+      .mockRejectedValueOnce(new Error("Request failed with status code 429"));
+    const a = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "https://example.com/test-tls.m3u" });
+    expect(a.body.error).toBe("Your server address should probably start with http:// instead of https://");
+    const b = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/test-429.m3u" });
+    expect(b.body.error).toBe("Your provider is limiting requests — try again in a few minutes");
+  });
+
+  test("unknown paths are listed with install links hidden", async () => {
+    await request(app).get("/e-0123456789abcdef0123456789abcdef0123456789/subtitles/movie/tt1.json");
+    const entry = (await stats()).recentUnknownPaths[0];
+    expect(entry).toMatchObject({ method: "GET", path: "/<config>/subtitles/movie/tt1.json" });
+    expect(JSON.stringify((await stats()).recentUnknownPaths)).not.toContain("0123456789abcdef");
+  });
+
+  test("empty stream results are listed with the reason", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="here",Here\nhttp://example.com/1.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/empty-streams.m3u" });
+    await request(app).get(`/${cfg}/stream/tv/iptv_tv_gone.json`);
+    await request(app).get(`/${cfg}/stream/movie/iptv_movie_1.json`);
+    const [movie, gone] = (await stats()).recentEmptyStreams;
+    expect(gone).toMatchObject({ source: "m3u", type: "tv", id: "iptv_tv_gone", reason: expect.stringMatching(/no longer in the user's playlist/) });
+    expect(movie).toMatchObject({ type: "movie", reason: expect.stringMatching(/only live TV/) });
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {

@@ -167,7 +167,15 @@ function saveStatsData() {
 // --- Per-day history (trends) + failures (provider problems) ---
 const HISTORY_DAYS = 90;
 const MAX_RECENT_ERRORS = 20;
-const recentErrors = []; // in memory only: newest first, no URLs/credentials
+// In memory only (reset on restart), newest first, never URLs/credentials:
+const recentErrors = [];        // provider failures
+const recentUnknownPaths = [];  // requests StreamVault answered 404 (paths masked)
+const recentEmptyStreams = [];  // stream requests that returned nothing, and why
+
+function noteRecent(list, entry) {
+  list.unshift({ at: new Date().toISOString(), ...entry });
+  if (list.length > MAX_RECENT_ERRORS) list.pop();
+}
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -215,6 +223,8 @@ function providerErrorKey(e) {
   const msg = String((e && e.message) || "");
   const status = (msg.match(/status code (\d{3})/) || [])[1];
   if (status) return status;
+  // https:// address on a server that only speaks plain http on that port
+  if (/EPROTO|wrong version number|SSL routines/i.test(msg)) return "https_mismatch";
   if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
   if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "timeout";
   return "other";
@@ -224,13 +234,7 @@ function providerErrorKey(e) {
 function recordError(where, config, e) {
   countToday(`${where}Errors`);
   countCode("providerErrors", `${where} (${(config && config.type) || "unknown"})`, providerErrorKey(e));
-  recentErrors.unshift({
-    at: new Date().toISOString(),
-    where,
-    source: config && config.type,
-    error: safeError(e),
-  });
-  if (recentErrors.length > MAX_RECENT_ERRORS) recentErrors.pop();
+  noteRecent(recentErrors, { where, source: config && config.type, error: safeError(e) });
 }
 
 // Saves write a temp file and rename it over stats.json. A rename is all-or-nothing,
@@ -333,6 +337,28 @@ async function withDownloadSlot(download) {
   }
 }
 
+// Negative cache: a provider that just failed (down, refusing, timing out) is not
+// asked again for FAIL_TTL — requests in that window fail at once with the same
+// error. Without it every catalog/channel page of a dead provider re-downloaded
+// (one day: 171× "521" from a single down server), each holding a download slot.
+const FAIL_TTL = 2 * 60 * 1000;
+const FAIL_CACHE_MAX = 500;
+const failCache = new Map(); // key -> { message, until }
+
+async function withFailureCache(key, load) {
+  const failed = failCache.get(key);
+  if (failed && failed.until > Date.now()) throw new Error(failed.message);
+  try {
+    const data = await load();
+    failCache.delete(key);
+    return data;
+  } catch (e) {
+    // Only the message is kept (the original error can hold request details)
+    setCapped(failCache, key, { message: (e && e.message) || "Unknown error", until: Date.now() + FAIL_TTL }, FAIL_CACHE_MAX);
+    throw e;
+  }
+}
+
 async function getCachedM3U(config) {
   const groups = config.groups || [];
   // Same playlist with a different group selection is a different (smaller) entry
@@ -341,11 +367,11 @@ async function getCachedM3U(config) {
   if (cached && Date.now() - cached.ts < M3U_CACHE_TTL) {
     return cached.data;
   }
-  return once(`m3u:${key}`, async () => {
+  return once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
     const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
     setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
-  });
+  }));
 }
 
 // Config "g" = JSON array of M3U group-titles the user picked (empty/invalid = all)
@@ -656,6 +682,13 @@ function accountProblem(info) {
   return null;
 }
 
+// Plain-language Test Connection errors for cases whose raw message means nothing
+// to users (keys from providerErrorKey)
+const TEST_ERROR_HINTS = {
+  https_mismatch: "Your server address should probably start with http:// instead of https://",
+  "429": "Your provider is limiting requests — try again in a few minutes",
+};
+
 // --- API: Test connection to provider ---
 app.post("/api/test", limitProviderChecks, async (req, res) => {
   try {
@@ -714,8 +747,9 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       res.status(400).json({ ok: false, error: "Unknown source type" });
     }
   } catch (e) {
-    countCode("providerErrors", `test (${req.body && req.body.type === "xtream" ? "xtream" : "m3u"})`, providerErrorKey(e));
-    res.json({ ok: false, error: safeError(e) });
+    const key = providerErrorKey(e);
+    countCode("providerErrors", `test (${req.body && req.body.type === "xtream" ? "xtream" : "m3u"})`, key);
+    res.json({ ok: false, error: TEST_ERROR_HINTS[key] || safeError(e) });
   }
 });
 
@@ -724,7 +758,10 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
  * Uses ui-avatars.com — a free service that generates text-based images.
  */
 function makePosterUrl(name) {
-  const text = encodeURIComponent(name.substring(0, 30));
+  // Cut by whole characters: substring(0, 30) could split an emoji in half, and
+  // encodeURIComponent then threw "URI malformed", failing the whole catalog page.
+  // toWellFormed() also repairs broken characters coming from a provider.
+  const text = encodeURIComponent(Array.from(String(name).toWellFormed()).slice(0, 30).join(""));
   return `https://ui-avatars.com/api/?name=${text}&size=300&background=1e1e3a&color=ffffff&font-size=0.28&bold=true&length=30`;
 }
 
@@ -737,7 +774,7 @@ function makePosterUrl(name) {
  */
 function squareLogo(logo, fallback) {
   if (!/^https?:\/\//i.test(logo || "")) return "";
-  return `https://wsrv.nl/?url=${encodeURIComponent(logo)}&w=256&h=256&fit=contain&cbg=transparent&output=png` +
+  return `https://wsrv.nl/?url=${encodeURIComponent(logo.toWellFormed())}&w=256&h=256&fit=contain&cbg=transparent&output=png` +
     `&default=${encodeURIComponent(fallback)}`;
 }
 
@@ -877,14 +914,18 @@ app.get("/stats", limitStats, (req, res) => {
       inflightDownloads: inflight.size,
       downloadsRunning: `${downloadsRunning}/${MAX_PARALLEL_DOWNLOADS}`,
       downloadsWaiting: downloadQueue.length,
+      // providers that failed in the last 2 min and are not being retried yet
+      failedProviders: [...failCache.values()].filter(f => f.until > Date.now()).length,
     },
     // Newest first; dau is live for recent days, frozen in the row for older ones
     history: Object.keys(stats.history).sort().reverse().map(date => {
       const live = stats.dailyActive[date];
       return { date, ...stats.history[date], dau: live ? live.size : (stats.history[date].dau || 0) };
     }),
-    // Since last restart: what failed and where (no URLs or credentials)
+    // Since last restart (newest first, max 20 each; no URLs or credentials)
     recentErrors,
+    recentUnknownPaths,
+    recentEmptyStreams,
   });
 });
 
@@ -968,6 +1009,14 @@ const NOTICES = {
     name: "Address doesn't work",
     description: "The server or playlist address in your setup can't be reached. Open Stremio's Addons page, click Configure on StreamVault and check the address.",
   },
+  https_mismatch: {
+    name: "Use http:// not https://",
+    description: "Your server address starts with https://, but your provider's server only works with http:// on that port. Open Stremio's Addons page, click Configure on StreamVault and change the address to start with http://.",
+  },
+  provider_limited: {
+    name: "Provider is limiting requests",
+    description: "Your IPTV provider is temporarily refusing requests because too many were made. Try again in a few minutes.",
+  },
   account: {
     name: "Account problem",
     description: "", // filled with the specific reason (expired, wrong login, ...)
@@ -983,7 +1032,9 @@ function classifyError(e) {
   const status = Number(key);
   if (status === 401 || status === 403) return "provider_refused";
   if (status === 404) return "not_found";
+  if (status === 429) return "provider_limited";
   if (status >= 500) return "provider_down";
+  if (key === "https_mismatch") return "https_mismatch";
   if (key === "bad_address") return "bad_address";
   if (key === "timeout") return "provider_down";
   return "unknown";
@@ -1066,7 +1117,17 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 
     stats.streams++;
     countToday("streams");
-    if (streams.length === 0) countToday("emptyStreams");
+    if (streams.length === 0) {
+      countToday("emptyStreams");
+      noteRecent(recentEmptyStreams, {
+        source: config.type,
+        type,
+        id: id.slice(0, 80),
+        reason: type !== "tv"
+          ? `"${type}" requested, but only live TV is supported (old movie/series item)`
+          : "channel is no longer in the user's playlist / category selection",
+      });
+    }
     if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
     res.json({ streams });
   } catch (e) {
@@ -1106,7 +1167,8 @@ async function getXtreamCatalog(config, type) {
   if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) {
     return cached.data;
   }
-  return once(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey));
+  return once(`xtream:${cacheKey}`, () =>
+    withFailureCache(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey)));
 }
 
 async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
@@ -1246,7 +1308,7 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
 
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
   const tvName = channelName || `Channel ${streamId}`;
-  const safeName = encodeURIComponent(tvName);
+  const safeName = encodeURIComponent(tvName.toWellFormed());
   // Route through /play redirect so VLC shows channel name (last path segment)
   const useRedirect = baseUrl && configPath;
   const tsUrl = useRedirect
@@ -1366,10 +1428,23 @@ function parseExtra(extraStr) {
   const cleaned = extraStr.replace(/\.json$/, "");
   const params = {};
   cleaned.split("&").forEach((pair) => {
-    const [key, val] = pair.split("=");
-    if (key) params[decodeURIComponent(key)] = decodeURIComponent(val || "");
+    const idx = pair.indexOf("=");
+    const key = idx === -1 ? pair : pair.slice(0, idx);
+    const val = idx === -1 ? "" : pair.slice(idx + 1);
+    if (key) params[safeDecode(key)] = safeDecode(val);
   });
   return params;
+}
+
+// A "%" that isn't valid URL encoding (e.g. a category named "100% Sport" sent
+// unencoded) made decodeURIComponent throw "URI malformed" and broke the catalog.
+// Keep the raw text instead.
+function safeDecode(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch (_) {
+    return s;
+  }
 }
 
 // --- Fallback: people opening the site in a browser land on the configure page ---
@@ -1380,8 +1455,16 @@ app.use((req, res) => {
   if (req.method === "GET" && !isApiCall) {
     return res.redirect(302, "/configure");
   }
+  noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path) });
   res.status(404).json({ error: "Not found" });
 });
+
+// Path for logs/stats with install links hidden: any segment that is a user's
+// config ("e-<hex>", base64 "ey...") or just very long becomes "<config>"
+function maskPath(p) {
+  return p.split("/").map(seg => (/^(e-|ey)/.test(seg) || seg.length > 40 ? "<config>" : seg))
+    .join("/").slice(0, 150);
+}
 
 // --- Start server ---
 if (require.main === module) {
