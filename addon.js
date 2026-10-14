@@ -130,6 +130,7 @@ try {
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.history) stats.history = {};
+  for (const row of Object.values(stats.history)) normalizeErrorMaps(row);
   // Restore daily active Sets
   for (const day of Object.keys(stats.dailyActive)) {
     stats.dailyActive[day] = new Set(stats.dailyActive[day]);
@@ -185,14 +186,18 @@ function dayRow() {
       responseErrors: {},
     };
   }
-  const row = stats.history[day];
-  // Rows saved before errors were split by endpoint hold flat { "503": 2 } counts
+  return stats.history[day];
+}
+
+// Rows saved before errors were split by endpoint hold flat { "503": 2 } counts;
+// keep those under one label so every row has the { where: { code: n } } shape.
+// Runs on every row when stats.json loads (function declaration → hoisted).
+function normalizeErrorMaps(row) {
   for (const name of ["providerErrors", "responseErrors"]) {
     const map = row[name];
     if (!map) row[name] = {};
     else if (Object.values(map).some(v => typeof v === "number")) row[name] = { "(before endpoint tracking)": map };
   }
-  return row;
 }
 
 function countToday(field) {
@@ -245,9 +250,15 @@ let saving = false;
 
 function saveStats() {
   if (saving) return; // previous save still running — the next interval saves again
+  let data;
+  try {
+    data = JSON.stringify(saveStatsData(), null, 2);
+  } catch (_) {
+    return; // nothing started, so the flag is never left stuck on
+  }
   saving = true;
   const tmp = `${STATS_FILE}.tmp`;
-  fs.promises.writeFile(tmp, JSON.stringify(saveStatsData(), null, 2))
+  fs.promises.writeFile(tmp, data)
     .then(() => fs.promises.rename(tmp, STATS_FILE))
     .catch(() => {})
     .finally(() => { saving = false; });

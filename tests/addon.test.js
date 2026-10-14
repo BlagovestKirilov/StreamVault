@@ -697,6 +697,19 @@ describe("stats file saving", () => {
     expect(r.stdout.trim().split("\n").pop()).toBe("42");
   });
 
+  test("older days saved with flat error counts are converted on load", () => {
+    const dir = tmpDir();
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
+      users: [], history: { [yesterday]: { launches: 3, providerErrors: { "503": 2 }, responseErrors: { "429": 1 } } },
+    }));
+    const r = run(dir, "const { app } = require('./addon'); require('supertest')(app).get('/stats').then(x => { console.log(JSON.stringify(x.body.history.find(h => h.date === '" + yesterday + "'))); process.exit(0); });");
+    const row = JSON.parse(r.stdout.trim().split("\n").pop());
+    expect(row.providerErrors).toEqual({ "(before endpoint tracking)": { "503": 2 } });
+    expect(row.responseErrors).toEqual({ "(before endpoint tracking)": { "429": 1 } });
+    expect(row.launches).toBe(3);
+  });
+
   test("overlapping saves are skipped, and the async save is atomic", () => {
     const dir = tmpDir();
     const r = run(dir, `
