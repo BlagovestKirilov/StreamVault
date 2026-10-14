@@ -73,4 +73,5 @@ Three formats for the `:config` segment (`parseConfigPath`): **encrypted** `e-<h
 
 - Fly.io (`fly.toml`): 1 shared CPU, 1 GB RAM, AMS region, persistent `/data` volume for `stats.json`.
 - GitHub Actions (`.github/workflows/fly-deploy.yml`): tests (Node 24) then deploys on every push to `master` — **pushing is deploying**, no manual `fly deploy` needed.
+- **Never `git push` unless the owner explicitly says to push in that request.** Commit locally, report what changed, and wait. An earlier "push it" covers only that change.
 - Docker: `node:24-alpine`, `npm ci --omit=dev`.
