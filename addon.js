@@ -716,6 +716,11 @@ function channelPoster(logo, name) {
   return squareLogo(logo, nameTile) || nameTile;
 }
 
+// Cached Xtream channel { id, type, name, logo, genres? } → what Stremio gets
+function xtreamCatalogMeta({ logo, ...item }) {
+  return { ...item, poster: channelPoster(logo, item.name), posterShape: "square" };
+}
+
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
@@ -896,6 +901,8 @@ async function catalogHandler(req, res) {
 
     // Paginate
     metas = metas.slice(skip, skip + PAGE_SIZE);
+    // Cached Xtream entries hold the raw logo; build posters for this page only
+    if (config.type === "xtream") metas = metas.map(xtreamCatalogMeta);
 
     res.json({ metas });
   } catch (e) {
@@ -1091,12 +1098,13 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     const name = item.name || item.title || "Unknown";
     const logo = item.stream_icon || item.cover || "";
     const category = categoryNames.get(String(item.category_id));
+    // Cached as the raw logo; the (much longer) poster link is built only for the
+    // channels actually sent — see xtreamPoster() — so the cache stays small
     const meta = {
       id: `iptv_${type}_${item.stream_id}`,
       type: type,
       name: name,
-      poster: channelPoster(logo, name),
-      posterShape: "square",
+      logo,
     };
     if (category) meta.genres = [category];
     return meta;
@@ -1157,7 +1165,7 @@ async function getXtreamMeta(config, type, id) {
   const item = catalog.find(m => m.id === id);
 
   const name = item ? item.name : `Stream ${streamId}`;
-  const poster = item ? item.poster : makePosterUrl(name);
+  const poster = item ? channelPoster(item.logo, item.name) : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
   // Subscription expiry (cached; fetched alongside the EPG)

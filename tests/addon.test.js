@@ -759,6 +759,30 @@ http://example.com/b.m3u8`));
     const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_a.json`)).body.meta;
     expect(meta.poster).toBe(metas[0].poster);
   });
+
+  test("Xtream: same posters for Stremio, raw logo only kept internally", async () => {
+    const xtream = require("../xtream");
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: 1, category_name: "Sport" }]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
+      { stream_id: 7, name: "Diema Sport", stream_icon: "http://cdn.example.com/diema.png", category_id: 1 },
+      { stream_id: 8, name: "No Icon", category_id: 1 },
+    ]);
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const cfg = enc({ t: "xtream", s: "http://example.com", u: "poster-user", p: "p" });
+
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas[0]).toEqual({
+      id: "iptv_tv_7", type: "tv", name: "Diema Sport", genres: ["Sport"], posterShape: "square",
+      poster: expect.stringMatching(/^https:\/\/wsrv\.nl\/\?url=http%3A%2F%2Fcdn\.example\.com%2Fdiema\.png&/),
+    });
+    expect(metas[0]).not.toHaveProperty("logo");
+    expect(metas[1].poster).toMatch(/^https:\/\/ui-avatars\.com\//);
+
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_7.json`)).body.meta;
+    expect(meta.poster).toBe(metas[0].poster);
+    expect(meta).not.toHaveProperty("logo");
+  });
 });
 
 // ─── Browser fallback ───
