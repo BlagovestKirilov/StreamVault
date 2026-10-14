@@ -130,7 +130,6 @@ try {
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.history) stats.history = {};
-  for (const row of Object.values(stats.history)) normalizeErrorMaps(row);
   // Restore daily active Sets
   for (const day of Object.keys(stats.dailyActive)) {
     stats.dailyActive[day] = new Set(stats.dailyActive[day]);
@@ -189,17 +188,6 @@ function dayRow() {
   return stats.history[day];
 }
 
-// Rows saved before errors were split by endpoint hold flat { "503": 2 } counts
-// (only a few minutes on 2026-10-14) — drop those so every row has the
-// { where: { code: n } } shape. Runs on every row when stats.json loads
-// (function declaration → hoisted). Can be removed once that deploy has run.
-function normalizeErrorMaps(row) {
-  for (const name of ["providerErrors", "responseErrors"]) {
-    const map = row[name];
-    if (!map || Object.values(map).some(v => typeof v === "number")) row[name] = {};
-    else delete map["(before endpoint tracking)"];
-  }
-}
 
 function countToday(field) {
   const row = dayRow();
@@ -214,7 +202,8 @@ function boundedKey(obj, key) {
   return obj[key] !== undefined || Object.keys(obj).length < MAX_KEYS_PER_LEVEL ? key : "other";
 }
 function countCode(mapName, where, code) {
-  const map = dayRow()[mapName];
+  const row = dayRow();
+  const map = row[mapName] || (row[mapName] = {}); // rows from before error tracking have none
   const w = boundedKey(map, where);
   const codes = map[w] || (map[w] = {});
   const c = boundedKey(codes, code);

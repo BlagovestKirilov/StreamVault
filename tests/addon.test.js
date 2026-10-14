@@ -696,31 +696,15 @@ describe("stats file saving", () => {
     expect(r.stdout.trim().split("\n").pop()).toBe("42");
   });
 
-  test("error counts saved before endpoint tracking are dropped on load", () => {
+  test("today's row saved without error maps still counts errors", () => {
     const dir = tmpDir();
-    const day1 = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
-    const day2 = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
-      users: [], history: {
-        // flat counts (saved before the per-endpoint split)
-        [day1]: { launches: 3, providerErrors: { "503": 2 }, responseErrors: { "429": 1 } },
-        // already wrapped under the old label, plus real per-endpoint counts
-        [day2]: {
-          launches: 5,
-          providerErrors: { "(before endpoint tracking)": { "403": 8 }, "catalog (m3u)": { "503": 1 } },
-          responseErrors: { "(before endpoint tracking)": { "404": 53 }, "unknown path": { "404": 2 } },
-        },
-      },
-    }));
-    const r = run(dir, "const { app } = require('./addon'); require('supertest')(app).get('/stats').then(x => { console.log(JSON.stringify(x.body.history)); process.exit(0); });");
-    const rows = JSON.parse(r.stdout.trim().split("\n").pop());
-    const row1 = rows.find(h => h.date === day1);
-    const row2 = rows.find(h => h.date === day2);
-    expect(row1.providerErrors).toEqual({});
-    expect(row1.responseErrors).toEqual({});
-    expect(row1.launches).toBe(3);
-    expect(row2.providerErrors).toEqual({ "catalog (m3u)": { "503": 1 } });
-    expect(row2.responseErrors).toEqual({ "unknown path": { "404": 2 } });
+    const today = new Date().toISOString().slice(0, 10);
+    // a row from before error-code tracking existed: no providerErrors/responseErrors
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({ users: [], history: { [today]: { launches: 4 } } }));
+    const r = run(dir, "const r = require('supertest'); const { app } = require('./addon'); r(app).get('/api/nope').then(() => r(app).get('/stats')).then(x => { console.log(JSON.stringify(x.body.history[0])); process.exit(0); });");
+    const row = JSON.parse(r.stdout.trim().split("\n").pop());
+    expect(row.launches).toBe(4);
+    expect(row.responseErrors).toEqual({ "unknown path": { "404": 1 } });
   });
 
   test("overlapping saves are skipped, and the async save is atomic", () => {
