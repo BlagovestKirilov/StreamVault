@@ -697,6 +697,25 @@ function makePosterUrl(name) {
   return `https://ui-avatars.com/api/?name=${text}&size=300&background=1e1e3a&color=ffffff&font-size=0.28&bold=true&length=30`;
 }
 
+/**
+ * Channel logo as a square image with the whole logo visible.
+ * Stremio fills square tiles by cropping, which cuts off most wide TV logos, so
+ * wsrv.nl (a free image service) fits the logo into a 256×256 transparent square.
+ * It also serves http logos over https. The server does no image work itself.
+ * `fallback` is shown instead when the provider's logo link is dead.
+ */
+function squareLogo(logo, fallback) {
+  if (!/^https?:\/\//i.test(logo || "")) return "";
+  return `https://wsrv.nl/?url=${encodeURIComponent(logo)}&w=256&h=256&fit=contain&cbg=transparent&output=png` +
+    `&default=${encodeURIComponent(fallback)}`;
+}
+
+// Poster for a channel: its logo fitted into a square, or a generated name tile
+function channelPoster(logo, name) {
+  const nameTile = makePosterUrl(name);
+  return squareLogo(logo, nameTile) || nameTile;
+}
+
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
@@ -1076,7 +1095,7 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
       id: `iptv_${type}_${item.stream_id}`,
       type: type,
       name: name,
-      poster: logo || makePosterUrl(name),
+      poster: channelPoster(logo, name),
       posterShape: "square",
     };
     if (category) meta.genres = [category];
@@ -1227,7 +1246,7 @@ async function getM3UCatalog(config, type) {
       id: `iptv_tv_${ch.id}`,
       type: "tv",
       name: ch.name,
-      poster: ch.logo || makePosterUrl(ch.name),
+      poster: channelPoster(ch.logo, ch.name),
       posterShape: "square",
       genres: [ch.group],
     };
@@ -1248,7 +1267,7 @@ async function getM3UMeta(config, type, id) {
     id,
     type,
     name: channel.name,
-    poster: channel.logo || makePosterUrl(channel.name),
+    poster: channelPoster(channel.logo, channel.name),
     posterShape: "square",
     genres: [channel.group],
     description: `Group: ${channel.group}`,

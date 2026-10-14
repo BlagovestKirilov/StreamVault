@@ -729,6 +729,38 @@ describe("stats file saving", () => {
   });
 });
 
+// ─── Channel posters ───
+
+describe("channel posters", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("logos are fitted into a square (whole logo visible); no logo → name tile", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 tvg-id="a" tvg-logo="http://cdn.example.com/logos/a wide.png",With Logo
+http://example.com/a.m3u8
+#EXTINF:-1 tvg-id="b",No Logo
+http://example.com/b.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/posters.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+
+    const poster = new URL(metas[0].poster);
+    expect(poster.origin).toBe("https://wsrv.nl");
+    expect(poster.searchParams.get("url")).toBe("http://cdn.example.com/logos/a wide.png");
+    expect(poster.searchParams.get("fit")).toBe("contain");
+    expect(poster.searchParams.get("w")).toBe("256");
+    expect(poster.searchParams.get("h")).toBe("256");
+    // dead logo link → the generated name tile instead of a broken image
+    expect(poster.searchParams.get("default")).toMatch(/^https:\/\/ui-avatars\.com\/api\/\?name=With%20Logo/);
+
+    expect(metas[1].poster).toMatch(/^https:\/\/ui-avatars\.com\//);
+
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_a.json`)).body.meta;
+    expect(meta.poster).toBe(metas[0].poster);
+  });
+});
+
 // ─── Browser fallback ───
 
 describe("unknown pages", () => {
