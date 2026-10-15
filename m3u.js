@@ -50,12 +50,18 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
   let pendingMeta = null;
   let pendingHeaders = null;
   let channelIndex = 0;
+  // What the file looked like — lets "no live channels" say why (only movies/
+  // series, a web page instead of a playlist, or not an M3U at all)
+  const shape = { lines: 0, extinf: 0, vod: 0, bareUrls: 0, html: false };
 
   function addLine(raw) {
     const line = raw.trim();
     if (!line) return;
+    shape.lines++;
+    if (shape.lines <= 20 && /^<(!doctype|html|head|body)/i.test(line)) shape.html = true;
 
     if (line.startsWith("#EXTINF:")) {
+      shape.extinf++;
       pendingMeta = parseExtInf(line);
       return;
     }
@@ -67,7 +73,8 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
       pendingHeaders = parseExtHttp(line, pendingHeaders);
       return;
     }
-    if (line.startsWith("#") || !pendingMeta) return;
+    if (line.startsWith("#")) return;
+    if (!pendingMeta) { shape.bareUrls++; return; }
 
     // URL line following an EXTINF
     const { url, headers: pipeHeaders } = splitPipeHeaders(line);
@@ -79,7 +86,7 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
     // Live filter already ran, so label it "tv" directly. Do NOT use guessType
     // here: it factors in group-title, which would misclassify genuine live
     // channels in groups named e.g. "Movies" and drop them from the catalog.
-    if (liveOnly && !isLiveUrl(url)) return;
+    if (liveOnly && !isLiveUrl(url)) { shape.vod++; return; }
 
     const group = meta.groupTitle || "Uncategorized";
     if (countOnly) {
@@ -112,7 +119,7 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
     categories[channel.group].push(channel);
   }
 
-  return { addLine, channels, categories, groupCounts };
+  return { addLine, channels, categories, groupCounts, shape };
 }
 
 // Cap on distinct groups reported by parseM3UGroups (the picker stays usable)
@@ -152,7 +159,11 @@ async function parseM3UGroups(url) {
     const parser = createLineParser({ liveOnly: true, countOnly: true });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
     rl.on("line", parser.addLine);
-    rl.on("close", () => resolve([...parser.groupCounts].map(([name, count]) => ({ name, count }))));
+    rl.on("close", () => {
+      const groups = [...parser.groupCounts].map(([name, count]) => ({ name, count }));
+      groups.shape = parser.shape; // extra info for the "no live channels" message
+      resolve(groups);
+    });
     rl.on("error", reject);
     stream.on("error", reject);
   });

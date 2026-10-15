@@ -93,7 +93,7 @@ app.get("/health", (req, res) => {
 });
 
 // --- Client IP + per-IP limits (see ratelimit.js) ---
-const { getIp, rateLimit } = require("./ratelimit");
+const { getIp, maskIp, rateLimit } = require("./ratelimit");
 const MINUTE = 60 * 1000;
 const limitProviderChecks = rateLimit("provider-check", 10, MINUTE); // each downloads from the provider
 const limitConfig = rateLimit("config", 30, MINUTE);
@@ -191,6 +191,7 @@ const recentUnknownPaths = [];  // requests StreamVault answered 404 (paths mask
 const recentEmptyStreams = [];  // stream requests that returned nothing, and why
 const recentUnconfigured = [];  // requests from installs without settings (+ which app)
 const recentPlayRejects = [];   // /play redirects refused, and which check failed
+const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
 function userAgent(req) {
@@ -591,22 +592,50 @@ function parseConfigPath(configStr) {
 }
 
 // --- Middleware: extract config from URL path ---
+// Users often paste their provider's full link into "Server address", e.g.
+// "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
+// Xtream needs just the server (scheme + host + port): take that, and fill an
+// empty username/password from the link. Anything else is left unchanged.
+function normalizeXtreamLogin(server, username, password) {
+  const out = {
+    server: String(server || "").trim(),
+    username: String(username || "").trim(),
+    password: String(password || "").trim(),
+  };
+  try {
+    const u = new URL(out.server);
+    const isFullLink = /\/(get|player_api|xmltv|panel_api)\.php$/i.test(u.pathname) || u.searchParams.has("username");
+    if (isFullLink) {
+      if (!out.username) out.username = u.searchParams.get("username") || "";
+      if (!out.password) out.password = u.searchParams.get("password") || "";
+      out.server = u.origin;
+    }
+  } catch (_) { /* not a URL — validation reports it */ }
+  return out;
+}
+
 function extractConfig(req, res, next) {
+  // Refused install links are listed in /stats (recentBadLinks; /play has its own list)
+  const refuse = (reason, error) => {
+    res.locals.rejectReason = reason;
+    if (!req.path.startsWith("/play/")) {
+      noteRecent(recentBadLinks, { route: req.route ? req.route.path : maskPath(req.path), reason, userAgent: userAgent(req) });
+    }
+    res.status(400).json({ error });
+  };
   try {
     const config = parseConfigPath(req.params.config);
+    if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
-      res.locals.rejectReason = "install link has no Xtream server/login";
-      return res.status(400).json({ error: "Missing Xtream credentials." });
+      return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
     }
     if (config.type === "m3u" && !config.url) {
-      res.locals.rejectReason = "install link has no playlist URL (not a valid StreamVault link)";
-      return res.status(400).json({ error: "Missing M3U URL." });
+      return refuse("install link has no playlist URL (not a valid StreamVault link)", "Missing M3U URL.");
     }
     req.userConfig = config;
     next();
   } catch (e) {
-    res.locals.rejectReason = "install link can't be read";
-    res.status(400).json({ error: "Invalid configuration." });
+    refuse("install link can't be read", "Invalid configuration.");
   }
 }
 
@@ -626,7 +655,7 @@ function serveConfigure(req, res) {
     countToday("configures");
     setCapped(lastConfigureAt, ip, now, 10000);
   }
-  console.log(`[CONFIGURE] ${req.method} ${ip} opened configure page${counted ? "" : " (repeat, not counted)"}`);
+  console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 }
 app.get("/configure", serveConfigure);
@@ -635,7 +664,7 @@ app.get("/:config/configure", serveConfigure);
 // --- API: Fetch categories from provider ---
 app.post("/api/categories", limitProviderChecks, async (req, res) => {
   try {
-    const { server, username, password } = req.body;
+    const { server, username, password } = normalizeXtreamLogin(req.body.server, req.body.username, req.body.password);
     if (!server || !username || !password) {
       return res.status(400).json({ error: "Missing credentials" });
     }
@@ -747,11 +776,31 @@ const TEST_ERROR_HINTS = {
   "429": "Your provider is limiting requests — try again in a few minutes",
 };
 
+// A playlist link that works but has no live TV: say which of the usual causes
+// it is (from what the parser saw), so users know what to fix
+function whyNoLiveChannels(shape) {
+  const s = shape || {};
+  if (s.html) {
+    return { kind: "no_channels_web_page", message: "This link returned a web page, not a playlist — check the link (it may have expired or need a login)" };
+  }
+  if (s.vod > 0) {
+    return { kind: "no_channels_vod_only", message: `This playlist only has movies/series (${s.vod}) — StreamVault shows live TV channels only` };
+  }
+  if (s.lines === 0) {
+    return { kind: "no_channels_empty", message: "This playlist is empty — check the link with your provider" };
+  }
+  if (s.extinf === 0) {
+    return { kind: "no_channels_not_m3u", message: "This link doesn't look like an M3U playlist — check that you copied the playlist link" };
+  }
+  return { kind: "no_channels", message: "No live channels found in this playlist" };
+}
+
 // --- API: Test connection to provider ---
 app.post("/api/test", limitProviderChecks, async (req, res) => {
   try {
-    const { type, server, username, password, m3uUrl } = req.body;
+    const { type, m3uUrl } = req.body;
     if (type === "xtream") {
+      const { server, username, password } = normalizeXtreamLogin(req.body.server, req.body.username, req.body.password);
       if (!server || !username || !password) {
         return res.status(400).json({ ok: false, error: "Missing credentials" });
       }
@@ -797,8 +846,9 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
       const total = groups.reduce((sum, g) => sum + g.count, 0);
       if (total === 0) {
-        countCode("providerErrors", "test (m3u)", "no_channels");
-        return res.json({ ok: false, error: "No live channels found in this playlist" });
+        const { kind, message } = whyNoLiveChannels(groups.shape);
+        countCode("providerErrors", "test (m3u)", kind);
+        return res.json({ ok: false, error: message });
       }
       res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
     } else {
@@ -873,7 +923,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   const today = new Date().toISOString().slice(0, 10);
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(ip);
-  console.log(`[INSTALL] ${ip} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
+  console.log(`[INSTALL] ${maskIp(ip)} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
   const genres = await getGenresWithin(req.userConfig, req.params.config, GENRES_TIMEOUT_MS);
   res.json(configuredManifest(genres));
 });
@@ -986,6 +1036,7 @@ app.get("/stats", limitStats, (req, res) => {
     recentEmptyStreams,
     recentUnconfigured,
     recentPlayRejects,
+    recentBadLinks,
   });
 });
 

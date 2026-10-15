@@ -838,6 +838,26 @@
       hint.style.display = hint.textContent ? 'block' : 'none';
     }
 
+    // Pasted the provider's full link (".../get.php?username=..&password=..") into
+    // the server field? Keep just the server and fill username/password from it.
+    function splitXtreamLink() {
+      const serverEl = document.getElementById('server');
+      let u;
+      try { u = new URL(serverEl.value.trim()); } catch (e) { return; }
+      const isFullLink = /\/(get|player_api|xmltv|panel_api)\.php$/i.test(u.pathname) || u.searchParams.has('username');
+      if (!isFullLink) return;
+      const userEl = document.getElementById('username');
+      const passEl = document.getElementById('password');
+      if (!userEl.value.trim() && u.searchParams.get('username')) userEl.value = u.searchParams.get('username');
+      if (!passEl.value.trim() && u.searchParams.get('password')) passEl.value = u.searchParams.get('password');
+      serverEl.value = u.origin;
+      showToast('Filled in server, username and password from your link', true);
+    }
+    // On paste (value is updated right after the event) and when leaving the field,
+    // not on every keystroke — a link typed by hand would be split halfway through
+    document.getElementById('server').addEventListener('paste', () => setTimeout(() => { splitXtreamLink(); updateButtons(); }, 0));
+    document.getElementById('server').addEventListener('change', splitXtreamLink);
+
     // 'change' too: browser/password-manager autofill doesn't always fire 'input'
     ['server', 'username', 'password', 'm3uUrl'].forEach(id => {
       const el = document.getElementById(id);

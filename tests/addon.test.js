@@ -978,6 +978,91 @@ http://example.com/fox.m3u8`));
   }, 60000);
 });
 
+// ─── Privacy + setup help (2026-10-16) ───
+
+describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const { maskIp } = require("../ratelimit");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const stats = async () => (await request(app).get("/stats")).body;
+  afterEach(() => jest.restoreAllMocks());
+
+  test("IPs are masked in log lines", async () => {
+    expect(maskIp("203.0.113.45")).toBe("203.0.113.x");
+    expect(maskIp("::ffff:198.51.100.7")).toBe("198.51.100.x");
+    expect(maskIp("2a00:4804:d000:33d:58c5:cf7a:67b9:7037")).toBe("2a00:4804:d000:33d:x");
+    const log = jest.spyOn(console, "log").mockImplementation(() => {});
+    await request(app).get("/configure").set("Fly-Client-IP", "203.0.113.77");
+    await request(app).get(`/${enc({ t: "m3u", m: "http://example.com/mask.m3u" })}/manifest.json`).set("Fly-Client-IP", "203.0.113.78");
+    const lines = log.mock.calls.map(c => String(c[0])).filter(l => /^\[(CONFIGURE|INSTALL)\]/.test(l));
+    expect(lines.join("\n")).toContain("203.0.113.x");
+    expect(lines.join("\n")).not.toMatch(/203\.0\.113\.7[78]/);
+  });
+
+  test("a full Xtream link pasted as the server is split into server + login", async () => {
+    const cats = jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: 1, category_name: "Sport" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const res = await request(app).post("/api/test").send({
+      type: "xtream", server: "http://example.com:8080/get.php?username=abc&password=123&type=m3u_plus&output=ts", username: "", password: "",
+    });
+    expect(res.body.ok).toBe(true);
+    expect(cats).toHaveBeenCalledWith(expect.objectContaining({ server: "http://example.com:8080", username: "abc", password: "123" }));
+  });
+
+  test("an installed link with a full Xtream link as server still loads channels", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    const streams = jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    const cfg = enc({ t: "xtream", s: "http://example.com:8080/player_api.php?username=u1&password=p1", u: "", p: "" });
+    const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["One"]);
+    expect(streams).toHaveBeenCalledWith(expect.objectContaining({ server: "http://example.com:8080", username: "u1", password: "p1" }));
+  });
+
+  test("the parser records what a playlist looked like", () => {
+    const shapeOf = (content) => {
+      const { Readable } = require("stream");
+      const axios = require("axios");
+      const urlguard = require("../urlguard");
+      jest.spyOn(urlguard, "assertExternalUrl").mockResolvedValue();
+      jest.spyOn(axios, "get").mockResolvedValue({ data: Readable.from([content]) });
+      return m3u.parseM3UGroups("http://example.com/x.m3u").then(g => { jest.restoreAllMocks(); return g.shape; });
+    };
+    return (async () => {
+      const html = await shapeOf("<!DOCTYPE html>\n<html><body>Login</body></html>");
+      const vod = await shapeOf("#EXTM3U\n#EXTINF:-1,Film\nhttp://example.com/movie/1.mp4\n#EXTINF:-1,Show\nhttp://example.com/series/2.mkv");
+      const bare = await shapeOf("http://example.com/a.ts\nhttp://example.com/b.ts");
+      expect(html.html).toBe(true);
+      expect(vod).toMatchObject({ vod: 2, extinf: 2 });
+      expect(bare).toMatchObject({ extinf: 0, bareUrls: 2 });
+    })();
+  });
+
+  test.each([
+    [{ html: true, lines: 3 }, /web page, not a playlist/, "no_channels_web_page"],
+    [{ vod: 120, extinf: 120, lines: 241 }, /only has movies\/series \(120\)/, "no_channels_vod_only"],
+    [{ lines: 0 }, /empty/, "no_channels_empty"],
+    [{ lines: 2, extinf: 0, bareUrls: 2 }, /doesn't look like an M3U/, "no_channels_not_m3u"],
+  ])("Test Connection explains a playlist without live TV (%j)", async (shape, message, kind) => {
+    const groups = [];
+    groups.shape = shape;
+    jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue(groups);
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: `http://example.com/no-live-${kind}.m3u` });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(message);
+    const row = (await stats()).history.find(h => h.date === today);
+    expect(row.providerErrors["test (m3u)"][kind]).toBeGreaterThanOrEqual(1);
+  });
+
+  test("refused install links are listed with the reason", async () => {
+    await request(app).get("/garbage/manifest.json").set("User-Agent", "OldStremio/0.1");
+    expect((await stats()).recentBadLinks[0]).toMatchObject({
+      route: "/:config/manifest.json", reason: expect.stringMatching(/install link/), userAgent: "OldStremio/0.1",
+    });
+  });
+});
+
 // ─── /play diagnostics ───
 
 describe("/play refusals are recorded with the reason", () => {

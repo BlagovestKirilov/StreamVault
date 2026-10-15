@@ -15,6 +15,16 @@ function getIp(req) {
   return (req.socket && req.socket.remoteAddress) || "unknown";
 }
 
+// IP for log lines: personal data, so only the network part is kept
+// (203.0.113.45 → 203.0.113.x, 2a00:4804:d000:33d:58c5:… → 2a00:4804:d000:33d:x).
+// Counting/limits still use the full IP in memory; it just isn't written to logs.
+function maskIp(ip) {
+  const s = String(ip || "").replace(/^::ffff:/i, "");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return s.replace(/\.\d{1,3}$/, ".x");
+  if (s.includes(":")) return `${s.split(":").slice(0, 4).join(":")}:x`;
+  return "unknown";
+}
+
 // Requests from this machine itself (local dev, tests, health probes) are never
 // limited; production traffic always arrives through Fly's proxy with a client IP.
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -54,4 +64,4 @@ function rateLimit(name, max, windowMs) {
   };
 }
 
-module.exports = { getIp, rateLimit };
+module.exports = { getIp, maskIp, rateLimit };
