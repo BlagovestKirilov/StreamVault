@@ -855,15 +855,26 @@ http://example.com/2.m3u8`));
     expect(parseExtra("search=a=b.json")).toEqual({ search: "a=b" });
   });
 
-  test("a failed provider isn't asked again for 2 minutes (negative cache)", async () => {
+  test("a failed provider isn't asked again for 2 minutes, and repeats count once (negative cache)", async () => {
     const spy = jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("Request failed with status code 521"));
     const cfg = enc({ t: "m3u", m: "http://example.com/dead-provider.m3u" });
+    const today = () => new Date().toISOString().slice(0, 10);
+    const before = (await stats()).history.find(h => h.date === today()) || {};
+    const errLog = jest.spyOn(console, "error").mockImplementation(() => {});
+
     for (let i = 0; i < 5; i++) {
       const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
       expect(res.body.metas[0].id).toBe("iptv_notice_provider_down"); // users still see why
     }
     expect(spy).toHaveBeenCalledTimes(1);
-    expect((await stats()).caches.failedProviders).toBeGreaterThanOrEqual(1);
+
+    const s = await stats();
+    const after = s.history.find(h => h.date === today());
+    expect(s.caches.failedProviders).toBeGreaterThanOrEqual(1);
+    // one real provider failure (logged + counted), four answered from memory
+    expect(after.catalogErrors - (before.catalogErrors || 0)).toBe(1);
+    expect(after.cachedFailures - (before.cachedFailures || 0)).toBe(4);
+    expect(errLog.mock.calls.filter(c => String(c[0]).startsWith("Catalog error")).length).toBe(1);
   });
 
   test("https/http mix-up and provider 429 get their own tiles", async () => {

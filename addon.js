@@ -372,16 +372,38 @@ const failCache = new Map(); // key -> { message, until }
 
 async function withFailureCache(key, load) {
   const failed = failCache.get(key);
-  if (failed && failed.until > Date.now()) throw new Error(failed.message);
+  if (failed && failed.until > Date.now()) {
+    // Answered from memory: the provider was NOT contacted. Marked so handlers
+    // don't log/count it as another provider failure (one app opening 57
+    // channel pages of a dead provider used to log 57 errors).
+    failed.repeats++;
+    const err = new Error(failed.message);
+    err.fromFailureCache = true;
+    throw err;
+  }
+  if (failed && failed.repeats > 0) {
+    console.log(`[FAILCACHE] ${failed.repeats} more request(s) were answered from cache after: ${safeError(failed)}`);
+  }
   try {
     const data = await load();
     failCache.delete(key);
     return data;
   } catch (e) {
     // Only the message is kept (the original error can hold request details)
-    setCapped(failCache, key, { message: (e && e.message) || "Unknown error", until: Date.now() + FAIL_TTL }, FAIL_CACHE_MAX);
+    setCapped(failCache, key, { message: (e && e.message) || "Unknown error", until: Date.now() + FAIL_TTL, repeats: 0 }, FAIL_CACHE_MAX);
     throw e;
   }
+}
+
+// Catalog/meta/stream handlers: log + count a real provider failure, or just
+// count a repeat that was answered from the failure cache
+function handleProviderError(where, req, e) {
+  if (e && e.fromFailureCache) {
+    countToday("cachedFailures");
+    return;
+  }
+  console.error(`${where[0].toUpperCase()}${where.slice(1)} error:`, e.message);
+  recordError(where, req.userConfig, e);
 }
 
 async function getCachedM3U(config) {
@@ -1041,8 +1063,7 @@ async function catalogHandler(req, res) {
 
     res.json({ metas });
   } catch (e) {
-    console.error("Catalog error:", e.message);
-    recordError("catalog", req.userConfig, e);
+    handleProviderError("catalog", req, e);
     // Instead of an empty catalog, show one tile explaining what went wrong
     // (first page only, so scrolling doesn't repeat it)
     const firstPage = !/(^|&)skip=[1-9]/.test(req.path.split("/").pop() || "");
@@ -1168,8 +1189,7 @@ app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, r
       res.json({ meta: { id, type, name: "Unknown" } });
     }
   } catch (e) {
-    console.error("Meta error:", e.message);
-    recordError("meta", req.userConfig, e);
+    handleProviderError("meta", req, e);
     res.json({ meta: { id: req.params.id, type: req.params.type, name: "Unknown" } });
   }
 });
@@ -1207,8 +1227,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
     if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
     res.json({ streams });
   } catch (e) {
-    console.error("Stream error:", e.message);
-    recordError("stream", req.userConfig, e);
+    handleProviderError("stream", req, e);
     res.json({ streams: [] });
   }
 });
