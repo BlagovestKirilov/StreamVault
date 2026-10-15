@@ -921,6 +921,52 @@ http://example.com/2.m3u8`));
   });
 });
 
+// ─── Fixes from live stats (2026-10-15, evening) ───
+
+describe("live-stats fixes 2", () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("a channel without tvg-id is still found after the playlist order changed", async () => {
+    // saved when "Fox News Now" was the 3rd entry (…_2); now a channel was added above it
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1,New Channel
+http://example.com/new.m3u8
+#EXTINF:-1,Alpha
+http://example.com/a.m3u8
+#EXTINF:-1,Beta
+http://example.com/b.m3u8
+#EXTINF:-1,Fox News Now
+http://example.com/fox.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/reordered.m3u" });
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_fox_news_now_2.json`)).body.streams;
+    expect(streams.map(s => s.url)).toEqual(["http://example.com/fox.m3u8"]);
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_m3u_fox_news_now_2.json`)).body.meta;
+    expect(meta.name).toBe("Fox News Now");
+    // a name that isn't in the playlist anymore still returns nothing
+    expect((await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_gone_channel_5.json`)).body.streams).toEqual([]);
+  });
+
+  test("apps that keep manifest.json in the path still work", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",Alpha\nhttp://example.com/a.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/manifest-path.m3u" });
+    const cat = await request(app).get(`/${cfg}/manifest.json/catalog/tv/iptv_live.json`);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["Alpha"]);
+    const meta = await request(app).get(`/${cfg}/manifest.json/meta/tv/iptv_tv_a.json`);
+    expect(meta.body.meta.name).toBe("Alpha");
+    // the manifest itself is unchanged
+    expect((await request(app).get(`/${cfg}/manifest.json`)).body.id).toBe("community.streamvault.addon");
+  });
+
+  test("Stremio routes allow bursts of 1500 requests per minute per IP", async () => {
+    const ip = "203.0.113.90";
+    const statuses = [];
+    for (let i = 0; i < 400; i++) statuses.push((await request(app).get("/manifest.json").set("Fly-Client-IP", ip)).status);
+    expect(statuses.every(s => s === 200)).toBe(true); // 400 > old limit of 300
+  }, 60000);
+});
+
 // ─── /play diagnostics ───
 
 describe("/play refusals are recorded with the reason", () => {

@@ -80,6 +80,13 @@ app.use((req, res, next) => {
 // --- JSON body parser (with size limit) ---
 app.use(express.json({ limit: "16kb" }));
 
+// Some apps build resource URLs from the full manifest URL instead of its folder:
+// "/<config>/manifest.json/meta/tv/x.json". Treat it as "/<config>/meta/tv/x.json".
+app.use((req, res, next) => {
+  if (req.url.includes("/manifest.json/")) req.url = req.url.replace("/manifest.json/", "/");
+  next();
+});
+
 // --- Health check for Fly.io (must be unauthenticated for Fly's built-in checks) ---
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
@@ -91,7 +98,9 @@ const MINUTE = 60 * 1000;
 const limitProviderChecks = rateLimit("provider-check", 10, MINUTE); // each downloads from the provider
 const limitConfig = rateLimit("config", 30, MINUTE);
 const limitStats = rateLimit("stats", 5, MINUTE);                    // slows guessing STATS_SECRET
-const limitAddon = rateLimit("addon", 300, MINUTE);                  // Stremio bursts + shared IPs
+// Stremio requests are cheap (served from cache) but bursty: some apps preload the
+// channel page of every channel in a catalog page. 300/min blocked real users.
+const limitAddon = rateLimit("addon", 1500, MINUTE);
 
 // --- Helper: sanitize error messages (never leak URLs/credentials) ---
 function safeError(e) {
@@ -1446,13 +1455,34 @@ async function getM3UCatalog(config, type) {
   }));
 }
 
+// Channels without a tvg-id get "m3u_<name>_<position in playlist>". When the
+// provider adds/removes a channel above it, the position shifts and saved channels
+// / "continue watching" pointed at an id that no longer existed. If the exact id
+// is gone, fall back to the same name at the nearest position.
+function findM3UChannel(channels, channelId) {
+  const exact = channels.find((ch) => ch.id === channelId && ch.type === "tv");
+  if (exact) return exact;
+  const m = channelId.match(/^(m3u_.*_)(\d+)$/);
+  if (!m) return null;
+  const [, prefix, oldPos] = m;
+  let best = null, bestDist = Infinity;
+  for (const ch of channels) {
+    if (ch.type !== "tv" || !ch.id.startsWith(prefix)) continue;
+    const pos = ch.id.slice(prefix.length);
+    if (!/^\d+$/.test(pos)) continue;
+    const dist = Math.abs(Number(pos) - Number(oldPos));
+    if (dist < bestDist) { best = ch; bestDist = dist; }
+  }
+  return best;
+}
+
 async function getM3UMeta(config, type, id) {
   // Only live TV channels are supported
   if (type !== "tv") return null;
 
   const { channels } = await getCachedM3U(config);
   const channelId = id.replace(`iptv_${type}_`, "");
-  const channel = channels.find((ch) => ch.id === channelId && ch.type === "tv");
+  const channel = findM3UChannel(channels, channelId);
 
   if (!channel) return null;
 
@@ -1474,7 +1504,7 @@ async function getM3UStreams(config, id) {
   const parts = id.match(/^iptv_tv_(.+)$/);
   const channelId = parts ? parts[1] : id;
 
-  const channel = channels.find((ch) => ch.id === channelId && ch.type === "tv");
+  const channel = findM3UChannel(channels, channelId);
 
   if (!channel) return [];
 
