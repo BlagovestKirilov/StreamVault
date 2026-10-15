@@ -899,10 +899,52 @@ http://example.com/2.m3u8`));
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="here",Here\nhttp://example.com/1.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/empty-streams.m3u" });
     await request(app).get(`/${cfg}/stream/tv/iptv_tv_gone.json`);
-    await request(app).get(`/${cfg}/stream/movie/iptv_movie_1.json`);
-    const [movie, gone] = (await stats()).recentEmptyStreams;
-    expect(gone).toMatchObject({ source: "m3u", type: "tv", id: "iptv_tv_gone", reason: expect.stringMatching(/no longer in the user's playlist/) });
-    expect(movie).toMatchObject({ type: "movie", reason: expect.stringMatching(/only live TV/) });
+    expect((await stats()).recentEmptyStreams[0]).toMatchObject({
+      source: "m3u", type: "tv", id: "iptv_tv_gone", reason: expect.stringMatching(/no longer in the user's playlist/),
+    });
+  });
+
+  test("other addons' items (IMDb movies/series) are answered without downloading the playlist", async () => {
+    const spy = jest.spyOn(m3u, "parseM3U");
+    const cfg = enc({ t: "m3u", m: "http://example.com/foreign-ids.m3u" });
+    const today = () => new Date().toISOString().slice(0, 10);
+    const before = ((await stats()).history.find(h => h.date === today()) || {}).foreignRequests || 0;
+
+    expect((await request(app).get(`/${cfg}/stream/series/tt33539520:1:1.json`)).body).toEqual({ streams: [] });
+    expect((await request(app).get(`/${cfg}/stream/movie/tt30796986.json`)).body).toEqual({ streams: [] });
+    expect((await request(app).get(`/${cfg}/stream/tv/tt123.json`)).body).toEqual({ streams: [] });
+    expect((await request(app).get(`/${cfg}/meta/series/tt33539520.json`)).body.meta.name).toBe("Unknown");
+
+    expect(spy).not.toHaveBeenCalled();
+    const after = (await stats()).history.find(h => h.date === today()).foreignRequests;
+    expect(after - before).toBe(4);
+  });
+});
+
+// ─── /play diagnostics ───
+
+describe("/play refusals are recorded with the reason", () => {
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const xt = enc({ t: "xtream", s: "http://example.com:8080", u: "user", p: "pass" });
+  const lastReject = async () => (await request(app).get("/stats")).body.recentPlayRejects[0];
+
+  test("letter/digit stream ids are now allowed", async () => {
+    const res = await request(app).get(`/play/${xt}/live/ab12_C-3/ts/Channel`);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("http://example.com:8080/live/user/pass/ab12_C-3.ts");
+  });
+
+  test.each([
+    ["movie type", `/play/${xt}/movie/1/ts/x`, /stream type "movie"/],
+    ["bad id", `/play/${xt}/live/a.b/ts/x`, /unexpected characters/],
+    ["bad format", `/play/${xt}/live/1/mp4/x`, /format "mp4"/],
+    ["broken link", `/play/garbage/live/1/ts/x`, /install link/],
+    ["private server", `/play/${enc({ t: "xtream", s: "http://192.168.1.1", u: "u", p: "p" })}/live/1/ts/x`, /server address/],
+  ])("%s → 400 with reason", async (_, path, reason) => {
+    expect((await request(app).get(path)).status).toBe(400);
+    const r = await lastReject();
+    expect(r.reason).toMatch(reason);
+    expect(JSON.stringify(r)).not.toContain("pass");
   });
 });
 
@@ -927,6 +969,7 @@ describe("installs without settings (bare manifest)", () => {
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
     expect(meta.description).toMatch(/Configure/);
+    expect(meta.description).toContain("streamvault.fly.dev/configure in a browser");
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
   });
 
@@ -970,7 +1013,7 @@ describe("unknown pages", () => {
       expect(res.body).toEqual({ error: "Not found" });
     });
 
-  test.each(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"])(
+  test.each(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/apple-touch-icon-240x240.png", "/apple-touch-icon-240x240-precomposed.png"])(
     "GET %s returns the logo (browsers ask for it on every visit)", async (path) => {
       const res = await request(app).get(path);
       expect(res.status).toBe(200);

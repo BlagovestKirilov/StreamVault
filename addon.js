@@ -111,7 +111,8 @@ app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d"
 // /configure" fallback sent them the configure page, so every visit downloaded
 // (and counted) the page twice.
 const ICON_FILE = path.join(__dirname, "public", "img", "logo.png");
-app.get(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"], (req, res) => {
+// (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png)
+app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
 });
 
@@ -180,6 +181,7 @@ const recentErrors = [];        // provider failures
 const recentUnknownPaths = [];  // requests StreamVault answered 404 (paths masked)
 const recentEmptyStreams = [];  // stream requests that returned nothing, and why
 const recentUnconfigured = [];  // requests from installs without settings (+ which app)
+const recentPlayRejects = [];   // /play redirects refused, and which check failed
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
 function userAgent(req) {
@@ -562,14 +564,17 @@ function extractConfig(req, res, next) {
   try {
     const config = parseConfigPath(req.params.config);
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
+      res.locals.rejectReason = "install link has no Xtream server/login";
       return res.status(400).json({ error: "Missing Xtream credentials." });
     }
     if (config.type === "m3u" && !config.url) {
+      res.locals.rejectReason = "install link has no playlist URL (not a valid StreamVault link)";
       return res.status(400).json({ error: "Missing M3U URL." });
     }
     req.userConfig = config;
     next();
   } catch (e) {
+    res.locals.rejectReason = "install link can't be read";
     res.status(400).json({ error: "Invalid configuration." });
   }
 }
@@ -949,6 +954,7 @@ app.get("/stats", limitStats, (req, res) => {
     recentUnknownPaths,
     recentEmptyStreams,
     recentUnconfigured,
+    recentPlayRejects,
   });
 });
 
@@ -1067,7 +1073,7 @@ const NOTICES = {
   },
   setup: {
     name: "Set up StreamVault first",
-    description: "StreamVault was added without your playlist. Open Stremio → Addons → StreamVault → ⚙️ Configure, enter your playlist link or Xtream login, and install again.",
+    description: "StreamVault was added without your playlist. Open Addons → StreamVault → ⚙️ Configure, enter your playlist link or Xtream login, and install again. If your app has no Configure button, open streamvault.fly.dev/configure in a browser and add the link you get there to your app.",
   },
   unknown: {
     name: "Couldn't load channels",
@@ -1115,6 +1121,19 @@ async function noticeMetaForAccount(config, id, type) {
   return noticeMeta(NOTICES[kind] ? kind : "unknown", type);
 }
 
+// Some apps ask every installed addon about whatever the user opens (IMDb movies
+// and series like "tt33539520:1:1"), ignoring the manifest's types/idPrefixes.
+// Those aren't StreamVault channels: answer at once instead of downloading the
+// user's whole playlist to find nothing. Counted per day as foreignRequests.
+function isForeignItem(type, id) {
+  return type !== "tv" || !id.startsWith("iptv_");
+}
+
+function answerForeign(res, body) {
+  countToday("foreignRequests");
+  res.json(body);
+}
+
 // Meta handler
 app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, res) => {
   try {
@@ -1124,6 +1143,7 @@ app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, r
     if (id.startsWith("iptv_notice_")) {
       return res.json({ meta: await noticeMetaForAccount(config, id, type) });
     }
+    if (isForeignItem(type, id)) return answerForeign(res, { meta: { id, type, name: "Unknown" } });
 
     let meta = null;
 
@@ -1153,6 +1173,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 
     // Error tiles have nothing to play and aren't real stream requests
     if (id.startsWith("iptv_notice_")) return res.json({ streams: [] });
+    if (isForeignItem(type, id)) return answerForeign(res, { streams: [] });
 
     let streams = [];
 
@@ -1171,9 +1192,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
         source: config.type,
         type,
         id: id.slice(0, 80),
-        reason: type !== "tv"
-          ? `"${type}" requested, but only live TV is supported (old movie/series item)`
-          : "channel is no longer in the user's playlist / category selection",
+        reason: "channel is no longer in the user's playlist / category selection",
       });
     }
     if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
@@ -1189,13 +1208,38 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 // Only the exact shape getXtreamStreams generates is redirected, so the route
 // can't be used as a general-purpose redirector to arbitrary paths/schemes
 const PLAY_EXTS = new Set(["ts", "m3u8"]);
-app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, extractConfig, async (req, res) => {
+// A refused /play means a user pressed play and nothing happened — record why
+// (no credentials: just which check failed and the stream id/format)
+function notePlayRejects(req, res, next) {
+  res.on("finish", () => {
+    if (res.statusCode !== 400) return;
+    noteRecent(recentPlayRejects, {
+      reason: res.locals.rejectReason || "unknown",
+      streamType: req.params.streamType,
+      streamId: String(req.params.streamId).slice(0, 40),
+      ext: req.params.ext,
+      userAgent: userAgent(req),
+    });
+  });
+  next();
+}
+
+app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRejects, extractConfig, async (req, res) => {
   const config = req.userConfig;
   const { streamType, streamId, ext } = req.params;
-  if (config.type !== "xtream" || streamType !== "live" || !/^\d+$/.test(streamId) || !PLAY_EXTS.has(ext)) {
+  // Stream ids are usually numeric, but some panels use letters too; still no
+  // dots/slashes, so the redirect can only point at a stream file
+  const reason =
+    config.type !== "xtream" ? "not an Xtream install" :
+    streamType !== "live" ? `stream type "${String(streamType).slice(0, 20)}" (only live)` :
+    !/^[A-Za-z0-9_-]{1,40}$/.test(streamId) ? "stream id has unexpected characters" :
+    !PLAY_EXTS.has(ext) ? `format "${String(ext).slice(0, 10)}" (only ts/m3u8)` : null;
+  if (reason) {
+    res.locals.rejectReason = reason;
     return res.status(400).json({ error: "Invalid stream" });
   }
   if (!(await validateExternalUrl(config.server))) {
+    res.locals.rejectReason = "server address invalid, blocked, or its DNS lookup failed";
     return res.status(400).json({ error: "Invalid or blocked server URL" });
   }
   const server = config.server.replace(/\/+$/, "");
