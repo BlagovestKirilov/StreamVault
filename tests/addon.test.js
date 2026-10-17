@@ -1063,6 +1063,32 @@ describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () =
   });
 });
 
+// ─── Failed Test Connection: address shape ───
+
+describe("failed tests record the address shape (private parts hidden)", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const lastFailure = async () => (await request(app).get("/stats")).body.recentTestFailures[0];
+  afterEach(() => jest.restoreAllMocks());
+
+  test("Xtream 404 with a path in the server address", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("Request failed with status code 404"));
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    await request(app).post("/api/test").send({ type: "xtream", server: "http://example.com:8080/myuser/c/", username: "secretuser", password: "secretpass" });
+    const f = await lastFailure();
+    expect(f).toMatchObject({ source: "xtream", error: "404", address: "http://<host>:8080/<seg>/<seg>/" });
+    expect(JSON.stringify(f)).not.toMatch(/example\.com|myuser|secret/);
+  });
+
+  test("M3U link: known file names kept, tokens and query hidden", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(new Error("Request failed with status code 404"));
+    await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "https://example.com/token123abc/playlist.m3u8?key=abc" });
+    const f = await lastFailure();
+    expect(f).toMatchObject({ source: "m3u", error: "404", address: "https://<host>/<seg>/playlist.m3u8?…" });
+    expect(JSON.stringify(f)).not.toMatch(/example\.com|token123abc|key=abc/);
+  });
+});
+
 // ─── /play diagnostics ───
 
 describe("/play refusals are recorded with the reason", () => {

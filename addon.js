@@ -192,6 +192,7 @@ const recentEmptyStreams = [];  // stream requests that returned nothing, and wh
 const recentUnconfigured = [];  // requests from installs without settings (+ which app)
 const recentPlayRejects = [];   // /play redirects refused, and which check failed
 const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
+const recentTestFailures = [];  // failed Test Connections: error + address shape (private parts hidden)
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
 function userAgent(req) {
@@ -795,6 +796,18 @@ function whyNoLiveChannels(shape) {
   return { kind: "no_channels", message: "No live channels found in this playlist" };
 }
 
+// Address with everything private hidden: scheme + port + path structure only.
+// Host → <host>; path segments → <seg> unless they're a known file name
+// (get.php, player_api.php, *.m3u/.m3u8); query → "?…". Paths/queries can hold
+// usernames, passwords and tokens, so nothing else is kept.
+const KNOWN_PATH_FILE = /^([a-z_]+\.php|[^/]*\.m3u8?)$/i;
+function addressShape(url) {
+  let u;
+  try { u = new URL(String(url || "")); } catch (_) { return "not a URL"; }
+  const path = u.pathname.split("/").map(seg => (!seg || KNOWN_PATH_FILE.test(seg) ? seg : "<seg>")).join("/");
+  return `${u.protocol}//<host>${u.port ? ":" + u.port : ""}${path}${u.search ? "?…" : ""}`;
+}
+
 // --- API: Test connection to provider ---
 app.post("/api/test", limitProviderChecks, async (req, res) => {
   try {
@@ -856,7 +869,14 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
     }
   } catch (e) {
     const key = providerErrorKey(e);
-    countCode("providerErrors", `test (${req.body && req.body.type === "xtream" ? "xtream" : "m3u"})`, key);
+    const source = req.body && req.body.type === "xtream" ? "xtream" : "m3u";
+    countCode("providerErrors", `test (${source})`, key);
+    // What kind of address failed (host/path/query hidden) — e.g. to tell a
+    // wrong port from a path pasted into the Xtream server field
+    const entered = source === "xtream"
+      ? normalizeXtreamLogin(req.body.server, req.body.username, req.body.password).server
+      : req.body && req.body.m3uUrl;
+    noteRecent(recentTestFailures, { source, error: key, address: addressShape(entered) });
     res.json({ ok: false, error: TEST_ERROR_HINTS[key] || safeError(e) });
   }
 });
@@ -1037,6 +1057,7 @@ app.get("/stats", limitStats, (req, res) => {
     recentUnconfigured,
     recentPlayRejects,
     recentBadLinks,
+    recentTestFailures,
   });
 });
 
