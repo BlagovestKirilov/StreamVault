@@ -33,7 +33,7 @@ A Stremio addon that brings all your live IPTV channels into one place. Connect 
 4. Optionally test your connection and click **Load Categories** to pick only the categories / groups you want
 5. Click **Install to Stremio** — done!
 
-Your channels will appear in Stremio's catalog. Browse by category, search, and play.
+Your channels will appear in Stremio's catalog. Browse by category, search, and play. Search ignores accents and works in Latin or Cyrillic (`bnt` finds `БНТ`).
 
 > ⚠️ **VLC external player is required for live TV.** Live streams don't play in Stremio's built-in player.
 

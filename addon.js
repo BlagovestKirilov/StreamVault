@@ -136,13 +136,26 @@ let stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
-  dailyActive: {},  // { "2026-05-31": Set([ips]) }
+  dailyActive: {},  // { "2026-05-31": Set([user keys]) }
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau } }
 };
 
+// Unique users are counted by a one-way code of the IP, never the IP itself, so
+// stats.json holds no personal data. Keyed with a secret derived from
+// CONFIG_SECRET: without it the codes can't be reversed by trying every IPv4.
+const userKeySecret = crypto.createHash("sha256").update(`stats-users|${CONFIG_SECRET}`).digest();
+const USER_KEY_RE = /^[0-9a-f]{16}$/;
+function userKey(ip) {
+  return crypto.createHmac("sha256", userKeySecret).update(String(ip)).digest("hex").slice(0, 16);
+}
+// Entries saved before this change are plain IPs — convert them on load
+function toUserKeys(list) {
+  return new Set((list || []).map(v => (USER_KEY_RE.test(v) ? v : userKey(v))));
+}
+
 try {
   const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
-  stats = { ...saved, users: new Set(saved.users || []) };
+  stats = { ...saved, users: toUserKeys(saved.users) };
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
@@ -150,7 +163,7 @@ try {
   if (!stats.history) stats.history = {};
   // Restore daily active Sets
   for (const day of Object.keys(stats.dailyActive)) {
-    stats.dailyActive[day] = new Set(stats.dailyActive[day]);
+    stats.dailyActive[day] = toUserKeys(stats.dailyActive[day]);
   }
 } catch (_) {}
 
@@ -166,8 +179,8 @@ function saveStatsData() {
   const dailySerialized = {};
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 30);
-  for (const [day, ips] of Object.entries(stats.dailyActive)) {
-    if (new Date(day) >= cutoff) dailySerialized[day] = [...ips];
+  for (const [day, keys] of Object.entries(stats.dailyActive)) {
+    if (new Date(day) >= cutoff) dailySerialized[day] = [...keys];
   }
   // Keep 90 days of per-day rows; freeze each day's unique-user count into its
   // row so it survives after dailyActive (30 days) drops the IP list
@@ -929,9 +942,10 @@ app.get("/manifest.json", limitAddon, (req, res) => {
 // Configured manifest (user completed install)
 app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) => {
   const ip = getIp(req);
-  const isNew = !stats.users.has(ip);
+  const user = userKey(ip);
+  const isNew = !stats.users.has(user);
   if (isNew) {
-    stats.users.add(ip);
+    stats.users.add(user);
     stats.installs++;
     countToday("installs");
   }
@@ -942,7 +956,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   countToday("launches"); // Stremio fetches the manifest each time the app starts
   const today = new Date().toISOString().slice(0, 10);
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
-  stats.dailyActive[today].add(ip);
+  stats.dailyActive[today].add(user);
   console.log(`[INSTALL] ${maskIp(ip)} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
   const genres = await getGenresWithin(req.userConfig, req.params.config, GENRES_TIMEOUT_MS);
   res.json(configuredManifest(genres));
@@ -1082,6 +1096,30 @@ app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
   serveUnconfigured(req, res, { streams: [] });
 });
 
+// --- Search matching ---
+// "La Vie Rêve" = "la vie reve", "БНТ 1" = "bnt 1", "Nova-Sport" = "nova sport".
+// Cyrillic (Bulgarian/Serbian/Macedonian/Russian/Ukrainian) is written in Latin
+// letters so either alphabet finds the channel.
+const CYRILLIC_TO_LATIN = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ж: "zh", з: "z", и: "i", к: "k",
+  л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+  х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sht", ъ: "a", ь: "y", ю: "yu", я: "ya",
+  ы: "y", э: "e", є: "e", і: "i", ђ: "dj", ј: "j", љ: "lj", њ: "nj", ћ: "c",
+  џ: "dz", ѕ: "dz",
+};
+// Latin letters that don't split into base letter + accent
+const LATIN_EXTRA = { ß: "ss", đ: "d", ł: "l", ø: "o", æ: "ae", œ: "oe", ı: "i", þ: "th" };
+
+function normalizeForSearch(text) {
+  let s = String(text).toLowerCase();
+  // Plain ASCII (most names and searches) skips the slow path
+  if (/[^\x00-\x7f]/.test(s)) {
+    s = s.normalize("NFKD").replace(/\p{M}/gu, ""); // ê → e, й → и, ё → е
+    s = s.replace(/[Ѐ-ӿß-þđıłœ]/g, ch => CYRILLIC_TO_LATIN[ch] ?? LATIN_EXTRA[ch] ?? ch);
+  }
+  return s.replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 // Catalog handler (with extra params like search=X)
 app.get("/:config/catalog/:type/:id/:extra.json", limitAddon, extractConfig, catalogHandler);
 // Catalog handler (no extra params)
@@ -1094,7 +1132,7 @@ async function catalogHandler(req, res) {
     // Parse the raw (still-encoded) segment: req.params is already decoded, so a
     // "&" inside a group name or search ("Sports & News") would split wrongly
     const extra = req.params.extra ? parseExtra(req.path.split("/").pop()) : {};
-    const search = (extra.search || "").toLowerCase();
+    const search = normalizeForSearch(extra.search || "");
     const skip = parseInt(extra.skip) || 0;
     const PAGE_SIZE = 100;
 
@@ -1117,13 +1155,14 @@ async function catalogHandler(req, res) {
       metas = metas.filter(m => m.genres && m.genres[0] === extra.genre);
     }
 
-    // Filter by search — all words must appear in the name (any order)
-    if (search) {
+    // Filter by search — all words must appear in the name (any order), ignoring
+    // case, accents, punctuation and Cyrillic vs Latin spelling
+    if (extra.search && extra.search.trim()) {
       stats.searches++;
       countToday("searches");
-      const words = search.split(/\s+/).filter(w => w.length > 0);
+      const words = search.split(" ").filter(w => w.length > 0);
       metas = metas.filter(m => {
-        const name = m.name.toLowerCase();
+        const name = normalizeForSearch(m.name);
         return words.every(word => name.includes(word));
       });
     }

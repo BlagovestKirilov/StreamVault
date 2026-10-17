@@ -707,6 +707,33 @@ describe("stats file saving", () => {
     expect(row.responseErrors).toEqual({ "unknown path": { "404": 1 } });
   });
 
+  test("users are saved as one-way codes, never IPs (old IP entries converted)", () => {
+    const dir = tmpDir();
+    const today = new Date().toISOString().slice(0, 10);
+    // stats.json from before: plain IPs; the same user returns today
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
+      installs: 1, users: ["203.0.113.9"], dailyActive: { [today]: ["203.0.113.9"] }, history: {},
+    }));
+    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/u.m3u" })).toString("base64").replace(/=+$/, "");
+    const r = run(dir, `
+      const r = require('supertest'); const { app } = require('./addon');
+      const m3u = require('./m3u'); m3u.parseM3UGroups = async () => [];
+      r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', '203.0.113.9')
+        .then(() => r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', '198.51.100.4'))
+        .then(() => r(app).get('/stats'))
+        .then(x => { console.log(JSON.stringify(x.body)); process.emit('SIGTERM'); });
+    `);
+    const body = JSON.parse(r.stdout.trim().split("\n").pop());
+    expect(body.installs).toBe(2);       // returning user not counted again, new one is
+    expect(body.uniqueUsers).toBe(2);
+    const saved = fs.readFileSync(path.join(dir, "stats.json"), "utf8");
+    expect(saved).not.toContain("203.0.113");
+    expect(saved).not.toContain("198.51.100");
+    const json = JSON.parse(saved);
+    expect(json.users).toHaveLength(2);
+    json.users.concat(json.dailyActive[today]).forEach(u => expect(u).toMatch(/^[0-9a-f]{16}$/));
+  });
+
   test("overlapping saves are skipped, and the async save is atomic", () => {
     const dir = tmpDir();
     const r = run(dir, `
@@ -1220,6 +1247,27 @@ describe("stats history and failures", () => {
     expect(after.streams - before.streams).toBe(2);
     expect(after.emptyStreams - before.emptyStreams).toBe(1);
     expect(after.dau).toBeGreaterThanOrEqual(1);
+  });
+
+  test("search ignores accents, punctuation and Cyrillic vs Latin", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent([
+      "#EXTM3U",
+      '#EXTINF:-1 tvg-id="s1",La Vie Rêve', "http://example.com/1.m3u8",
+      '#EXTINF:-1 tvg-id="s2",БНТ 1 HD', "http://example.com/2.m3u8",
+      '#EXTINF:-1 tvg-id="s3",Nova-Sport', "http://example.com/3.m3u8",
+      '#EXTINF:-1 tvg-id="s4",Ćirilica Đorđe', "http://example.com/4.m3u8",
+    ].join("\n")));
+    const cfg = enc({ t: "m3u", m: "http://example.com/search-norm.m3u" });
+    const names = async (q) => (await request(app).get(`/${cfg}/catalog/tv/iptv_live/search=${encodeURIComponent(q)}.json`)).body.metas.map(m => m.name);
+
+    expect(await names("la vie reve")).toEqual(["La Vie Rêve"]);
+    expect(await names("RÊVE")).toEqual(["La Vie Rêve"]);
+    expect(await names("bnt 1")).toEqual(["БНТ 1 HD"]);
+    expect(await names("бнт")).toEqual(["БНТ 1 HD"]);
+    expect(await names("nova sport")).toEqual(["Nova-Sport"]);
+    expect(await names("нова")).toEqual(["Nova-Sport"]);
+    expect(await names("cirilica dorde")).toEqual(["Ćirilica Đorđe"]);
+    expect(await names("bnt nova")).toEqual([]);
   });
 
   test("a failing provider is counted and listed without URLs or credentials", async () => {

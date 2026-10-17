@@ -48,6 +48,8 @@ Three formats for the `:config` segment (`parseConfigPath`): **encrypted** `e-<h
 ### Stremio details worth knowing
 
 - Catalog extras are parsed from the **raw** path (`req.path`), not `req.params` (already decoded — breaks `&` in names).
+- Search (`normalizeForSearch`) ignores case, accents, punctuation and Cyrillic vs Latin (`бнт` = `BNT`); every word must appear in the name.
+- Stats never store IPs: unique users (`users`, `dailyActive`) are `userKey(ip)` = 16-hex HMAC keyed from `CONFIG_SECRET` (changing the secret resets the count; old plain-IP entries are converted on load).
 - M3U ids: first entry keeps the bare `tvg-id`; duplicates get `_v2`, `_v3`. Ids are assigned before the group filter so they are stable across selections. Streams return the picked channel + up to 5 same-`tvg-id` variants.
 - Stream `name` = left column in Stremio ("StreamVault\nTS"), `title` = right side.
 - Bump `BASE_MANIFEST.version` when the manifest shape changes so clients refresh it.
