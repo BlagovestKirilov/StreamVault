@@ -1235,9 +1235,40 @@ describe("installs without settings (bare manifest)", () => {
     expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
-    expect(meta.description).toMatch(/Configure/);
-    expect(meta.description).toContain("streamvault.fly.dev/configure in a browser");
+    expect(meta.description).toContain("streamvault.fly.dev/setup");
+    expect(meta.description).toMatch(/Sync addons/);
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
+  });
+
+  test("the setup tile's picture is a QR code to /setup, which is counted and opens the configure page", async () => {
+    const tile = (await request(app).get("/catalog/tv/iptv_live.json")).body.metas[0];
+    expect(tile.poster).toBe("https://streamvault.fly.dev/public/img/setup-qr.png");
+    const img = await request(app).get("/public/img/setup-qr.png");
+    expect(img.status).toBe(200);
+    expect(img.headers["content-type"]).toBe("image/png");
+
+    const before = (await stats()).history[0].setupScans || 0;
+    const res = await request(app).get("/setup");
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("/configure?from=tile");
+    expect((await stats()).history[0].setupScans).toBe(before + 1);
+  });
+
+  test("the configure page shows the TV tip, and the tile banner only when opened from the tile", async () => {
+    const page = (await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.71")).text;
+    expect(page).toContain("Watching on a TV?");
+    expect(page).toMatch(/id="tileBanner" style="display: none;/);
+    expect(page).toContain("get('from') === 'tile'");
+  });
+
+  test("streaming-server probes are counted, not listed as unknown paths", async () => {
+    const s0 = await stats();
+    const res = await request(app).get("/c9c097cf5c1eb9fd0d910001980d191796bd3ba0/0/stats.json");
+    expect(res.status).toBe(404);
+    const s1 = await stats();
+    expect(s1.history[0].streamingServerProbes).toBe((s0.history[0].streamingServerProbes || 0) + 1);
+    expect(s1.recentUnknownPaths[0] && s1.recentUnknownPaths[0].path).not.toMatch(/stats\.json/);
+    expect((s1.history[0].responseErrors["unknown path"] || {})["404"]).toBe((s0.history[0].responseErrors["unknown path"] || {})["404"]);
   });
 
   test("other unknown paths are still 404 and now show the User-Agent", async () => {

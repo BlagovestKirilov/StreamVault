@@ -402,6 +402,14 @@
       background: var(--red);
     }
 
+    .tv-tip {
+      margin-top: 14px;
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
     .install-hint {
       margin-top: 8px;
       text-align: center;
@@ -610,6 +618,14 @@
       <p>Your personal streaming vault. All channels, one place.</p>
     </div>
 
+    <!-- Shown when the page was opened by scanning the "Set up StreamVault first" tile -->
+    <div class="tip-box" id="tileBanner" style="display: none; width: 100%; margin-bottom: 12px; padding: 12px 14px; background: var(--input-bg); border-radius: 10px; border: 1px solid var(--accent); font-size: 13px; color: var(--muted); line-height: 1.5;">
+      <strong style="color: var(--accent);">📺 Setting up for your TV or app</strong><br/>
+      Enter your details below, then Test &rarr; Install.<br/>
+      <span><b>Stremio:</b> on the TV open Addons &rarr; Sync addons, then remove the old empty StreamVault.</span><br/>
+      <span><b>Other apps:</b> copy the link you get after Install and add it in the app.</span>
+    </div>
+
     <div class="tip-box" style="width: 100%; margin-bottom: 12px; padding: 12px 14px; background: var(--input-bg); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--muted); line-height: 1.5;">
       <strong style="color: var(--accent);">💡 Live TV requires VLC</strong><br/>
       Set it as default: Stremio &rarr; Settings &rarr; Advanced/Playback &rarr; Default Player &rarr; External &rarr; VLC<br/>
@@ -714,6 +730,7 @@
         Install to Stremio
       </button>
       <p class="install-hint" id="installHint"></p>
+      <p class="tv-tip">📺 <b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
 
       <!-- Result -->
       <div class="result" id="result">
@@ -748,6 +765,10 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    if (new URLSearchParams(location.search).get('from') === 'tile') {
+      document.getElementById('tileBanner').style.display = 'block';
+    }
+
     // Scroll to top when returning from Stremio or another app
     document.addEventListener('visibilitychange', function() {
       if (!document.hidden) window.scrollTo(0, 0);

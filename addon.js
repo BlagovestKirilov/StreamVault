@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 // the raw URL: that keeps the list short and users' install links out of stats.
 app.use((req, res, next) => {
   res.on("finish", () => {
-    if (res.statusCode < 400 || req.path === "/health") return;
+    if (res.statusCode < 400 || req.path === "/health" || res.locals.skipErrorCount) return;
     // A body refused before routing (too large / not JSON) still names its API route
     const endpoint = req.route ? `${req.method} ${req.route.path}`
       : req.method === "POST" && /^\/api\/[a-z0-9-]+$/.test(req.path) ? `POST ${req.path}`
@@ -688,6 +688,12 @@ function serveConfigure(req, res) {
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 }
 app.get("/configure", serveConfigure);
+// Target of the QR code on the "Set up StreamVault first" tile (a short link keeps
+// the code coarse enough to scan off a TV). Counted per day as setupScans.
+app.get("/setup", (req, res) => {
+  countToday("setupScans");
+  res.redirect(302, "/configure?from=tile");
+});
 app.get("/:config/configure", serveConfigure);
 
 // --- API: Fetch categories from provider ---
@@ -1234,7 +1240,7 @@ const NOTICES = {
   },
   setup: {
     name: "Set up StreamVault first",
-    description: "StreamVault was added without your playlist. Open Addons → StreamVault → ⚙️ Configure, enter your playlist link or Xtream login, and install again. If your app has no Configure button, open streamvault.fly.dev/configure in a browser and add the link you get there to your app.",
+    description: "StreamVault was added without your playlist. Scan the code with your phone (or open streamvault.fly.dev/setup), enter your playlist link or Xtream login and install. Stremio: then open Addons on this device → Sync addons, and remove this empty StreamVault. Other apps: add the link the page gives you.",
   },
   unknown: {
     name: "Couldn't load channels",
@@ -1255,6 +1261,8 @@ function classifyError(e) {
   return "unknown";
 }
 
+const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png";
+
 function noticeMeta(kind, type, detail) {
   const notice = NOTICES[kind] || NOTICES.unknown;
   const name = kind === "account" && detail ? detail : notice.name;
@@ -1265,7 +1273,9 @@ function noticeMeta(kind, type, detail) {
     id: `iptv_notice_${kind}`,
     type: type || "tv",
     name: `⚠️ ${name}`,
-    poster: makePosterUrl(name),
+    // The setup tile's picture is a QR code to /setup, so a TV user can finish
+    // setting up on their phone
+    poster: kind === "setup" ? SETUP_QR_URL : makePosterUrl(name),
     posterShape: "square",
     description,
   };
@@ -1725,6 +1735,16 @@ function safeDecode(s) {
     return s;
   }
 }
+
+// Some client treats StreamVault as Stremio's streaming server and polls
+// "/<infoHash>/<fileIdx>/stats.json" every second. Answer 404 as before, but
+// count it per day (streamingServerProbes) instead of filling recentUnknownPaths
+// and the "unknown path" 404 count.
+app.get(/^\/[0-9a-f]{40}\/\d+\/stats\.json$/i, (req, res) => {
+  countToday("streamingServerProbes");
+  res.locals.skipErrorCount = true;
+  res.status(404).json({ error: "Not found" });
+});
 
 // --- Fallback: people opening the site in a browser land on the configure page ---
 // ("/" or any unknown page). Unknown API/addon (.json) calls get a JSON 404 instead,
