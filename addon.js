@@ -71,7 +71,10 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   res.on("finish", () => {
     if (res.statusCode < 400 || req.path === "/health") return;
-    const endpoint = req.route ? `${req.method} ${req.route.path}` : "unknown path";
+    // A body refused before routing (too large / not JSON) still names its API route
+    const endpoint = req.route ? `${req.method} ${req.route.path}`
+      : req.method === "POST" && /^\/api\/[a-z0-9-]+$/.test(req.path) ? `POST ${req.path}`
+      : "unknown path";
     countCode("responseErrors", endpoint, String(res.statusCode));
   });
   next();
@@ -79,6 +82,18 @@ app.use((req, res, next) => {
 
 // --- JSON body parser (with size limit) ---
 app.use(express.json({ limit: "16kb" }));
+// A refused body gets a short JSON answer the configure page can show — not
+// Express's default HTML page plus a stack trace in the logs. Real form data is
+// far below 16 KB; the usual cause is playlist text pasted instead of its link.
+app.use((err, req, res, next) => {
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ ok: false, error: "Too much text sent — paste the playlist link (http://…), not the playlist itself" });
+  }
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ ok: false, error: "Invalid request" });
+  }
+  next(err);
+});
 
 // Some apps build resource URLs from the full manifest URL instead of its folder:
 // "/<config>/manifest.json/meta/tv/x.json". Treat it as "/<config>/meta/tv/x.json".
@@ -726,9 +741,13 @@ app.post("/api/encrypt", limitConfig, (req, res) => {
         sanitized[key] = String(configObj[key]).slice(0, 2048);
       }
     }
-    // A truncated group list would silently fall back to "all groups"
+    // A truncated selection would silently fall back to "all groups" (M3U) or
+    // keep a cut-off list of category ids (Xtream)
     if (sanitized.g && String(configObj.g).length > 2048) {
       return res.status(400).json({ error: "Too many groups selected — pick fewer" });
+    }
+    if (sanitized.c && String(configObj.c).length > 2048) {
+      return res.status(400).json({ error: "Too many categories selected — pick fewer" });
     }
     const encrypted = encryptConfig(sanitized);
     res.json({ config: "e-" + encrypted });
@@ -788,6 +807,7 @@ function accountProblem(info) {
 const TEST_ERROR_HINTS = {
   https_mismatch: "Your server address should probably start with http:// instead of https://",
   "429": "Your provider is limiting requests — try again in a few minutes",
+  "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
 };
 
 // A playlist link that works but has no live TV: say which of the usual causes
@@ -1266,8 +1286,15 @@ async function noticeMetaForAccount(config, id, type) {
 // and series like "tt33539520:1:1"), ignoring the manifest's types/idPrefixes.
 // Those aren't StreamVault channels: answer at once instead of downloading the
 // user's whole playlist to find nothing. Counted per day as foreignRequests.
-function isForeignItem(type, id) {
-  return type !== "tv" || !id.startsWith("iptv_");
+// Also foreign: other addons' ids that merely start with "iptv_" (e.g.
+// "iptv_a02ed40f856b05bd"), and — on an Xtream install — ids that can't be an
+// Xtream stream id ("iptv_tv_mzansimagic.za" from the same user's M3U install).
+// Answering those with play buttons gave links /play refuses: pressing play
+// did nothing.
+const XTREAM_STREAM_ID = /^[A-Za-z0-9_-]{1,40}$/;
+function isForeignItem(type, id, config) {
+  if (type !== "tv" || !id.startsWith("iptv_tv_")) return true;
+  return config.type === "xtream" && !XTREAM_STREAM_ID.test(id.slice("iptv_tv_".length));
 }
 
 function answerForeign(res, body) {
@@ -1284,7 +1311,7 @@ app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, r
     if (id.startsWith("iptv_notice_")) {
       return res.json({ meta: await noticeMetaForAccount(config, id, type) });
     }
-    if (isForeignItem(type, id)) return answerForeign(res, { meta: { id, type, name: "Unknown" } });
+    if (isForeignItem(type, id, config)) return answerForeign(res, { meta: { id, type, name: "Unknown" } });
 
     let meta = null;
 
@@ -1313,7 +1340,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 
     // Error tiles have nothing to play and aren't real stream requests
     if (id.startsWith("iptv_notice_")) return res.json({ streams: [] });
-    if (isForeignItem(type, id)) return answerForeign(res, { streams: [] });
+    if (isForeignItem(type, id, config)) return answerForeign(res, { streams: [] });
 
     let streams = [];
 
@@ -1371,7 +1398,7 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
   const reason =
     config.type !== "xtream" ? "not an Xtream install" :
     streamType !== "live" ? `stream type "${String(streamType).slice(0, 20)}" (only live)` :
-    !/^[A-Za-z0-9_-]{1,40}$/.test(streamId) ? "stream id has unexpected characters" :
+    !XTREAM_STREAM_ID.test(streamId) ? "stream id has unexpected characters" :
     !PLAY_EXTS.has(ext) ? `format "${String(ext).slice(0, 10)}" (only ts/m3u8)` : null;
   if (reason) {
     res.locals.rejectReason = reason;

@@ -76,4 +76,9 @@ function blockPrivateRedirects(options) {
   }
 }
 
-module.exports = { isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects };
+// User-Agent for every request to a provider (playlists, Xtream API). Many IPTV
+// panels / Cloudflare answer 403 to unknown clients like axios's default
+// "axios/1.x"; identify as the player the streams are meant for.
+const PROVIDER_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
+
+module.exports = { isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects, PROVIDER_USER_AGENT };

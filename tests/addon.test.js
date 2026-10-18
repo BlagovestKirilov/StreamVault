@@ -462,6 +462,78 @@ describe("configure page API", () => {
     const res = await request(app).get("/api/config/garbage");
     expect(res.status).toBe(400);
   });
+
+  test("a 403 Test Connection explains the provider refused StreamVault's server", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(new Error("Request failed with status code 403"));
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/hint-403.m3u" });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/refused the connection from StreamVault's server/);
+  });
+
+  test("an oversized request gets a short JSON answer, counted under its route", async () => {
+    const huge = "#EXTINF:-1,Channel\nhttp://example.com/1.m3u8\n".repeat(600); // ~27 KB of pasted playlist
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: huge });
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({ ok: false, error: expect.stringMatching(/paste the playlist link/) });
+    const today = new Date().toISOString().slice(0, 10);
+    const row = (await request(app).get("/stats")).body.history.find(r => r.date === today);
+    expect(row.responseErrors["POST /api/test"]["413"]).toBeGreaterThanOrEqual(1);
+  });
+
+  test("an Xtream selection too long to store is refused, not cut off", async () => {
+    const ids = Array.from({ length: 500 }, (_, i) => 10000 + i).join(",");
+    const res = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: ids });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Too many categories/);
+  });
+});
+
+// ─── Requests to providers identify as a player ───
+
+describe("provider User-Agent", () => {
+  const axios = require("axios");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("playlist downloads send a VLC User-Agent (axios's default gets 403 from many panels)", async () => {
+    const get = jest.spyOn(axios, "get").mockRejectedValue(new Error("stop"));
+    await expect(require("../m3u").parseM3UGroups("http://93.184.215.14/ua.m3u")).rejects.toThrow("stop");
+    expect(get.mock.calls[0][1].headers["User-Agent"]).toMatch(/^VLC\//);
+  });
+});
+
+// ─── Ids that aren't this install's channels ───
+
+describe("foreign ids", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("an Xtream install offers no (unplayable) streams for an M3U-style id", async () => {
+    const streams = jest.spyOn(xtream, "getLiveStreams");
+    const cfg = enc({ t: "xtream", s: "http://foreign-xt.example.com", u: "u", p: "p", c: "" });
+    for (const id of ["mzansimagic.za", "Moja.Love.HD.za (src05)"]) {
+      const res = await request(app).get(`/${cfg}/stream/tv/iptv_tv_${encodeURIComponent(id)}.json`);
+      expect(res.body).toEqual({ streams: [] });
+    }
+    expect(streams).not.toHaveBeenCalled(); // answered without touching the provider
+  });
+
+  test("an Xtream install still answers its own ids", async () => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 42, name: "Own", category_id: "1" }]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    const cfg = enc({ t: "xtream", s: "http://own-xt.example.com", u: "u", p: "p", c: "" });
+    const res = await request(app).get(`/${cfg}/stream/tv/iptv_tv_42.json`);
+    expect(res.body.streams).toHaveLength(2);
+  });
+
+  test("another addon's iptv_ id is not looked up in the playlist", async () => {
+    const parse = jest.spyOn(m3u, "parseM3U");
+    const cfg = enc({ t: "m3u", m: "http://example.com/foreign-ids.m3u" });
+    const res = await request(app).get(`/${cfg}/stream/tv/iptv_a02ed40f856b05bd.json`);
+    expect(res.body).toEqual({ streams: [] });
+    expect(parse).not.toHaveBeenCalled();
+  });
 });
 
 // ─── Xtream account validation + subscription expiry ───

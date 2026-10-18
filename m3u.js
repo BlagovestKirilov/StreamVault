@@ -7,7 +7,7 @@
 
 const axios = require("axios");
 const readline = require("readline");
-const { assertExternalUrl, blockPrivateRedirects } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, PROVIDER_USER_AGENT } = require("./urlguard");
 
 // Memory safety cap on live channels per playlist
 const MAX_LIVE_CHANNELS = 10_000;
@@ -143,6 +143,7 @@ async function fetchPlaylistStream(url) {
   const response = await axios.get(url, {
     timeout: 30000,
     responseType: "stream",
+    headers: { "User-Agent": PROVIDER_USER_AGENT },
     beforeRedirect: blockPrivateRedirects,
   });
   return response.data;

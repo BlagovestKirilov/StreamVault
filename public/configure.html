@@ -795,6 +795,10 @@
     let lastCheckKey = null;   // request body that last passed the check
     let checking = false;      // a Test / Load Categories request is running
 
+    // Playlist text pasted instead of its link (a text box joins the lines)
+    const PASTED_PLAYLIST_TEXT = 'Paste the playlist link (http://…), not the playlist text';
+    const looksLikePlaylistText = (v) => /#EXT(M3U|INF)/i.test(v) || v.length > 2048;
+
     // Validates the form; returns the /api/test body, or null (showing why unless quiet)
     function getCheckBody(quiet) {
       const fail = (msg) => { if (!quiet) showToast(msg); return null; };
@@ -808,6 +812,7 @@
       }
       const m3uUrl = document.getElementById('m3uUrl').value.trim();
       if (!m3uUrl) return fail('Enter the playlist URL first');
+      if (looksLikePlaylistText(m3uUrl)) return fail(PASTED_PLAYLIST_TEXT);
       if (!isValidUrl(m3uUrl)) return fail('Playlist URL must be a valid URL (http://...)');
       return { type: 'm3u', m3uUrl };
     }
@@ -829,7 +834,9 @@
       if (!body) {
         hint.textContent = source === 'xtream'
           ? 'Enter a valid server URL (http://...), username and password'
-          : 'Enter a valid playlist URL (http://...)';
+          : looksLikePlaylistText(document.getElementById('m3uUrl').value.trim())
+            ? PASTED_PLAYLIST_TEXT
+            : 'Enter a valid playlist URL (http://...)';
       } else if (!passed) {
         hint.textContent = 'Install becomes available after a successful test';
       } else {
@@ -920,6 +927,11 @@
 
       if (source === 'xtream') {
         configObj = { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds };
+        if (String(categoryIds).length > 2048) {
+          btn.classList.remove('loading');
+          showToast('Too many categories selected — pick fewer');
+          return;
+        }
       } else {
         configObj = { t: 'm3u', m: body.m3uUrl, c: '' };
         // Selected group-titles (empty = whole playlist)
