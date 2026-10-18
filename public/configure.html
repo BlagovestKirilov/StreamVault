@@ -124,6 +124,10 @@
       justify-content: center;
       gap: 6px;
     }
+    @media (max-width: 380px) {
+      .tab-btn { font-size: 0.82rem; padding: 12px 4px; white-space: nowrap; }
+      .tab-btn svg { display: none; }
+    }
     .tab-btn.active {
       background: var(--accent);
       color: #fff;
@@ -161,8 +165,43 @@
       color: var(--muted);
       margin-bottom: 8px;
     }
+    .field label .label-optional {
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 500;
+      opacity: 0.8;
+    }
     .input-wrap {
       position: relative;
+    }
+
+    /* Show/hide password */
+    .input-wrap input#password { padding-right: 48px; }
+    .pw-toggle {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 38px;
+      height: 38px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pw-toggle:hover { color: var(--accent); }
+    .pw-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .input-wrap .pw-toggle svg {
+      position: static;
+      transform: none;
+      width: 20px;
+      height: 20px;
+      color: inherit;
     }
     .input-wrap svg {
       position: absolute;
@@ -214,11 +253,12 @@
     /* Category picker */
     .btn-load-cats {
       width: 100%;
-      padding: 14px 18px;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
+      padding: 12px 18px;
+      background: transparent;
+      border: 1.5px dashed var(--accent-glow);
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
       border-radius: 12px;
-      color: var(--text);
+      color: var(--accent);
       font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
@@ -228,7 +268,7 @@
       gap: 8px;
       transition: all 0.2s;
     }
-    .btn-load-cats:hover { border-color: var(--accent); }
+    .btn-load-cats:hover { border-color: var(--accent); border-style: solid; }
     .btn-load-cats:active { transform: scale(0.97); }
     .btn-load-cats:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-load-cats svg.spinning {
@@ -393,6 +433,13 @@
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
+    }
+    .btn-test.incomplete,
+    .btn-test.incomplete:hover {
+      background: var(--input-bg);
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      opacity: 1;
     }
     .btn-test svg {
       width: 20px;
@@ -576,6 +623,7 @@
     }
 
     html.light .tab-btn { color: #6b6b8a; }
+    html.light .input-wrap input::placeholder { color: #a3a3bd; }
     html.light .tab-btn.active { color: #1a1a2e; }
     html.light .toast { background: #1a1a2e; }
 
@@ -676,6 +724,15 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
             </svg>
+            <button type="button" class="pw-toggle" id="pwToggle" onclick="togglePassword()" aria-label="Show password" aria-pressed="false">
+              <svg id="pwEye" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+              <svg id="pwEyeOff" style="display:none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -695,7 +752,7 @@
 
       <!-- Category filter -->
       <div class="field" id="categoryField">
-        <label>Categories <span style="opacity:0.5;font-size:0.8em">(optional — select multiple)</span></label>
+        <label>Categories <span class="label-optional">(optional)</span></label>
         <button type="button" onclick="loadCategories()" id="btnLoadCats" class="btn-load-cats">
           <svg id="btnLoadCatsIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
@@ -730,7 +787,6 @@
         Install to Stremio
       </button>
       <p class="install-hint" id="installHint"></p>
-      <p class="tv-tip">📺 <b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
 
       <!-- Result -->
       <div class="result" id="result">
@@ -756,6 +812,7 @@
           </a>
         </div>
         <p class="result-hint">If Stremio didn't open, copy the URL and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL</p>
+        <p class="tv-tip">📺 <b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
       </div>
     </div>
     <div style="height: 30px;"></div>
@@ -849,6 +906,7 @@
       btnTest.style.display = passed ? 'none' : 'flex';
       btnInstall.style.display = passed ? 'flex' : 'none';
       btnTest.disabled = !body || checking;
+      btnTest.classList.toggle('incomplete', !body && !checking);
       btnInstall.disabled = checking;
       document.getElementById('btnLoadCats').disabled = !body || checking;
       const hint = document.getElementById('installHint');
@@ -1017,6 +1075,18 @@
         document.execCommand('copy');
         showToast('Copied!', true);
       });
+    }
+
+    function togglePassword() {
+      const input = document.getElementById('password');
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      const btn = document.getElementById('pwToggle');
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('aria-pressed', String(show));
+      document.getElementById('pwEye').style.display = show ? 'none' : '';
+      document.getElementById('pwEyeOff').style.display = show ? '' : 'none';
+      input.focus();
     }
 
     function showToast(msg, success) {
