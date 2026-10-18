@@ -3,10 +3,18 @@
  *
  * Blocks private/internal addresses (incl. Fly's fdaa: 6PN network and cloud
  * metadata at 169.254.x), both as literal hosts and after DNS resolution.
+ *
+ * validateExternalUrl() is the early check (clear error before any download).
+ * The guarantee is guardedAgents: every outbound connection re-checks the address
+ * it is about to connect to, so a domain that resolves differently on the second
+ * lookup (DNS rebinding), a redirect to a domain pointing inside, or a host
+ * remembered in okHosts can't reach an internal address.
  */
 
 const { URL } = require("url");
 const dns = require("dns");
+const http = require("http");
+const https = require("https");
 
 const PRIVATE_IP_RANGES = [
   /^127\./,
@@ -69,6 +77,28 @@ async function assertExternalUrl(urlStr) {
   }
 }
 
+// DNS lookup used for the actual connection: refuse if any resolved address is
+// private. Literal-IP hosts never reach a lookup; those are covered by
+// validateExternalUrl (first URL) and blockPrivateRedirects (redirects).
+// Node may ask for all addresses at once (autoSelectFamily) or just one.
+function guardedLookup(hostname, options, callback) {
+  if (typeof options === "function") { callback = options; options = {}; }
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err);
+    if (addresses.length === 0 || addresses.some(a => isPrivateIp(a.address))) {
+      return callback(Object.assign(new Error("Invalid or blocked URL"), { code: "EBLOCKED" }));
+    }
+    if (options.all) return callback(null, addresses);
+    callback(null, addresses[0].address, addresses[0].family);
+  });
+}
+
+// Pass to axios as { httpAgent, httpsAgent } — also used for redirects it follows
+const guardedAgents = {
+  httpAgent: new http.Agent({ lookup: guardedLookup }),
+  httpsAgent: new https.Agent({ lookup: guardedLookup }),
+};
+
 // axios (follow-redirects) hook: reject redirects that jump to an internal host
 function blockPrivateRedirects(options) {
   if (isBlockedHostname(options.hostname || "")) {
@@ -81,4 +111,7 @@ function blockPrivateRedirects(options) {
 // "axios/1.x"; identify as the player the streams are meant for.
 const PROVIDER_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
-module.exports = { isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects, PROVIDER_USER_AGENT };
+module.exports = {
+  isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects,
+  guardedLookup, guardedAgents, PROVIDER_USER_AGENT,
+};

@@ -490,6 +490,50 @@ describe("configure page API", () => {
 
 // ─── Requests to providers identify as a player ───
 
+// ─── SSRF: the address is re-checked when connecting ───
+
+describe("connect-time address check (DNS rebinding)", () => {
+  const dns = require("dns");
+  const http = require("http");
+  const { guardedLookup } = require("../urlguard");
+  afterEach(() => jest.restoreAllMocks());
+
+  const lookupWith = (addresses) =>
+    jest.spyOn(dns, "lookup").mockImplementation((host, opts, cb) => cb(null, addresses));
+  const run = (opts) => new Promise(res => guardedLookup("x.example", opts, (...a) => res(a)));
+
+  test("refuses a host that resolves to a private address, passes public ones", async () => {
+    lookupWith([{ address: "93.184.215.14", family: 4 }, { address: "10.0.0.5", family: 4 }]);
+    expect((await run({}))[0].message).toBe("Invalid or blocked URL");
+    jest.restoreAllMocks();
+
+    lookupWith([{ address: "93.184.215.14", family: 4 }]);
+    expect(await run({})).toEqual([null, "93.184.215.14", 4]);
+    expect(await run({ all: true })).toEqual([null, [{ address: "93.184.215.14", family: 4 }]]);
+  });
+
+  test("a domain that passes the early check but then resolves inside is never connected to", async () => {
+    let hits = 0;
+    const server = http.createServer((req, res) => { hits++; res.end("[]"); });
+    await new Promise(r => server.listen(0, "127.0.0.1", r));
+    const port = server.address().port;
+    try {
+      // Early check (validateExternalUrl) sees a public address...
+      jest.spyOn(dns.promises, "lookup").mockResolvedValue([{ address: "93.184.215.14", family: 4 }]);
+      // ...the connection's own lookup gets 127.0.0.1 (rebinding)
+      lookupWith([{ address: "127.0.0.1", family: 4 }]);
+      const xtream = require("../xtream");
+      await expect(xtream.getLiveCategories({ server: `http://rebind.example:${port}`, username: "u", password: "p" }))
+        .rejects.toThrow("Invalid or blocked URL");
+      await expect(require("../m3u").parseM3UGroups(`http://rebind.example:${port}/list.m3u`))
+        .rejects.toThrow("Invalid or blocked URL");
+      expect(hits).toBe(0);
+    } finally {
+      server.close();
+    }
+  });
+});
+
 describe("provider User-Agent", () => {
   const axios = require("axios");
   afterEach(() => jest.restoreAllMocks());

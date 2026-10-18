@@ -6,7 +6,7 @@
  */
 
 const axios = require("axios");
-const { assertExternalUrl, blockPrivateRedirects, PROVIDER_USER_AGENT } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, guardedAgents, PROVIDER_USER_AGENT } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
 // in Node. Live-only responses are small, but the cap stays as a safety net.
@@ -17,6 +17,7 @@ const client = axios.create({
   maxContentLength: MAX_RESPONSE_BYTES,
   maxBodyLength: MAX_RESPONSE_BYTES,
   beforeRedirect: blockPrivateRedirects,
+  ...guardedAgents, // re-checks the address at connect time (DNS rebinding, redirects)
 });
 
 // Server URL comes from the user's config, so every call is SSRF-checked
