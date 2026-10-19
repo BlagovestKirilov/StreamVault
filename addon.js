@@ -512,7 +512,7 @@ const BASE_MANIFEST = {
   name: "StreamVault IPTV",
   // The empty install (no settings) says so, so it's easy to tell apart from a
   // connected one in an app's addon list (configuredManifest replaces this)
-  description: "Not connected yet — it only shows “Set up StreamVault first”. Open Configure to add your Xtream Codes account or M3U playlist. Already have a connected StreamVault? Delete this one.",
+  description: "Not connected yet. Open Configure to add your Xtream Codes account or M3U playlist. Already have a connected StreamVault? Delete this one.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv"],
@@ -1029,7 +1029,7 @@ function configuredManifest(genres, type) {
     // Says which other install to delete. Points at the live "Set up StreamVault
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
-    description: `✓ Connected — your ${type === "xtream" ? "Xtream account" : "M3U playlist"} is added. Have a StreamVault that's not connected yet (it only shows “Set up StreamVault first”)? Delete that one.`,
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows Set up StreamVault first, delete the empty one.`,
     catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
     behaviorHints: { configurable: true },
   };
