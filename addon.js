@@ -1260,7 +1260,7 @@ const NOTICES = {
   },
   setup: {
     name: "Set up StreamVault first",
-    description: "StreamVault was added without your playlist. Scan the code with your phone (or open streamvault.fly.dev/setup), enter your playlist link or Xtream login and install. Stremio: then open Addons on this device → Sync addons, and remove this empty StreamVault. Other apps: add the link the page gives you.",
+    description: "Scan the code with your phone to finish setup. Then Sync addons (Stremio) or add the new link (other apps), and remove this empty StreamVault.",
   },
   unknown: {
     name: "Couldn't load channels",
@@ -1281,7 +1281,12 @@ function classifyError(e) {
   return "unknown";
 }
 
-const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png";
+// ?v= changes when the picture does (/public is cached for 7 days)
+const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png?v=2";
+// Wide detail-page background: QR on the right, left kept dark for the app's
+// title/description overlay (without it apps stretch the square tile behind
+// the text, half-covering the code)
+const SETUP_BG_URL = "https://streamvault.fly.dev/public/img/setup-bg.png";
 
 function noticeMeta(kind, type, detail) {
   const notice = NOTICES[kind] || NOTICES.unknown;
@@ -1298,6 +1303,7 @@ function noticeMeta(kind, type, detail) {
     poster: kind === "setup" ? SETUP_QR_URL : makePosterUrl(name),
     posterShape: "square",
     description,
+    ...(kind === "setup" && { background: SETUP_BG_URL }),
   };
 }
 

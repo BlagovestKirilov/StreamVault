@@ -1281,14 +1281,20 @@ describe("installs without settings (bare manifest)", () => {
     expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
-    expect(meta.description).toContain("streamvault.fly.dev/setup");
+    expect(meta.description).toMatch(/Scan the code with your phone/);
     expect(meta.description).toMatch(/Sync addons/);
+    expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png");
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
   });
 
   test("the setup tile's picture is a QR code to /setup, which is counted and opens the configure page", async () => {
     const tile = (await request(app).get("/catalog/tv/iptv_live.json")).body.metas[0];
-    expect(tile.poster).toBe("https://streamvault.fly.dev/public/img/setup-qr.png");
+    expect(tile.poster).toBe("https://streamvault.fly.dev/public/img/setup-qr.png?v=2");
+    for (const file of ["setup-qr.png", "setup-bg.png"]) {
+      const res = await request(app).get(`/public/img/${file}`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toBe("image/png");
+    }
     const img = await request(app).get("/public/img/setup-qr.png");
     expect(img.status).toBe(200);
     expect(img.headers["content-type"]).toBe("image/png");
