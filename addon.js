@@ -707,8 +707,10 @@ app.get("/robots.txt", (req, res) => {
 app.get("/configure", serveConfigure);
 // Target of the QR code on the "Set up StreamVault first" tile (a short link keeps
 // the code coarse enough to scan off a TV). Counted per day as setupScans.
+// "?via=play|link" = tapped on a phone (Play button / link chip) rather than
+// scanned: counted as setupTaps.
 app.get("/setup", (req, res) => {
-  countToday("setupScans");
+  countToday(req.query.via ? "setupTaps" : "setupScans");
   res.redirect(302, "/configure?from=tile");
 });
 app.get("/:config/configure", serveConfigure);
@@ -1139,7 +1141,12 @@ app.get("/meta/:type/:id.json", limitAddon, (req, res) => {
   serveUnconfigured(req, res, { meta: noticeMeta("setup", req.params.type) });
 });
 app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
-  serveUnconfigured(req, res, { streams: [] });
+  // Play on the setup tile opens the setup page in the browser — on a phone
+  // the QR can't be scanned, so this is the way through
+  const streams = req.params.id === "iptv_notice_setup"
+    ? [{ name: "StreamVault", title: "Open setup page", externalUrl: `${SETUP_URL}?via=play` }]
+    : [];
+  serveUnconfigured(req, res, { streams });
 });
 
 // --- Search matching ---
@@ -1260,7 +1267,8 @@ const NOTICES = {
   },
   setup: {
     name: "Set up StreamVault first",
-    description: "Scan the code with your phone to finish setup. Then Sync addons (Stremio) or add the new link (other apps), and remove this empty StreamVault.",
+    // First line is what shows before "Show more", so it's the action
+    description: "On this phone: tap Play to set up. On a TV: scan the code with your phone, or open https://streamvault.fly.dev/setup. Then Sync addons (Stremio) or add the new link (other apps), and remove this empty StreamVault.",
   },
   unknown: {
     name: "Couldn't load channels",
@@ -1282,6 +1290,7 @@ function classifyError(e) {
 }
 
 // ?v= changes when the picture does (/public is cached for 7 days)
+const SETUP_URL = "https://streamvault.fly.dev/setup";
 const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png?v=2";
 // Wide detail-page background: QR on the right, left kept dark for the app's
 // title/description overlay (without it apps stretch the square tile behind
@@ -1303,7 +1312,11 @@ function noticeMeta(kind, type, detail) {
     poster: kind === "setup" ? SETUP_QR_URL : makePosterUrl(name),
     posterShape: "square",
     description,
-    ...(kind === "setup" && { background: SETUP_BG_URL }),
+    ...(kind === "setup" && {
+      background: SETUP_BG_URL,
+      // A tappable button on the detail page in apps that show meta links
+      links: [{ name: "Set up StreamVault", category: "Setup", url: `${SETUP_URL}?via=link` }],
+    }),
   };
 }
 

@@ -1281,10 +1281,16 @@ describe("installs without settings (bare manifest)", () => {
     expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
-    expect(meta.description).toMatch(/Scan the code with your phone/);
+    expect(meta.description).toMatch(/^On this phone: tap Play to set up\./);
+    expect(meta.description).toContain("https://streamvault.fly.dev/setup");
+    expect(meta.links).toEqual([{ name: "Set up StreamVault", category: "Setup", url: "https://streamvault.fly.dev/setup?via=link" }]);
     expect(meta.description).toMatch(/Sync addons/);
     expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png?v=2");
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
+    // Play on the setup tile opens the setup page (phones can't scan their own screen)
+    expect((await request(app).get("/stream/tv/iptv_notice_setup.json")).body.streams).toEqual([
+      { name: "StreamVault", title: "Open setup page", externalUrl: "https://streamvault.fly.dev/setup?via=play" },
+    ]);
   });
 
   test("the setup tile's picture is a QR code to /setup, which is counted and opens the configure page", async () => {
@@ -1304,6 +1310,14 @@ describe("installs without settings (bare manifest)", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("/configure?from=tile");
     expect((await stats()).history[0].setupScans).toBe(before + 1);
+
+    // Taps from a phone (Play / link chip) are counted apart from scans
+    const taps = (await stats()).history[0].setupTaps || 0;
+    const tapped = await request(app).get("/setup?via=play");
+    expect(tapped.headers.location).toBe("/configure?from=tile");
+    const after = (await stats()).history[0];
+    expect(after.setupTaps).toBe(taps + 1);
+    expect(after.setupScans).toBe(before + 1);
   });
 
   test("the configure page shows the TV tip, and the tile banner only when opened from the tile", async () => {
