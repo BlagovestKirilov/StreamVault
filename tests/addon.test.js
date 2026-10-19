@@ -1285,7 +1285,7 @@ describe("installs without settings (bare manifest)", () => {
     expect(meta.description).toContain("https://streamvault.fly.dev/setup");
     expect(meta.links).toEqual([{ name: "Set up StreamVault", category: "Setup", url: "https://streamvault.fly.dev/setup?via=link" }]);
     expect(meta.description).toMatch(/Sync addons/);
-    expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png?v=2");
+    expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png?v=3");
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
     // Play on the setup tile opens the setup page (phones can't scan their own screen)
     expect((await request(app).get("/stream/tv/iptv_notice_setup.json")).body.streams).toEqual([
