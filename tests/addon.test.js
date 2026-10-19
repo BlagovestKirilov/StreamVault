@@ -1283,7 +1283,7 @@ describe("installs without settings (bare manifest)", () => {
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
     expect(meta.description).toMatch(/Scan the code with your phone/);
     expect(meta.description).toMatch(/Sync addons/);
-    expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png");
+    expect(meta.background).toBe("https://streamvault.fly.dev/public/img/setup-bg.png?v=2");
     expect((await request(app).get("/stream/tv/iptv_tv_1.json")).body.streams).toEqual([]);
   });
 

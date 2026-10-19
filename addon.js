@@ -1286,7 +1286,7 @@ const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png?v=2";
 // Wide detail-page background: QR on the right, left kept dark for the app's
 // title/description overlay (without it apps stretch the square tile behind
 // the text, half-covering the code)
-const SETUP_BG_URL = "https://streamvault.fly.dev/public/img/setup-bg.png";
+const SETUP_BG_URL = "https://streamvault.fly.dev/public/img/setup-bg.png?v=2";
 
 function noticeMeta(kind, type, detail) {
   const notice = NOTICES[kind] || NOTICES.unknown;
