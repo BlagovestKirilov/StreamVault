@@ -511,8 +511,8 @@ const BASE_MANIFEST = {
   version: "1.1.0",
   name: "StreamVault IPTV",
   // The empty install (no settings) says so, so it's easy to tell apart from a
-  // set-up one in an app's addon list (configuredManifest replaces this)
-  description: "Live TV from your Xtream Codes account or M3U playlist. Not set up yet — open Configure to add yours.",
+  // connected one in an app's addon list (configuredManifest replaces this)
+  description: "Live TV from your Xtream Codes account or M3U playlist. Not connected yet — open Configure to add yours. Already have a connected StreamVault? Remove this one.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv"],
@@ -1026,7 +1026,8 @@ function configuredManifest(genres, type) {
   extra.push({ name: "skip" });
   return {
     ...BASE_MANIFEST,
-    description: `✓ Set up with your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. Live TV in Stremio plays in VLC; Nuvio uses its internal player.`,
+    // Shown next to any empty install in the app's addon list, so it says which one to remove
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault says “Not connected yet”, remove it.`,
     catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
     behaviorHints: { configurable: true },
   };
