@@ -1289,8 +1289,8 @@ function classifyError(e) {
   return "unknown";
 }
 
-// ?v= changes when the picture does (/public is cached for 7 days)
 const SETUP_URL = "https://streamvault.fly.dev/setup";
+// ?v= changes when the picture does (/public is cached for 7 days)
 const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png?v=2";
 // Wide detail-page background: QR on the right, left kept dark for the app's
 // title/description overlay (without it apps stretch the square tile behind
