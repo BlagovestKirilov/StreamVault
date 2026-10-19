@@ -788,9 +788,11 @@ describe("stats file saving", () => {
   const path = require("path");
   const { spawnSync } = require("child_process");
   const root = path.join(__dirname, "..");
-  // Runs a snippet in a fresh Node process whose stats live in a throwaway folder
+  // Runs a snippet in a fresh Node process whose stats live in a throwaway folder.
+  // FORCE_COLOR=0: IDE test runners set FORCE_COLOR, and console.log(42) would
+  // then print colour codes around the number.
   const run = (dir, code) => spawnSync(process.execPath, ["-e", code], {
-    cwd: root, env: { ...process.env, STATS_DIR: dir }, encoding: "utf8", timeout: 15000,
+    cwd: root, env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
   });
   const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
 
