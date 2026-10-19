@@ -512,7 +512,7 @@ const BASE_MANIFEST = {
   name: "StreamVault IPTV",
   // The empty install (no settings) says so, so it's easy to tell apart from a
   // connected one in an app's addon list (configuredManifest replaces this)
-  description: "Live TV from your Xtream Codes account or M3U playlist. Not connected yet — open Configure to add yours. Already have a connected StreamVault? Remove this one.",
+  description: "Not connected yet — open Configure to add your Xtream Codes account or M3U playlist for live TV. Already have a connected StreamVault? Remove this one.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv"],
