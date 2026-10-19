@@ -1026,8 +1026,10 @@ function configuredManifest(genres, type) {
   extra.push({ name: "skip" });
   return {
     ...BASE_MANIFEST,
-    // Shown next to any empty install in the app's addon list, so it says which one to remove
-    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault says “Not connected yet”, remove it.`,
+    // Says which other install to remove. Points at the live "Set up StreamVault
+    // first" tile, not the empty install's description: apps keep the description
+    // from install time, so older empty installs never show the new wording.
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, remove it.`,
     catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
     behaviorHints: { configurable: true },
   };

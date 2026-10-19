@@ -304,7 +304,7 @@ http://example.com/1.m3u8`));
     expect(bare.body.description).toMatch(/Remove this one/);
     const m3uMan = await request(app).get(`/${enc({ t: "m3u", m: "http://desc.example.com/list.m3u" })}/manifest.json`);
     expect(m3uMan.body.description).toMatch(/^✓ Connected to your M3U playlist\./);
-    expect(m3uMan.body.description).toContain("“Not connected yet”, remove it");
+    expect(m3uMan.body.description).toContain("only shows “Set up StreamVault first”, remove it");
     expect(m3uMan.body.name).toBe(bare.body.name); // same name keeps listings unchanged
   });
 
