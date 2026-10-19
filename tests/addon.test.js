@@ -1332,10 +1332,11 @@ describe("installs without settings (bare manifest)", () => {
   test("an Xtream test with a playlist link says to use the M3U tab", async () => {
     const xtream = require("../xtream");
     const cats = jest.spyOn(xtream, "getLiveCategories");
-    const res = await request(app).post("/api/test")
-      .send({ type: "xtream", server: "https://provider.example/abc/index.m3u", username: "u", password: "p" });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/use the M3U tab/);
+    for (const server of ["https://provider.example/abc/index.m3u", "http://gfdg.m3u", "http://p.example/list.m3u8?token=x"]) {
+      const res = await request(app).post("/api/test").send({ type: "xtream", server, username: "u", password: "p" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/use the M3U tab/);
+    }
     expect(cats).not.toHaveBeenCalled();
     cats.mockRestore();
   });

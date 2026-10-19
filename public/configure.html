@@ -930,7 +930,8 @@
       let u;
       try { u = new URL(serverEl.value.trim()); } catch (e) { return; }
       // A playlist link (".../index.m3u") belongs in the M3U tab
-      if (/\.m3u8?$/i.test(u.pathname)) {
+      // (checks the path, or the host when there's no path: "http://name.m3u")
+      if (/\.m3u8?$/i.test(u.pathname === '/' ? u.hostname : u.pathname)) {
         const link = serverEl.value.trim();
         serverEl.value = '';
         setTab('m3u');

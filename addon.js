@@ -620,10 +620,14 @@ function parseConfigPath(configStr) {
   }
 }
 
-// An M3U playlist link ("…/index.m3u") typed into the Xtream server field —
-// player_api.php can't exist under it, so the test would only fail with 404
+// An M3U playlist link ("…/index.m3u", or a bare "http://name.m3u") typed into
+// the Xtream server field — player_api.php can't exist under it, so the test
+// would only fail with 404. Query/hash ignored ("list.m3u8?token=…" counts).
 function isPlaylistLink(url) {
-  try { return /\.m3u8?$/i.test(new URL(url).pathname); } catch (_) { return false; }
+  try {
+    const u = new URL(url);
+    return /\.m3u8?$/i.test(u.pathname === "/" ? u.hostname : u.pathname);
+  } catch (_) { return false; }
 }
 
 // --- Middleware: extract config from URL path ---
