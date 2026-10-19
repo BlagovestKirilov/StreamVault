@@ -4,3 +4,4 @@ node_modules/
 *.iml
 stats.json*
 secrets.txt
+.claude/
