@@ -620,17 +620,17 @@ function parseConfigPath(configStr) {
   }
 }
 
-// --- Middleware: extract config from URL path ---
-// Users often paste their provider's full link into "Server address", e.g.
-// "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
-// Xtream needs just the server (scheme + host + port): take that, and fill an
-// empty username/password from the link. Anything else is left unchanged.
 // An M3U playlist link ("…/index.m3u") typed into the Xtream server field —
 // player_api.php can't exist under it, so the test would only fail with 404
 function isPlaylistLink(url) {
   try { return /\.m3u8?$/i.test(new URL(url).pathname); } catch (_) { return false; }
 }
 
+// --- Middleware: extract config from URL path ---
+// Users often paste their provider's full link into "Server address", e.g.
+// "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
+// Xtream needs just the server (scheme + host + port): take that, and fill an
+// empty username/password from the link. Anything else is left unchanged.
 function normalizeXtreamLogin(server, username, password) {
   const out = {
     server: String(server || "").trim(),
