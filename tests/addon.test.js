@@ -301,10 +301,11 @@ http://example.com/3.m3u8`));
 http://example.com/1.m3u8`));
     const bare = await request(app).get("/manifest.json");
     expect(bare.body.description).toMatch(/^Not connected yet/);
-    expect(bare.body.description).toMatch(/Remove this one/);
+    expect(bare.body.description).toMatch(/only shows “Set up StreamVault first”/);
+    expect(bare.body.description).toMatch(/Delete this one\.$/);
     const m3uMan = await request(app).get(`/${enc({ t: "m3u", m: "http://desc.example.com/list.m3u" })}/manifest.json`);
     expect(m3uMan.body.description).toMatch(/^✓ Connected — your M3U playlist is added\./);
-    expect(m3uMan.body.description).toContain("not connected yet (it only shows “Set up StreamVault first”)? Remove that one.");
+    expect(m3uMan.body.description).toContain("not connected yet (it only shows “Set up StreamVault first”)? Delete that one.");
     expect(m3uMan.body.name).toBe(bare.body.name); // same name keeps listings unchanged
   });
 
