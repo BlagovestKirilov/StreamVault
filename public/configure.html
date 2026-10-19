@@ -247,28 +247,9 @@
     }
 
     /* Category picker */
-    .btn-load-cats {
-      width: 100%;
-      padding: 12px 18px;
-      background: transparent;
-      border: 1.5px dashed var(--accent-glow);
-      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-      border-radius: 12px;
-      color: var(--accent);
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.2s;
-    }
-    .btn-load-cats:hover { border-color: var(--accent); border-style: solid; }
-    .btn-load-cats:active { transform: scale(0.97); }
-    .btn-load-cats:disabled { opacity: 0.6; cursor: not-allowed; }
-    .btn-load-cats svg.spinning {
-      animation: spin 1s linear infinite;
+    .cat-hint {
+      font-size: 0.85rem;
+      color: var(--muted);
     }
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -453,6 +434,10 @@
       margin-right: 5px;
     }
     .tip-icon-vlc { color: #ff8800; } /* VLC's own orange cone */
+
+    /* One block per app in the player tip box */
+    .app-tip strong, .app-tip span { display: block; }
+    .app-tip + .app-tip { margin-top: 10px; }
 
     .tv-tip {
       margin-top: 14px;
@@ -672,9 +657,14 @@
     </div>
 
     <div class="tip-box" style="width: 100%; margin-bottom: 12px; padding: 12px 14px; background: var(--input-bg); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--muted); line-height: 1.5;">
-      <strong style="color: var(--accent);"><svg class="tip-icon tip-icon-vlc" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M9.4 10h5.2"/><path d="M7.8 15h8.4"/><path d="M6 20l5-15h2l5 15"/></svg>Live TV requires VLC</strong><br/>
-      Set it as default: Stremio &rarr; Settings &rarr; Advanced/Playback &rarr; Default Player &rarr; External &rarr; VLC<br/>
-      <span>Works on: Android, Android TV, Fire TV, Apple TV, iOS, Windows, macOS, Linux</span>
+      <div class="app-tip">
+        <strong style="color: var(--accent);"><svg class="tip-icon tip-icon-vlc" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M9.4 10h5.2"/><path d="M7.8 15h8.4"/><path d="M6 20l5-15h2l5 15"/></svg>Stremio — live TV needs VLC</strong>
+        <span>Settings &rarr; Advanced/Playback &rarr; Default Player &rarr; External &rarr; VLC</span>
+      </div>
+      <div class="app-tip">
+        <strong style="color: var(--accent);"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Nuvio — plays live TV in its internal player</strong>
+        <span>After installing, restart Nuvio to see your channels.</span>
+      </div>
     </div>
 
     <!-- Shown when the page was opened by scanning the "Set up StreamVault first" tile -->
@@ -752,12 +742,7 @@
       <!-- Category filter -->
       <div class="field" id="categoryField">
         <label>Categories <span class="label-optional">(optional)</span></label>
-        <button type="button" onclick="loadCategories()" id="btnLoadCats" class="btn-load-cats">
-          <svg id="btnLoadCatsIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-          </svg>
-          <span id="btnLoadCatsText">Load Categories</span>
-        </button>
+        <p class="cat-hint" id="catHint">Appear after a successful test. Leave empty for all channels.</p>
         <div class="cat-search-wrap" id="catSearchWrap" style="display:none;">
           <input type="text" id="catSearch" placeholder="Search categories..." oninput="filterCategories()" />
         </div>
@@ -783,7 +768,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
-        Install to Stremio
+        Install
       </button>
       <p class="install-hint" id="installHint"></p>
 
@@ -801,7 +786,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
             </svg>
-            Copy
+            <span id="copyText">Copy</span>
           </button>
           <a class="btn-sm btn-open" id="stremioLink" href="#">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -810,7 +795,7 @@
             Open Stremio
           </a>
         </div>
-        <p class="result-hint">If Stremio didn't open, copy the URL and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL</p>
+        <p class="result-hint">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.</p>
         <p class="tv-tip"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 3l-4 4-4-4"/></svg><b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
       </div>
     </div>
@@ -861,7 +846,7 @@
       document.getElementById('catSearchWrap').style.display = 'none';
       document.getElementById('catList').style.display = 'none';
       document.getElementById('catTools').style.display = 'none';
-      document.getElementById('btnLoadCatsText').textContent = 'Load Categories';
+      document.getElementById('catHint').style.display = '';
       lastCheckKey = null;
       renderCategoryList();
       renderSelectedTags();
@@ -895,8 +880,8 @@
     }
 
     // One main button: "Test Connection" until the test passes for exactly the
-    // details in the form, then "Install to Stremio". Editing anything after a
-    // pass brings Test back. Test / Load Categories need valid details.
+    // details in the form, then "Install". Editing anything after a pass brings
+    // Test back. Test needs valid details.
     function updateButtons() {
       const body = getCheckBody(true);
       const passed = !!body && lastCheckKey === JSON.stringify(body);
@@ -907,7 +892,6 @@
       btnTest.disabled = !body || checking;
       btnTest.classList.toggle('incomplete', !body && !checking);
       btnInstall.disabled = checking;
-      document.getElementById('btnLoadCats').disabled = !body || checking;
       const hint = document.getElementById('installHint');
       if (!body) {
         hint.textContent = source === 'xtream'
@@ -994,7 +978,7 @@
       document.getElementById('catSearchWrap').style.display = show;
       document.getElementById('catList').style.display = show;
       document.getElementById('catTools').style.display = allCategories.length > 0 ? 'flex' : 'none';
-      document.getElementById('btnLoadCatsText').textContent = `Reload (${allCategories.length} found)`;
+      document.getElementById('catHint').style.display = allCategories.length > 0 ? 'none' : '';
       renderCategoryList();
       renderSelectedTags();
     }
@@ -1079,11 +1063,15 @@
       const input = document.getElementById('installUrl');
       input.select();
       input.setSelectionRange(0, 99999); // mobile
-      navigator.clipboard.writeText(input.value).then(() => {
-        showToast('Copied!', true);
-      }).catch(() => {
+      const done = () => {
+        const label = document.getElementById('copyText');
+        label.textContent = 'Copied';
+        clearTimeout(copyUrl.timer);
+        copyUrl.timer = setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+      };
+      navigator.clipboard.writeText(input.value).then(done).catch(() => {
         document.execCommand('copy');
-        showToast('Copied!', true);
+        done();
       });
     }
 
@@ -1113,26 +1101,19 @@
     let allCategories = [];
     let selectedCategories = new Set();
 
-    async function loadCategories(quiet) {
-      const body = getCheckBody();
+    // Background check for an installed setup opened from an app's Configure:
+    // loads the category list (saved choices ticked) and unlocks Install
+    async function loadCategories() {
+      const body = getCheckBody(true);
       if (!body) return;
-
-      const btn = document.getElementById('btnLoadCats');
-      const btnText = document.getElementById('btnLoadCatsText');
-      const btnIcon = document.getElementById('btnLoadCatsIcon');
       checking = true;
       updateButtons();
-      btnText.textContent = 'Loading...';
-      btnIcon.classList.add('spinning');
-
       try {
         const data = await runCheck(body);
-        if (!data.ok) { showToast(data.error || 'Failed to load categories'); btnText.textContent = 'Load Categories'; return; }
-        if (!quiet) showToast(`${allCategories.length} categories loaded`, true);
+        if (!data.ok) showToast(data.error || "Couldn't load your categories");
       } finally {
         checking = false;
         updateButtons();
-        btnIcon.classList.remove('spinning');
       }
     }
 
@@ -1242,7 +1223,7 @@
         // Also fills the category list, so "Load Categories" isn't needed after a test
         const data = await runCheck(body);
         if (data.ok) {
-          // The button swaps to "Install to Stremio" (updateButtons in finally)
+          // The button swaps to "Install" (updateButtons in finally)
           showToast(data.account ? `${data.message} ${data.account}` : data.message, true);
         } else {
           btn.classList.add('error');
@@ -1293,7 +1274,7 @@
         updateButtons();
         showToast('Your installed setup is loaded — change it and install again to save', true);
         // Test right away: loads the category list (saved choices ticked) and unlocks Install
-        loadCategories(true);
+        loadCategories();
       } catch (_) { /* keep the blank form */ }
     })();
 

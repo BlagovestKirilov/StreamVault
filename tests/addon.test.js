@@ -295,6 +295,17 @@ http://example.com/3.m3u8`));
     expect(cat.body.metas.map(m => m.name)).toEqual(["Nickelodeon"]);
   });
 
+  test("empty and set-up installs are told apart by their description", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1,One
+http://example.com/1.m3u8`));
+    const bare = await request(app).get("/manifest.json");
+    expect(bare.body.description).toMatch(/Not set up yet/);
+    const m3uMan = await request(app).get(`/${enc({ t: "m3u", m: "http://desc.example.com/list.m3u" })}/manifest.json`);
+    expect(m3uMan.body.description).toMatch(/^✓ Set up with your M3U playlist\./);
+    expect(m3uMan.body.name).toBe(bare.body.name); // same name keeps listings unchanged
+  });
+
   test("single group → no genre dropdown", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
 #EXTINF:-1,Only Channel

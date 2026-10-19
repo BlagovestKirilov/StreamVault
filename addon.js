@@ -510,7 +510,9 @@ const BASE_MANIFEST = {
   id: "community.streamvault.addon",
   version: "1.1.0",
   name: "StreamVault IPTV",
-  description: "Stream live TV via Xtream Codes or M3U playlist. VLC player is required for live TV.",
+  // The empty install (no settings) says so, so it's easy to tell apart from a
+  // set-up one in an app's addon list (configuredManifest replaces this)
+  description: "Live TV from your Xtream Codes account or M3U playlist. Not set up yet — open Configure to add yours.",
   logo: "https://streamvault.fly.dev/public/img/logo.png",
   resources: ["catalog", "meta", "stream"],
   types: ["tv"],
@@ -1007,7 +1009,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   stats.dailyActive[today].add(user);
   console.log(`[INSTALL] ${maskIp(ip)} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
   const genres = await getGenresWithin(req.userConfig, req.params.config, GENRES_TIMEOUT_MS);
-  res.json(configuredManifest(genres));
+  res.json(configuredManifest(genres, cType));
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
@@ -1017,13 +1019,14 @@ const GENRES_CACHE_MAX = 500;
 const MAX_GENRE_OPTIONS = 300;
 const genresCache = new Map();       // config path -> { data: [names], ts }
 
-function configuredManifest(genres) {
+function configuredManifest(genres, type) {
   const extra = [{ name: "search" }];
   // A single group (e.g. everything "Uncategorized") makes a useless dropdown
   if (genres.length > 1) extra.push({ name: "genre", options: genres, isRequired: false });
   extra.push({ name: "skip" });
   return {
     ...BASE_MANIFEST,
+    description: `✓ Set up with your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. Live TV in Stremio plays in VLC; Nuvio uses its internal player.`,
     catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
     behaviorHints: { configurable: true },
   };
