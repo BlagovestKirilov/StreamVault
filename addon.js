@@ -625,6 +625,12 @@ function parseConfigPath(configStr) {
 // "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
 // Xtream needs just the server (scheme + host + port): take that, and fill an
 // empty username/password from the link. Anything else is left unchanged.
+// An M3U playlist link ("…/index.m3u") typed into the Xtream server field —
+// player_api.php can't exist under it, so the test would only fail with 404
+function isPlaylistLink(url) {
+  try { return /\.m3u8?$/i.test(new URL(url).pathname); } catch (_) { return false; }
+}
+
 function normalizeXtreamLogin(server, username, password) {
   const out = {
     server: String(server || "").trim(),
@@ -687,6 +693,13 @@ function serveConfigure(req, res) {
   console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
   res.sendFile(path.join(__dirname, "public", "configure.html"));
 }
+// Crawlers may index the configure page (people find the addon) but nothing
+// else — install links carry users' (encrypted) settings
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").set("Cache-Control", "public, max-age=86400")
+    .send("User-agent: *\nAllow: /configure\nAllow: /public/\nDisallow: /\n");
+});
+
 app.get("/configure", serveConfigure);
 // Target of the QR code on the "Set up StreamVault first" tile (a short link keeps
 // the code coarse enough to scan off a TV). Counted per day as setupScans.
@@ -853,6 +866,9 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
     const { type, m3uUrl } = req.body;
     if (type === "xtream") {
       const { server, username, password } = normalizeXtreamLogin(req.body.server, req.body.username, req.body.password);
+      if (isPlaylistLink(server)) {
+        return res.status(400).json({ ok: false, error: "This is a playlist link — use the M3U tab instead" });
+      }
       if (!server || !username || !password) {
         return res.status(400).json({ ok: false, error: "Missing credentials" });
       }
@@ -1735,6 +1751,14 @@ function safeDecode(s) {
     return s;
   }
 }
+
+// Some apps (Nuvio on webOS) ask every addon for subtitles, although the
+// manifest offers none — with or without settings, sometimes with a mangled
+// tail. Answer "no subtitles" at once instead of a 404; counted as foreignRequests.
+app.get(/^\/(?:[^/]+\/)?subtitles\//, limitAddon, (req, res) => {
+  countToday("foreignRequests");
+  res.json({ subtitles: [] });
+});
 
 // Some client treats StreamVault as Stremio's streaming server and polls
 // "/<infoHash>/<fileIdx>/stats.json" every second. Answer 404 as before, but

@@ -1043,9 +1043,9 @@ http://example.com/2.m3u8`));
   });
 
   test("unknown paths are listed with install links hidden", async () => {
-    await request(app).get("/e-0123456789abcdef0123456789abcdef0123456789/subtitles/movie/tt1.json");
+    await request(app).get("/e-0123456789abcdef0123456789abcdef0123456789/addon_catalog/tv/tt1.json");
     const entry = (await stats()).recentUnknownPaths[0];
-    expect(entry).toMatchObject({ method: "GET", path: "/<config>/subtitles/movie/tt1.json" });
+    expect(entry).toMatchObject({ method: "GET", path: "/<config>/addon_catalog/tv/tt1.json" });
     expect(JSON.stringify((await stats()).recentUnknownPaths)).not.toContain("0123456789abcdef");
   });
 
@@ -1305,6 +1305,39 @@ describe("installs without settings (bare manifest)", () => {
     expect(page).toContain("get('from') === 'tile'");
   });
 
+  test("subtitle requests (apps asking every addon) get an empty list, not a 404", async () => {
+    const enc = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/subs.m3u" })).toString("base64").replace(/=+$/, "");
+    const before = (await stats()).history[0].foreignRequests || 0;
+    for (const path of [
+      `/${enc}/subtitles/movie/tt32890033.json`,
+      `/${enc}/subtitles/series/tt9813792:4:1/${enc}`,
+      "/subtitles/series/tt1567432:2:2.json",
+    ]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ subtitles: [] });
+    }
+    expect((await stats()).history[0].foreignRequests).toBe(before + 3);
+  });
+
+  test("robots.txt lets crawlers see the configure page only", async () => {
+    const res = await request(app).get("/robots.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/^text\/plain/);
+    expect(res.text).toBe("User-agent: *\nAllow: /configure\nAllow: /public/\nDisallow: /\n");
+  });
+
+  test("an Xtream test with a playlist link says to use the M3U tab", async () => {
+    const xtream = require("../xtream");
+    const cats = jest.spyOn(xtream, "getLiveCategories");
+    const res = await request(app).post("/api/test")
+      .send({ type: "xtream", server: "https://provider.example/abc/index.m3u", username: "u", password: "p" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/use the M3U tab/);
+    expect(cats).not.toHaveBeenCalled();
+    cats.mockRestore();
+  });
+
   test("streaming-server probes are counted, not listed as unknown paths", async () => {
     const s0 = await stats();
     const res = await request(app).get("/c9c097cf5c1eb9fd0d910001980d191796bd3ba0/0/stats.json");
@@ -1348,7 +1381,7 @@ describe("unknown pages", () => {
     expect(res.headers.location).toBe("/configure");
   });
 
-  test.each(["/api/nope", "/x/unknown.json", "/robots.txt", "/index.html", "/icon-192.png"])(
+  test.each(["/api/nope", "/x/unknown.json", "/sitemap.xml", "/index.html", "/icon-192.png"])(
     "GET %s stays a JSON 404 (never a second configure page)", async (path) => {
       const res = await request(app).get(path);
       expect(res.status).toBe(404);
