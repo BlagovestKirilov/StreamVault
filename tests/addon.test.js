@@ -1704,6 +1704,23 @@ describe("stats history and failures", () => {
     expect(await names("bnt nova")).toEqual([]);
   });
 
+  test("one failed download shared by many waiting requests counts as one error", async () => {
+    // slow failure so all requests wait for the same download
+    jest.spyOn(m3u, "parseM3U").mockImplementation(() =>
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Request failed with status code 451")), 100)));
+    const cfg = enc({ t: "m3u", m: "http://example.com/shared-failure.m3u" });
+    const before = (await todayRow()) || {};
+    const errBefore = (before.metaErrors || 0), cachedBefore = (before.cachedFailures || 0);
+    const code451 = (row) => (row.providerErrors?.["meta (m3u)"]?.["451"]) || 0;
+
+    await Promise.all([1, 2, 3, 4, 5].map(i => request(app).get(`/${cfg}/meta/tv/iptv_tv_ch${i}.json`)));
+
+    const after = await todayRow();
+    expect(after.metaErrors - errBefore).toBe(1);
+    expect(code451(after) - code451(before)).toBe(1);
+    expect(after.cachedFailures - cachedBefore).toBe(4);
+  });
+
   test("a failing provider is counted and listed without URLs or credentials", async () => {
     jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("connect ECONNREFUSED http://secret-user:pw@provider.example/list"));
     const cfg = enc({ t: "m3u", m: "http://example.com/failing.m3u" });

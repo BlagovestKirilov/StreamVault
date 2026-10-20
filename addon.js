@@ -439,11 +439,17 @@ async function withFailureCache(key, load) {
 
 // Catalog/meta/stream handlers: log + count a real provider failure, or just
 // count a repeat that was answered from the failure cache
+// Requests that waited for the same download (once()) all get the same error
+// object: the provider was contacted once, so the failure is counted once
+const reportedErrors = new WeakSet();
+
 function handleProviderError(where, req, e) {
-  if (e?.fromFailureCache) {
+  const shared = e !== null && typeof e === "object";
+  if (e?.fromFailureCache || (shared && reportedErrors.has(e))) {
     countToday("cachedFailures");
     return;
   }
+  if (shared) reportedErrors.add(e);
   console.error(`${where[0].toUpperCase()}${where.slice(1)} error:`, e.message);
   recordError(where, req.userConfig, e);
 }
