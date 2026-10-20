@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0a0a16" />
@@ -240,10 +240,10 @@
     .input-wrap input:-webkit-autofill,
     .input-wrap input:-webkit-autofill:hover,
     .input-wrap input:-webkit-autofill:focus {
-      -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset !important;
-      -webkit-text-fill-color: var(--text) !important;
+      -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+      -webkit-text-fill-color: var(--text);
       caret-color: var(--text);
-      border-color: var(--border) !important;
+      border-color: var(--border);
     }
 
     /* Category picker */
@@ -691,7 +691,7 @@
       <!-- Xtream panel -->
       <div class="panel active" id="panelXtream">
         <div class="field">
-          <label>Server URL</label>
+          <label for="server">Server URL</label>
           <div class="input-wrap">
             <input type="text" id="server" placeholder="http://provider.com:8080" inputmode="url" autocapitalize="off" autocorrect="off" autocomplete="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -700,7 +700,7 @@
           </div>
         </div>
         <div class="field">
-          <label>Username</label>
+          <label for="username">Username</label>
           <div class="input-wrap">
             <input type="text" id="username" placeholder="Your username" autocapitalize="off" autocorrect="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -709,7 +709,7 @@
           </div>
         </div>
         <div class="field">
-          <label>Password</label>
+          <label for="password">Password</label>
           <div class="input-wrap">
             <input type="password" id="password" placeholder="Your password" autocapitalize="off" autocorrect="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -731,7 +731,7 @@
       <!-- M3U panel -->
       <div class="panel" id="panelM3u">
         <div class="field">
-          <label>Playlist URL</label>
+          <label for="m3uUrl">Playlist URL</label>
           <div class="input-wrap">
             <input type="text" id="m3uUrl" placeholder="http://example.com/playlist.m3u8" inputmode="url" autocapitalize="off" autocorrect="off" autocomplete="off" />
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M11 6l.463-.536a5 5 0 0 1 7.071 7.072l-.534.464"/><path d="M13 18l-.397.534a5.068 5.068 0 0 1-7.127 0 4.972 4.972 0 0 1 0-7.071l.524-.463"/></svg>
@@ -741,10 +741,10 @@
 
       <!-- Category filter -->
       <div class="field" id="categoryField">
-        <label>Categories <span class="label-optional">(optional)</span></label>
+        <label for="catSearch">Categories <span class="label-optional">(optional)</span></label>
         <p class="cat-hint" id="catHint">Appear after a successful test. Leave empty for all channels.</p>
         <div class="cat-search-wrap" id="catSearchWrap" style="display:none;">
-          <input type="text" id="catSearch" placeholder="Search categories..." oninput="filterCategories()" />
+          <input type="text" id="catSearch" aria-label="Search categories" placeholder="Search categories..." oninput="filterCategories()" />
         </div>
         <div class="cat-tools" id="catTools" style="display:none;">
           <span id="catCount"></span>
@@ -780,7 +780,7 @@
           </svg>
           <span id="resultTitle">Ready to install</span>
         </div>
-        <input type="text" class="result-url" id="installUrl" readonly />
+        <input type="text" class="result-url" id="installUrl" aria-label="Install link" readonly />
         <!-- Shown instead of the install steps when an installed StreamVault was edited in place -->
         <p class="result-hint" id="updatedHint" style="display:none;">Your StreamVault keeps the same link, so there's nothing to install again.<br/><span id="restartHint">Close and reopen your app to see the changes.</span></p>
         <div class="result-btns" id="resultBtns">
@@ -866,7 +866,10 @@
 
     // Validates the form; returns the /api/test body, or null (showing why unless quiet)
     function getCheckBody(quiet) {
-      const fail = (msg) => { if (!quiet) showToast(msg); return null; };
+      const fail = (msg) => {
+        if (!quiet) showToast(msg);
+        return null;
+      };
       if (source === 'xtream') {
         const server = document.getElementById('server').value.trim();
         const username = document.getElementById('username').value.trim();
@@ -885,6 +888,13 @@
     // One main button: "Test Connection" until the test passes for exactly the
     // details in the form, then "Install". Editing anything after a pass brings
     // Test back. Test needs valid details.
+    // What's missing in the form, for the hint under the button
+    function missingDetailsHint() {
+      if (source === 'xtream') return 'Enter a valid server URL (http://...), username and password';
+      if (looksLikePlaylistText(document.getElementById('m3uUrl').value.trim())) return PASTED_PLAYLIST_TEXT;
+      return 'Enter a valid playlist URL (http://...)';
+    }
+
     function updateButtons() {
       const body = getCheckBody(true);
       const passed = !!body && lastCheckKey === JSON.stringify(body);
@@ -897,11 +907,7 @@
       btnInstall.disabled = checking;
       const hint = document.getElementById('installHint');
       if (!body) {
-        hint.textContent = source === 'xtream'
-          ? 'Enter a valid server URL (http://...), username and password'
-          : looksLikePlaylistText(document.getElementById('m3uUrl').value.trim())
-            ? PASTED_PLAYLIST_TEXT
-            : 'Enter a valid playlist URL (http://...)';
+        hint.textContent = missingDetailsHint();
       } else if (!passed) {
         // matches the button: "Save changes" once an installed setup has loaded
         hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test`;
@@ -916,7 +922,11 @@
     function splitXtreamLink() {
       const serverEl = document.getElementById('server');
       let u;
-      try { u = new URL(serverEl.value.trim()); } catch (e) { return; }
+      try {
+        u = new URL(serverEl.value.trim());
+      } catch (_) {
+        return; // not a full URL yet: nothing to split
+      }
       // A playlist link (".../index.m3u") belongs in the M3U tab
       // (checks the path, or the host when there's no path: "http://name.m3u")
       if (/\.m3u8?$/i.test(u.pathname === '/' ? u.hostname : u.pathname)) {
@@ -987,9 +997,63 @@
       renderSelectedTags();
     }
 
+    // Settings to save for the tested details, or { error } when the selection is too long
+    function buildInstallSettings(body) {
+      if (source === 'xtream') {
+        const categoryIds = [...selectedCategories].join(',');
+        if (categoryIds.length > 2048) return { error: 'Too many categories selected — pick fewer' };
+        return { settings: { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds } };
+      }
+      const settings = { t: 'm3u', m: body.m3uUrl, c: '' };
+      // Selected group-titles (empty = whole playlist)
+      if (selectedCategories.size > 0) {
+        const g = JSON.stringify([...selectedCategories]);
+        if (g.length > 2048) return { error: 'Too many groups selected — pick fewer' };
+        settings.g = g;
+      }
+      return { settings };
+    }
+
+    // Viewer's timezone so TV guide times show in local time ('' when unknown)
+    function viewerTimezone() {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      } catch (_) {
+        return ''; // old browser without Intl time zones: the guide uses the provider's times
+      }
+    }
+
+    // Result box: "Saved" (same link updated) or the install steps (new link)
+    function showInstallResult(encData, manifestUrl) {
+      const updated = encData.updated === true;
+      document.getElementById('resultTitle').textContent = updated ? 'Saved — StreamVault updated' : 'Ready to install';
+      document.getElementById('updatedHint').style.display = updated ? 'block' : 'none';
+      // The server knows the app only if it saw it load this StreamVault
+      const knownApp = encData.app === 'Nuvio' || encData.app === 'Stremio';
+      document.getElementById('restartHint').textContent = knownApp
+        ? `Restart ${encData.app} to see the changes.`
+        : 'Close and reopen your app to see the changes.';
+      for (const id of ['resultBtns', 'installHints', 'tvTip']) {
+        document.getElementById(id).style.display = updated ? 'none' : '';
+      }
+      document.getElementById('installUrl').value = manifestUrl;
+      document.getElementById('result').style.display = 'block';
+      return updated;
+    }
+
+    // Open the new link in the app (Stremio, or whichever app handles stremio://)
+    function openInApp(manifestUrl, configPath) {
+      const base = window.location.origin;
+      // Web link that Stremio handles on all platforms; the native deep link is opened below
+      document.getElementById('stremioLink').href = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
+      const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
+      // Prefetch manifest to warm up server/DNS/TLS, then open the app
+      fetch(manifestUrl).finally(() => {
+        window.location.href = stremioUrl;
+      });
+    }
+
     async function install() {
-      let configObj = {};
-      const categoryIds = [...selectedCategories].join(',');
       const body = getCheckBody();
       if (!body) return;
       // Install is only enabled after these exact details passed the test
@@ -998,82 +1062,33 @@
         showToast('Test the connection first');
         return;
       }
+      const { settings, error } = buildInstallSettings(body);
+      if (error) {
+        showToast(error);
+        return;
+      }
+      const tz = viewerTimezone();
+      if (tz) settings.z = tz;
 
       const btn = document.getElementById('btnInstall');
       btn.classList.add('loading');
-
-      if (source === 'xtream') {
-        configObj = { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds };
-        if (String(categoryIds).length > 2048) {
-          btn.classList.remove('loading');
-          showToast('Too many categories selected — pick fewer');
-          return;
-        }
-      } else {
-        configObj = { t: 'm3u', m: body.m3uUrl, c: '' };
-        // Selected group-titles (empty = whole playlist)
-        if (selectedCategories.size > 0) {
-          const g = JSON.stringify([...selectedCategories]);
-          if (g.length > 2048) {
-            btn.classList.remove('loading');
-            showToast('Too many groups selected — pick fewer');
-            return;
-          }
-          configObj.g = g;
-        }
-      }
-
-      // Viewer's timezone so TV guide times show in local time
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz) configObj.z = tz;
-      } catch (_) {}
-
       try {
         // Settings are encrypted and saved server-side under a stable link; when
         // editing an installed StreamVault the same link is updated in place
         const encRes = await fetch('/api/link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(editingLink ? { ...configObj, editing: editingLink } : configObj)
+          body: JSON.stringify(editingLink ? { ...settings, editing: editingLink } : settings)
         });
         const encData = await encRes.json();
-        if (encData.error) { showToast(encData.error); return; }
-
-        const base = window.location.origin;
-        const configPath = encData.config;
-        const manifestUrl = `${base}/${configPath}/manifest.json`;
-
-        // Same link, new settings: nothing to install, the app picks them up
-        const updated = encData.updated === true;
-        document.getElementById('resultTitle').textContent = updated ? 'Saved — StreamVault updated' : 'Ready to install';
-        document.getElementById('updatedHint').style.display = updated ? 'block' : 'none';
-        // The server knows the app only if it saw it load this StreamVault
-        document.getElementById('restartHint').textContent = encData.app === 'Nuvio' || encData.app === 'Stremio'
-          ? `Restart ${encData.app} to see the changes.`
-          : 'Close and reopen your app to see the changes.';
-        for (const id of ['resultBtns', 'installHints', 'tvTip']) {
-          document.getElementById(id).style.display = updated ? 'none' : '';
-        }
-        if (updated) {
-          document.getElementById('installUrl').value = manifestUrl;
-          document.getElementById('result').style.display = 'block';
+        if (encData.error) {
+          showToast(encData.error);
           return;
         }
-
-        // Use the proper web URL format that Stremio handles on all platforms
-        const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
-        // Native deep link as fallback
-        const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
-
-        document.getElementById('installUrl').value = manifestUrl;
-        document.getElementById('stremioLink').href = stremioWebUrl;
-        document.getElementById('result').style.display = 'block';
-
-        // Prefetch manifest to warm up server/DNS/TLS, then open Stremio
-        fetch(manifestUrl).finally(() => {
-          window.location.href = stremioUrl;
-        });
+        const manifestUrl = `${window.location.origin}/${encData.config}/manifest.json`;
+        // Same link, new settings: nothing to install, the app picks them up
+        const updated = showInstallResult(encData, manifestUrl);
+        if (!updated) openInApp(manifestUrl, encData.config);
       } catch (e) {
         showToast('Failed to generate install URL');
       } finally {
@@ -1270,8 +1285,8 @@
       try {
         const u = new URL(str);
         return u.protocol === 'http:' || u.protocol === 'https:';
-      } catch (e) {
-        return false;
+      } catch (_) {
+        return false; // not parseable as a URL
       }
     }
 
@@ -1300,7 +1315,9 @@
         showToast('Your installed setup is loaded — change it and press Save changes', true);
         // Test right away: loads the category list (saved choices ticked) and unlocks Install
         loadCategories();
-      } catch (_) { /* keep the blank form */ }
+      } catch (_) {
+        editingLink = ''; // couldn't load the installed setup: behave like a fresh setup
+      }
     })();
 
     updateButtons();
