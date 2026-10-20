@@ -941,7 +941,7 @@ describe("stable install links", () => {
     const before = (await stats()).history[0].reinstalls || 0;
     const edit = await request(app).post("/api/link")
       .send({ t: "m3u", m: "http://stable.example.com/b.m3u", g: JSON.stringify(["Sport"]), editing: link });
-    expect(edit.body).toEqual({ config: link, updated: true });
+    expect(edit.body).toEqual({ config: link, updated: true, app: null });
     expect((await stats()).history[0].reinstalls).toBe(before + 1);
 
     expect(await names(link)).toEqual(["Sport One"]);
@@ -957,13 +957,43 @@ describe("stable install links", () => {
 
     const res = await request(app).post("/api/link")
       .send({ t: "m3u", m: "http://stable.example.com/c.m3u", g: JSON.stringify(["News"]), editing: old });
-    expect(res.body).toEqual({ config: old, updated: true });
+    expect(res.body).toEqual({ config: old, updated: true, app: null });
     expect(await names(old)).toEqual(["News One"]);
     expect((await request(app).get(`/api/config/${old}`)).body.categories).toEqual(["News"]);
 
     // a second edit updates the same override
     await request(app).post("/api/link").send({ t: "m3u", m: "http://stable.example.com/c.m3u", editing: old });
     expect(await names(old)).toEqual(["News One", "Sport One"]);
+  });
+
+  test("after a save the page is told which app to restart, when the server is sure", async () => {
+    const make = async (m) => (await request(app).post("/api/link").send({ t: "m3u", m })).body.config;
+    const save = async (link) => (await request(app).post("/api/link").send({ t: "m3u", m: "http://apps.example.com/x.m3u", editing: link })).body;
+    const visit = (link, ua) => request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", ua);
+
+    const nuvio = await make("http://apps.example.com/n.m3u");
+    await visit(nuvio, "Nuvio/1.1.0-beta.7");
+    expect(await save(nuvio)).toMatchObject({ updated: true, app: "Nuvio" });
+
+    const stremio = await make("http://apps.example.com/s.m3u");
+    await visit(stremio, "Mozilla/5.0 Stremio/5.0");
+    expect((await save(stremio)).app).toBe("Stremio");
+
+    const both = await make("http://apps.example.com/b.m3u");
+    await visit(both, "Nuvio/1.0 (webOS)");
+    await visit(both, "Stremio/4.4");
+    expect((await save(both)).app).toBeNull();
+
+    // unknown apps, the configure page itself (/api) and the player (/play) teach nothing
+    const unknown = await make("http://apps.example.com/u.m3u");
+    await visit(unknown, "okhttp/5.3.2");
+    await request(app).get(`/api/config/${unknown}`).set("User-Agent", "Nuvio/1.0");
+    expect((await save(unknown)).app).toBeNull();
+
+    // older links too
+    const old = (await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://apps.example.com/o.m3u" })).body.config;
+    await visit(old, "Nuvio/1.1.0");
+    expect(await save(old)).toMatchObject({ config: old, updated: true, app: "Nuvio" });
   });
 
   test("an editing value that isn't a real StreamVault link can't store anything", async () => {

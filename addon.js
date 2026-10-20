@@ -687,6 +687,7 @@ function extractConfig(req, res, next) {
     // link's settings can change, so its key includes the revision
     const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
+    noteAppForLink(req);
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
       return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
@@ -699,6 +700,38 @@ function extractConfig(req, res, next) {
   } catch (e) {
     refuse("install link can't be read", "Invalid configuration.");
   }
+}
+
+// --- Which app uses an install link (for "Restart Nuvio/Stremio" after a save) ---
+// In memory only, never saved: link fingerprint -> "Nuvio" | "Stremio" | "both".
+// Learned from the app's own catalog/meta/stream requests; the configure page
+// itself opens in a browser that doesn't say which app sent it there.
+const LINK_APPS_MAX = 50_000; // ~100 bytes each → a few MB at most
+const linkApps = new Map();
+
+function appFromUserAgent(ua) {
+  if (/nuvio/i.test(ua)) return "Nuvio";
+  if (/stremio/i.test(ua)) return "Stremio";
+  return null; // okhttp, browsers, players… — unknown
+}
+
+const linkKey = (link) => (linkStore.isId(link) ? link : crypto.createHash("sha1").update(link).digest("base64"));
+
+function noteAppForLink(req) {
+  // Addon requests only: /api/* comes from the configure page, /play from the player
+  if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
+  const app = appFromUserAgent(String(req.get("user-agent") || ""));
+  if (!app) return;
+  const key = linkKey(req.params.config);
+  const known = linkApps.get(key);
+  linkApps.delete(key); // re-insert → most recently used stays, oldest is evicted first
+  setCapped(linkApps, key, known && known !== app ? "both" : app, LINK_APPS_MAX);
+}
+
+/** "Nuvio" / "Stremio" when we're sure which app uses this link, else null */
+function appForLink(link) {
+  const app = link ? linkApps.get(linkKey(link)) : null;
+  return app === "Nuvio" || app === "Stremio" ? app : null;
 }
 
 // --- Serve configuration page for Stremio ---
@@ -830,10 +863,11 @@ app.post("/api/link", limitConfig, (req, res) => {
     // Not truncated: a cut-off link would fingerprint as a different link
     const editing = typeof req.body.editing === "string" && req.body.editing.length <= 8192 ? req.body.editing : "";
     if (editing) countToday("reinstalls");
+    // app: which app to tell the user to restart (null = say "your app")
     if (linkStore.isId(editing)) {
-      if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true });
+      if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true, app: appForLink(editing) });
     } else if (editing && isUsableOldLink(editing) && linkStore.setOverride(editing, encrypted)) {
-      return res.json({ config: editing, updated: true });
+      return res.json({ config: editing, updated: true, app: appForLink(editing) });
     }
     const id = linkStore.create(encrypted);
     res.json({ config: id || "e-" + encrypted, updated: false });
