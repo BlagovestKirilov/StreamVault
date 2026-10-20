@@ -26,37 +26,65 @@ const ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
 // new installs fall back to self-contained "e-" links
 const MAX_LINKS = 50_000;
 
+const isEntry = (entry) => entry && typeof entry.e === "string";
+
+// Copy valid entries of one parsed file into the maps
+function fillFrom(data, links, overrides) {
+  for (const [id, entry] of Object.entries(data.links || {})) {
+    if (ID_RE.test(id) && isEntry(entry)) links.set(id, entry);
+  }
+  for (const [key, entry] of Object.entries(data.overrides || {})) {
+    if (/^[0-9a-f]{64}$/.test(key) && isEntry(entry)) overrides.set(key, entry);
+  }
+}
+
+// A file that can't be parsed is kept aside (never overwritten by an empty
+// store) and reported in the logs
+function moveAside(candidate, readError) {
+  const aside = `${candidate}.corrupt-${Date.now()}`;
+  try {
+    fs.renameSync(candidate, aside);
+  } catch (renameError) {
+    // Can't move it aside: still start (from the backup or empty) and say so
+    console.error(`[LINKS] could not move ${path.basename(candidate)} aside: ${renameError.message}`);
+  }
+  console.error(`[LINKS] ${path.basename(candidate)} could not be read (${readError.message}) — moved to ${path.basename(aside)}`);
+}
+
+// Load the main file, else the backup; true when one of them was read
+function loadInto(file, bak, links, overrides) {
+  for (const candidate of [file, bak]) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      fillFrom(JSON.parse(fs.readFileSync(candidate, "utf-8")), links, overrides);
+      if (candidate === bak) console.error("[LINKS] links.json unreadable or missing — loaded links.json.bak");
+      return true;
+    } catch (e) {
+      moveAside(candidate, e);
+    }
+  }
+  return false;
+}
+
+// Atomic write: temp file, keep the current version as .bak, then rename over it
+async function writeAtomically(file, bak, data) {
+  const tmp = `${file}.tmp`;
+  await fs.promises.writeFile(tmp, data);
+  try {
+    await fs.promises.copyFile(file, bak);
+  } catch (_) {
+    // No main file yet (first save): nothing to back up
+  }
+  await fs.promises.rename(tmp, file);
+}
+
 function createStore(dir) {
   const file = path.join(dir, "links.json");
   const bak = `${file}.bak`;
   const links = new Map();     // id -> { e, c (created ms), r (revision) }
   const overrides = new Map(); // sha256(old link) -> { e, c, r }
 
-  // Load: main file, else the backup. A file that can't be parsed is kept aside
-  // (never overwritten by an empty store) and reported in the logs.
-  for (const candidate of [file, bak]) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      const data = JSON.parse(fs.readFileSync(candidate, "utf-8"));
-      for (const [id, entry] of Object.entries(data.links || {})) {
-        if (ID_RE.test(id) && entry && typeof entry.e === "string") links.set(id, entry);
-      }
-      for (const [key, entry] of Object.entries(data.overrides || {})) {
-        if (/^[0-9a-f]{64}$/.test(key) && entry && typeof entry.e === "string") overrides.set(key, entry);
-      }
-      if (candidate === bak) console.error("[LINKS] links.json unreadable or missing — loaded links.json.bak");
-      break;
-    } catch (e) {
-      const aside = `${candidate}.corrupt-${Date.now()}`;
-      try {
-        fs.renameSync(candidate, aside);
-      } catch (renameError) {
-        // Can't move it aside: still start (from the backup or empty) and say so
-        console.error(`[LINKS] could not move ${path.basename(candidate)} aside: ${renameError.message}`);
-      }
-      console.error(`[LINKS] ${path.basename(candidate)} could not be read (${e.message}) — moved to ${path.basename(aside)}`);
-    }
-  }
+  loadInto(file, bak, links, overrides);
 
   // Saves are serialized: one write at a time, and a change during a write
   // triggers one more write afterwards
@@ -69,27 +97,32 @@ function createStore(dir) {
     return JSON.stringify({ links: Object.fromEntries(links), overrides: Object.fromEntries(overrides) });
   }
 
-  function save() {
-    if (writing) { dirty = true; return; }
+  function retryLater() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => { retryTimer = null; save(); }, RETRY_MS);
+    retryTimer.unref();
+  }
+
+  async function save() {
+    if (writing) {
+      dirty = true;
+      return;
+    }
     writing = true;
     dirty = false;
-    const tmp = `${file}.tmp`;
-    const data = serialize();
     let failed = false;
-    fs.promises.writeFile(tmp, data)
-      // No main file yet on the first save: nothing to back up, carry on
-      .then(() => fs.promises.copyFile(file, bak).catch(() => null))
-      .then(() => fs.promises.rename(tmp, file))
-      .catch((e) => { console.error("[LINKS] save failed:", e.message); failed = true; dirty = true; })
-      .finally(() => {
-        writing = false;
-        if (!dirty) return;
-        if (!failed) return save();
-        if (!retryTimer) {
-          retryTimer = setTimeout(() => { retryTimer = null; save(); }, RETRY_MS);
-          retryTimer.unref();
-        }
-      });
+    try {
+      await writeAtomically(file, bak, serialize());
+    } catch (e) {
+      console.error("[LINKS] save failed:", e.message);
+      failed = true;
+      dirty = true;
+    } finally {
+      writing = false;
+    }
+    if (!dirty) return;
+    if (failed) retryLater();
+    else save();
   }
 
   // On shutdown: write synchronously if something hasn't been saved yet
