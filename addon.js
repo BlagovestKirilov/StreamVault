@@ -143,6 +143,8 @@ app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (req, res) => {
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 // STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
 const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : __dirname);
+// Stable install links ("s-<id>"): settings saved next to the stats, edited in place
+const linkStore = require("./links").createStore(STATS_DIR);
 const STATS_FILE = path.join(STATS_DIR, "stats.json");
 const PROCESS_START = new Date().toISOString();
 let stats = {
@@ -324,14 +326,15 @@ function saveStatsSync() {
 }
 
 setInterval(saveStats, 60000);
-process.on("SIGTERM", () => { saveStatsSync(); process.exit(0); });
-process.on("SIGINT", () => { saveStatsSync(); process.exit(0); });
+process.on("SIGTERM", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
+process.on("SIGINT", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
 process.on("unhandledRejection", (err) => {
   console.error("[FATAL] Unhandled rejection:", err);
 });
 process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught exception:", err);
   saveStatsSync();
+  linkStore.saveSync();
   process.exit(1);
 });
 
@@ -569,6 +572,13 @@ const BASE_MANIFEST = {
 function parseConfigPath(configStr) {
   let params = {};
 
+  // Stable link: the encrypted settings are saved on the server (links.js)
+  if (linkStore.isId(configStr)) {
+    const saved = linkStore.get(configStr);
+    if (!saved) return { type: null, missing: true };
+    configStr = "e-" + saved.encrypted;
+  }
+
   // Detect encrypted format: "e-" prefix followed by hex chars (iv + authTag + ciphertext)
   if (configStr.startsWith("e-") && /^e-[0-9a-f]+$/i.test(configStr)) {
     try {
@@ -666,6 +676,13 @@ function extractConfig(req, res, next) {
   };
   try {
     const config = parseConfigPath(req.params.config);
+    if (config.missing) {
+      return refuse("stable install link not found (saved settings missing)", "This StreamVault link no longer exists. Set it up again.");
+    }
+    // Cache key for things built from the settings (category list): a stable
+    // link's settings can change, so its key includes the revision
+    const saved = linkStore.get(req.params.config);
+    req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
       return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
@@ -694,6 +711,8 @@ function serveConfigure(req, res) {
   if (counted) {
     stats.configures++;
     countToday("configures");
+    // Opened from an installed addon's Configure button (/<link>/configure)
+    if (req.params.config) countToday("reconfigures");
     setCapped(lastConfigureAt, ip, now, 10000);
   }
   console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
@@ -755,31 +774,52 @@ app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
 
 // --- API: Encrypt config for secure URL ---
 const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
+// Settings from the configure page → only known fields, nothing cut off silently
+function sanitizeConfig(configObj) {
+  if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
+    return { error: "Invalid config" };
+  }
+  const sanitized = {};
+  for (const key of Object.keys(configObj)) {
+    if (ALLOWED_CONFIG_KEYS.has(key)) {
+      sanitized[key] = String(configObj[key]).slice(0, 2048);
+    }
+  }
+  // A truncated selection would silently fall back to "all groups" (M3U) or
+  // keep a cut-off list of category ids (Xtream)
+  if (sanitized.g && String(configObj.g).length > 2048) return { error: "Too many groups selected — pick fewer" };
+  if (sanitized.c && String(configObj.c).length > 2048) return { error: "Too many categories selected — pick fewer" };
+  return { sanitized };
+}
+
 app.post("/api/encrypt", limitConfig, (req, res) => {
   try {
-    const configObj = req.body;
-    if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
-      return res.status(400).json({ error: "Invalid config" });
-    }
-    // Only allow known fields
-    const sanitized = {};
-    for (const key of Object.keys(configObj)) {
-      if (ALLOWED_CONFIG_KEYS.has(key)) {
-        sanitized[key] = String(configObj[key]).slice(0, 2048);
-      }
-    }
-    // A truncated selection would silently fall back to "all groups" (M3U) or
-    // keep a cut-off list of category ids (Xtream)
-    if (sanitized.g && String(configObj.g).length > 2048) {
-      return res.status(400).json({ error: "Too many groups selected — pick fewer" });
-    }
-    if (sanitized.c && String(configObj.c).length > 2048) {
-      return res.status(400).json({ error: "Too many categories selected — pick fewer" });
-    }
-    const encrypted = encryptConfig(sanitized);
-    res.json({ config: "e-" + encrypted });
+    const { error, sanitized } = sanitizeConfig(req.body);
+    if (error) return res.status(400).json({ error });
+    res.json({ config: "e-" + encryptConfig(sanitized) });
   } catch (e) {
     res.status(500).json({ error: "Encryption failed" });
+  }
+});
+
+// Install link from the configure page: a stable "s-<id>" link. When the page
+// was opened from an installed StreamVault ("editing" = its link), a stable link
+// is updated in place — same link, so apps don't add a second StreamVault.
+// Editing an older "e-" link (or a full store) still gives a new link.
+app.post("/api/link", limitConfig, (req, res) => {
+  try {
+    const { error, sanitized } = sanitizeConfig(req.body);
+    if (error) return res.status(400).json({ error });
+    const encrypted = encryptConfig(sanitized);
+    const editing = typeof req.body.editing === "string" ? req.body.editing.slice(0, 4096) : "";
+    if (editing) countToday("reinstalls");
+    if (linkStore.isId(editing) && linkStore.update(editing, encrypted)) {
+      return res.json({ config: editing, updated: true });
+    }
+    const id = linkStore.create(encrypted);
+    res.json({ config: id || "e-" + encrypted, updated: false });
+  } catch (e) {
+    res.status(500).json({ error: "Couldn't save your settings" });
   }
 });
 
@@ -1014,7 +1054,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(user);
   console.log(`[INSTALL] ${maskIp(ip)} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
-  const genres = await getGenresWithin(req.userConfig, req.params.config, GENRES_TIMEOUT_MS);
+  const genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
   res.json(configuredManifest(genres, cType));
 });
 
@@ -1113,6 +1153,8 @@ app.get("/stats", limitStats, (req, res) => {
       xtream: `${xtreamCache.size}/${XTREAM_CACHE_MAX}`,
       accounts: `${accountCache.size}/${XTREAM_CACHE_MAX}`,
       genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
+      // stable install links saved on the volume (links.json)
+      links: linkStore.size(),
       inflightDownloads: inflight.size,
       downloadsRunning: `${downloadsRunning}/${MAX_PARALLEL_DOWNLOADS}`,
       downloadsWaiting: downloadQueue.length,
@@ -1837,7 +1879,7 @@ app.use((req, res) => {
 // Path for logs/stats with install links hidden: any segment that is a user's
 // config ("e-<hex>", base64 "ey...") or just very long becomes "<config>"
 function maskPath(p) {
-  return p.split("/").map(seg => (/^(e-|ey)/.test(seg) || seg.length > 40 ? "<config>" : seg))
+  return p.split("/").map(seg => (/^(e-|ey|s-)/.test(seg) || seg.length > 40 ? "<config>" : seg))
     .join("/").slice(0, 150);
 }
 

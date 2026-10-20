@@ -778,10 +778,12 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
-          Ready to install
+          <span id="resultTitle">Ready to install</span>
         </div>
         <input type="text" class="result-url" id="installUrl" readonly />
-        <div class="result-btns">
+        <!-- Shown instead of the install steps when an installed StreamVault was edited in place -->
+        <p class="result-hint" id="updatedHint" style="display:none;">Your StreamVault keeps the same link, so there's nothing to install again.<br/>Restart Stremio or Nuvio to see the changes.</p>
+        <div class="result-btns" id="resultBtns">
           <button class="btn-sm btn-copy" onclick="copyUrl()">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
@@ -795,8 +797,8 @@
             Open Stremio
           </a>
         </div>
-        <p class="result-hint">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.<br/>Have another StreamVault that only shows “Set up StreamVault first”? Delete it from your addons.</p>
-        <p class="tv-tip"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 3l-4 4-4-4"/></svg><b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
+        <p class="result-hint" id="installHints">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.<br/>Have another StreamVault that only shows “Set up StreamVault first”? Delete it from your addons.</p>
+        <p class="tv-tip" id="tvTip"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 3l-4 4-4-4"/></svg><b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
       </div>
     </div>
     <div style="height: 30px;"></div>
@@ -855,6 +857,7 @@
 
     // --- Connection check (shared by Test, Load Categories and Install) ---
     let lastCheckKey = null;   // request body that last passed the check
+    let editingLink = '';      // install link this page was opened from (an app's Configure)
     let checking = false;      // a Test / Load Categories request is running
 
     // Playlist text pasted instead of its link (a text box joins the lines)
@@ -1026,11 +1029,12 @@
       } catch (_) {}
 
       try {
-        // Encrypt config server-side so credentials are not visible in URL
-        const encRes = await fetch('/api/encrypt', {
+        // Settings are encrypted and saved server-side under a stable link; when
+        // editing an installed StreamVault the same link is updated in place
+        const encRes = await fetch('/api/link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(configObj)
+          body: JSON.stringify(editingLink ? { ...configObj, editing: editingLink } : configObj)
         });
         const encData = await encRes.json();
         if (encData.error) { showToast(encData.error); return; }
@@ -1038,6 +1042,19 @@
         const base = window.location.origin;
         const configPath = encData.config;
         const manifestUrl = `${base}/${configPath}/manifest.json`;
+
+        // Same link, new settings: nothing to install, the app picks them up
+        const updated = encData.updated === true;
+        document.getElementById('resultTitle').textContent = updated ? 'Saved — StreamVault updated' : 'Ready to install';
+        document.getElementById('updatedHint').style.display = updated ? 'block' : 'none';
+        for (const id of ['resultBtns', 'installHints', 'tvTip']) {
+          document.getElementById(id).style.display = updated ? 'none' : '';
+        }
+        if (updated) {
+          document.getElementById('installUrl').value = manifestUrl;
+          document.getElementById('result').style.display = 'block';
+          return;
+        }
 
         // Use the proper web URL format that Stremio handles on all platforms
         const stremioWebUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
@@ -1258,6 +1275,7 @@
     (async function prefillInstalledSetup() {
       const match = window.location.pathname.match(/^\/([^/]+)\/configure\/?$/);
       if (!match) return;
+      editingLink = decodeURIComponent(match[1]);
       try {
         const res = await fetch(`/api/config/${encodeURIComponent(match[1])}`);
         if (!res.ok) return;
