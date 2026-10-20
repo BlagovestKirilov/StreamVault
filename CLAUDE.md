@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Keep this file accurate (required)
+
+Every change that alters behaviour, an endpoint, a stats counter, a file on the volume, a limit, a user-facing text or a coding rule must update this file **in the same commit**. Before committing, check the sections it touches (request flow, config encoding, Stremio details, memory/stats, code rules, deployment) and remove anything the change made untrue. Keep entries short; describe how it works now, not the history.
+
 ## Commands
 
 ```bash
