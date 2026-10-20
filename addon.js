@@ -940,7 +940,13 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       ? normalizeXtreamLogin(req.body.server, req.body.username, req.body.password).server
       : req.body && req.body.m3uUrl;
     noteRecent(recentTestFailures, { source, error: key, address: addressShape(entered) });
-    res.json({ ok: false, error: TEST_ERROR_HINTS[key] || safeError(e) });
+    // "Use http:// instead of https://" only helps if the address IS https://;
+    // an http:// address can hit this too (provider redirects to https on a
+    // port without a certificate)
+    const hint = key === "https_mismatch" && !/^https:/i.test(String(entered || ""))
+      ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider"
+      : TEST_ERROR_HINTS[key];
+    res.json({ ok: false, error: hint || safeError(e) });
   }
 });
 
@@ -1143,10 +1149,16 @@ app.get(["/catalog/:type/:id.json", "/catalog/:type/:id/:extra.json"], limitAddo
   const firstPage = !/(^|&)skip=[1-9]/.test(req.params.extra || "");
   serveUnconfigured(req, res, { metas: firstPage ? [noticeMeta("setup", req.params.type)] : [] });
 });
+// Apps also ask an empty install about films/series (tt… ids, "anime" type):
+// not ours — counted as foreignRequests, not as an install without settings
+const isBareForeign = (type, id) => type !== "tv" || !id.startsWith("iptv_");
 app.get("/meta/:type/:id.json", limitAddon, (req, res) => {
-  serveUnconfigured(req, res, { meta: noticeMeta("setup", req.params.type) });
+  const { type, id } = req.params;
+  if (isBareForeign(type, id)) return answerForeign(res, { meta: { id, type, name: "Unknown" } });
+  serveUnconfigured(req, res, { meta: noticeMeta("setup", type) });
 });
 app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
+  if (isBareForeign(req.params.type, req.params.id)) return answerForeign(res, { streams: [] });
   // Play on the setup tile opens the setup page in the browser — on a phone
   // the QR can't be scanned, so this is the way through
   const streams = req.params.id === "iptv_notice_setup"
@@ -1674,6 +1686,13 @@ async function getM3UCatalog(config, type) {
 function findM3UChannel(channels, channelId) {
   const exact = channels.find((ch) => ch.id === channelId && ch.type === "tv");
   if (exact) return exact;
+  // "<tvg-id>_v2/_v3" = a duplicate entry numbered by playlist order; when the
+  // provider adds/removes copies the number moves. Fall back to the channel itself.
+  const variant = channelId.match(/^(.+)_v\d+$/);
+  if (variant) {
+    const base = channels.find((ch) => ch.id === variant[1] && ch.type === "tv");
+    if (base) return base;
+  }
   const m = channelId.match(/^(m3u_.*_)(\d+)$/);
   if (!m) return null;
   const [, prefix, oldPos] = m;
@@ -1807,7 +1826,8 @@ app.use((req, res) => {
   // Only page-like paths redirect; a missing file (robots.txt, some-icon.png, ...)
   // is a plain 404 rather than a second download of the configure page
   const looksLikeFile = /\.[a-z0-9]{1,5}$/i.test(req.path);
-  if (req.method === "GET" && !isApiCall && !looksLikeFile) {
+  // HEAD too: uptime monitors check "/" with HEAD and would see a 404
+  if ((req.method === "GET" || req.method === "HEAD") && !isApiCall && !looksLikeFile) {
     return res.redirect(302, "/configure");
   }
   noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path), userAgent: userAgent(req) });

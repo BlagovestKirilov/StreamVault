@@ -247,6 +247,11 @@ http://example.com/btv_fhd.ts`;
     expect(streams[1].name).toBe("StreamVault\nHLS");
     expect(streams[1].behaviorHints.proxyHeaders).toBeUndefined();
   });
+
+  test("a saved duplicate id (_v3) that no longer exists falls back to the channel", async () => {
+    const res = await request(app).get(`/${configPath()}/stream/tv/iptv_tv_btv.bg_v3.json`);
+    expect(res.body.streams[0].url).toBe("http://example.com/btv_hd.m3u8");
+  });
 });
 
 // ─── Category (genre) filter ───
@@ -473,6 +478,16 @@ describe("configure page API", () => {
   test("GET /api/config rejects an invalid link", async () => {
     const res = await request(app).get("/api/config/garbage");
     expect(res.status).toBe(400);
+  });
+
+  test("the use-http:// hint only goes to https:// addresses", async () => {
+    const sslError = new Error("write EPROTO error:0A00010B:SSL routines:tls_validate_record_header:wrong version number");
+    jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(sslError);
+    const https = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "https://example.com/hint-ssl.m3u" });
+    expect(https.body.error).toMatch(/start with http:\/\/ instead of https:\/\//);
+    const http = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/hint-ssl2.m3u" });
+    expect(http.body.error).toMatch(/secure-connection \(SSL\) problem/);
+    expect(http.body.error).not.toMatch(/instead of https/);
   });
 
   test("a 403 Test Connection explains the provider refused StreamVault's server", async () => {
@@ -1289,6 +1304,17 @@ describe("installs without settings (bare manifest)", () => {
     expect(s.recentUnconfigured[0]).toMatchObject({ path: "/catalog/tv/iptv_live.json", userAgent: "StremioTV/1.0 (old build)" });
   });
 
+  test("film/series requests to an empty install count as foreign, not unconfigured", async () => {
+    const before = (await stats()).history[0];
+    for (const path of ["/stream/series/tt40385667:1:1.json", "/stream/anime/tt40385667:1:1.json", "/meta/movie/tt1.json"]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+    }
+    const after = (await stats()).history[0];
+    expect(after.unconfigured || 0).toBe(before.unconfigured || 0);
+    expect(after.foreignRequests).toBe((before.foreignRequests || 0) + 3);
+  });
+
   test("bare search/next pages, channel page and stream are handled too", async () => {
     expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
@@ -1412,6 +1438,12 @@ describe("configure visit counting", () => {
 describe("unknown pages", () => {
   test.each(["/", "/some/old/link", "/home"])("GET %s redirects to /configure", async (path) => {
     const res = await request(app).get(path);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("/configure");
+  });
+
+  test("HEAD / redirects too (uptime monitors), not a 404", async () => {
+    const res = await request(app).head("/");
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("/configure");
   });
