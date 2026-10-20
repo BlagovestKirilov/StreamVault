@@ -187,7 +187,9 @@ try {
   for (const day of Object.keys(stats.dailyActive)) {
     stats.dailyActive[day] = toUserKeys(stats.dailyActive[day]);
   }
-} catch (_) {}
+} catch (_) {
+  // No stats.json yet (first start) or unreadable: start counting from zero
+}
 
 const MAX_TRACKED_USERS = 10000;
 
@@ -282,8 +284,8 @@ function countCode(mapName, where, code) {
 
 // Provider failure → HTTP status ("503") or, without one, what went wrong
 function providerErrorKey(e) {
-  const msg = String((e && e.message) || "");
-  const status = (msg.match(/status code (\d{3})/) || [])[1];
+  const msg = String(e?.message || "");
+  const status = (/status code (\d{3})/.exec(msg) || [])[1];
   if (status) return status;
   // https:// address on a server that only speaks plain http on that port
   if (/EPROTO|wrong version number|SSL routines/i.test(msg)) return "https_mismatch";
@@ -295,8 +297,8 @@ function providerErrorKey(e) {
 // where = "catalog" | "meta" | "stream"
 function recordError(where, config, e) {
   countToday(`${where}Errors`);
-  countCode("providerErrors", `${where} (${(config && config.type) || "unknown"})`, providerErrorKey(e));
-  noteRecent(recentErrors, { where, source: config && config.type, error: safeError(e) });
+  countCode("providerErrors", `${where} (${config?.type || "unknown"})`, providerErrorKey(e));
+  noteRecent(recentErrors, { where, source: config?.type, error: safeError(e) });
 }
 
 // Saves write a temp file and rename it over stats.json. A rename is all-or-nothing,
@@ -316,7 +318,7 @@ function saveStats() {
   const tmp = `${STATS_FILE}.tmp`;
   fs.promises.writeFile(tmp, data)
     .then(() => fs.promises.rename(tmp, STATS_FILE))
-    .catch(() => {})
+    .catch(() => { /* disk error: the old stats.json stays; the next interval tries again */ })
     .finally(() => { saving = false; });
 }
 
@@ -327,7 +329,9 @@ function saveStatsSync() {
     const tmp = `${STATS_FILE}.exit.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(saveStatsData(), null, 2));
     fs.renameSync(tmp, STATS_FILE);
-  } catch (_) {}
+  } catch (_) {
+    // Shutting down anyway; at worst the last minute of stats is lost
+  }
 }
 
 setInterval(saveStats, 60000);
@@ -410,7 +414,7 @@ const failCache = new Map(); // key -> { message, until }
 
 async function withFailureCache(key, load) {
   const failed = failCache.get(key);
-  if (failed && failed.until > Date.now()) {
+  if (failed?.until > Date.now()) {
     // Answered from memory: the provider was NOT contacted. Marked so handlers
     // don't log/count it as another provider failure (one app opening 57
     // channel pages of a dead provider used to log 57 errors).
@@ -419,7 +423,7 @@ async function withFailureCache(key, load) {
     err.fromFailureCache = true;
     throw err;
   }
-  if (failed && failed.repeats > 0) {
+  if (failed?.repeats > 0) {
     console.log(`[FAILCACHE] ${failed.repeats} more request(s) were answered from cache after: ${safeError(failed)}`);
   }
   try {
@@ -428,7 +432,7 @@ async function withFailureCache(key, load) {
     return data;
   } catch (e) {
     // Only the message is kept (the original error can hold request details)
-    setCapped(failCache, key, { message: (e && e.message) || "Unknown error", until: Date.now() + FAIL_TTL, repeats: 0 }, FAIL_CACHE_MAX);
+    setCapped(failCache, key, { message: e?.message || "Unknown error", until: Date.now() + FAIL_TTL, repeats: 0 }, FAIL_CACHE_MAX);
     throw e;
   }
 }
@@ -436,7 +440,7 @@ async function withFailureCache(key, load) {
 // Catalog/meta/stream handlers: log + count a real provider failure, or just
 // count a repeat that was answered from the failure cache
 function handleProviderError(where, req, e) {
-  if (e && e.fromFailureCache) {
+  if (e?.fromFailureCache) {
     countToday("cachedFailures");
     return;
   }
@@ -468,7 +472,7 @@ function parseGroups(g) {
     if (!Array.isArray(arr)) return [];
     return arr.filter(x => typeof x === "string" && x).slice(0, MAX_SELECTED_GROUPS);
   } catch (_) {
-    return [];
+    return []; // not valid JSON: treat as "all groups"
   }
 }
 
@@ -600,7 +604,7 @@ function settingsFromEncrypted(configStr) {
 function settingsFromBase64(configStr) {
   if (!/^ey[A-Za-z0-9_-]+$/.test(configStr)) return null;
   try {
-    const base64 = configStr.replace(/-/g, "+").replace(/_/g, "/");
+    const base64 = configStr.replaceAll("-", "+").replaceAll("_", "/");
     return JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
   } catch (_) {
     return null; // not JSON — fall through to the oldest format
@@ -657,7 +661,9 @@ function isPlaylistLink(url) {
   try {
     const u = new URL(url);
     return /\.m3u8?$/i.test(u.pathname === "/" ? u.hostname : u.pathname);
-  } catch (_) { return false; }
+  } catch (_) {
+    return false; // not a URL at all — validation reports that separately
+  }
 }
 
 // --- Middleware: extract config from URL path ---
@@ -758,7 +764,7 @@ const lastConfigureAt = new Map(); // ip -> time of the last counted visit
 function serveConfigure(req, res) {
   const ip = getIp(req);
   const now = Date.now();
-  const counted = req.method === "GET" && !(now - (lastConfigureAt.get(ip) || 0) < CONFIGURE_DEDUPE_MS);
+  const counted = req.method === "GET" && now - (lastConfigureAt.get(ip) || 0) >= CONFIGURE_DEDUPE_MS;
   if (counted) {
     stats.configures++;
     countToday("configures");
@@ -834,7 +840,7 @@ function isUsableOldLink(link) {
     if (c.type === "xtream") return !!(c.server && c.username && c.password);
     return false;
   } catch (_) {
-    return false;
+    return false; // can't be read, so it isn't a usable link
   }
 }
 
@@ -929,8 +935,8 @@ app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
 function accountProblem(info) {
   if (!info || typeof info !== "object") return null;
   if (String(info.auth) === "0") return "Wrong username or password";
-  const status = String(info.status || "").trim();
-  if (status && status.toLowerCase() !== "active") return `Your account is ${status.toLowerCase().slice(0, 20)}`;
+  const status = String(info.status || "").trim().toLowerCase();
+  if (status !== "" && status !== "active") return `Your account is ${status.slice(0, 20)}`;
   const exp = Number(info.exp_date);
   if (exp > 0 && exp * 1000 < Date.now()) {
     return `Your account expired on ${new Date(exp * 1000).toISOString().slice(0, 10)}`;
@@ -972,7 +978,11 @@ function whyNoLiveChannels(shape) {
 const KNOWN_PATH_FILE = /^([a-z_]+\.php|[^/]*\.m3u8?)$/i;
 function addressShape(url) {
   let u;
-  try { u = new URL(String(url || "")); } catch (_) { return "not a URL"; }
+  try {
+    u = new URL(String(url || ""));
+  } catch (_) {
+    return "not a URL"; // that's the answer: the shape of what was entered
+  }
   const path = u.pathname.split("/").map(seg => (!seg || KNOWN_PATH_FILE.test(seg) ? seg : "<seg>")).join("/");
   return `${u.protocol}//<host>${u.port ? ":" + u.port : ""}${path}${u.search ? "?…" : ""}`;
 }
@@ -1352,7 +1362,7 @@ async function catalogHandler(req, res) {
 
     // Filter by search — all words must appear in the name (any order), ignoring
     // case, accents, punctuation and Cyrillic vs Latin spelling
-    if (extra.search && extra.search.trim()) {
+    if (extra.search?.trim()) {
       stats.searches++;
       countToday("searches");
       const words = search.split(" ").filter(w => w.length > 0);
@@ -1695,10 +1705,10 @@ async function getXtreamAccount(config) {
 // "🗓 Subscription expires 2026-12-01" for the channel page, or "" when unknown
 function subscriptionLine(info) {
   if (!info || typeof info !== "object") return "";
-  const status = String(info.status || "").trim();
-  if (status && status.toLowerCase() !== "active") return `⚠️ Your IPTV account is ${status.toLowerCase().slice(0, 20)}`;
+  const status = String(info.status || "").trim().toLowerCase();
+  if (status !== "" && status !== "active") return `⚠️ Your IPTV account is ${status.slice(0, 20)}`;
   const exp = Number(info.exp_date);
-  if (!(exp > 0)) return "";
+  if (!Number.isFinite(exp) || exp <= 0) return ""; // missing/invalid date → nothing to show
   const date = new Date(exp * 1000).toISOString().slice(0, 10);
   return exp * 1000 < Date.now() ? `⚠️ Subscription expired on ${date}` : `🗓 Subscription expires ${date}`;
 }
@@ -1723,7 +1733,7 @@ async function getXtreamMeta(config, type, id) {
   // Fetch EPG for live channels
   try {
     const epg = await xtream.getShortEPG(config, streamId);
-    if (epg && epg.length > 0) {
+    if (epg?.length > 0) {
       const lines = epg.map(e => {
         const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
         const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
@@ -1732,7 +1742,9 @@ async function getXtreamMeta(config, type, id) {
       });
       description = "📺 TV Guide:\n" + lines.join("\n");
     }
-  } catch (_) {}
+  } catch (_) {
+    // No TV guide from the provider: the channel page just shows no guide
+  }
 
   const subscription = subscriptionLine(await accountPromise);
   if (subscription) description += `\n\n${subscription}`;
@@ -1740,7 +1752,7 @@ async function getXtreamMeta(config, type, id) {
   // Not in the (just loaded) catalog → the provider doesn't list it in the
   // user's categories; refetching the full stream list would only spike memory
   const meta = { id, type, name, poster, posterShape: "square", description };
-  if (item && item.genres) meta.genres = item.genres;
+  if (item?.genres) meta.genres = item.genres;
   return meta;
 }
 
@@ -1758,7 +1770,9 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
     const catalog = await getXtreamCatalog(config, type);
     const item = catalog.find(m => m.id === id);
     if (item) channelName = item.name;
-  } catch (_) {}
+  } catch (_) {
+    // Catalog unavailable: the stream still plays, titled "Channel <id>"
+  }
 
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
   const tvName = channelName || `Channel ${streamId}`;
@@ -1817,12 +1831,12 @@ function findM3UChannel(channels, channelId) {
   if (exact) return exact;
   // "<tvg-id>_v2/_v3" = a duplicate entry numbered by playlist order; when the
   // provider adds/removes copies the number moves. Fall back to the channel itself.
-  const variant = channelId.match(/^(.+)_v\d+$/);
+  const variant = /^(.+)_v\d+$/.exec(channelId);
   if (variant) {
     const base = channels.find((ch) => ch.id === variant[1] && ch.type === "tv");
     if (base) return base;
   }
-  const m = channelId.match(/^(m3u_.*_)(\d+)$/);
+  const m = /^(m3u_.*_)(\d+)$/.exec(channelId);
   if (!m) return null;
   const [, prefix, oldPos] = m;
   let best = null, bestDist = Infinity;
@@ -1861,7 +1875,7 @@ async function getM3UStreams(config, id) {
   const { channels } = await getCachedM3U(config);
 
   // Extract channel id from the full id (iptv_tv_<channelId>)
-  const parts = id.match(/^iptv_tv_(.+)$/);
+  const parts = /^iptv_tv_(.+)$/.exec(id);
   const channelId = parts ? parts[1] : id;
 
   const channel = findM3UChannel(channels, channelId);
@@ -1925,7 +1939,7 @@ function safeDecode(s) {
   try {
     return decodeURIComponent(s);
   } catch (_) {
-    return s;
+    return s; // malformed %-encoding: keep the raw text
   }
 }
 
