@@ -11,10 +11,10 @@
  * remembered in okHosts can't reach an internal address.
  */
 
-const { URL } = require("url");
-const dns = require("dns");
-const http = require("http");
-const https = require("https");
+const { URL } = require("node:url");
+const dns = require("node:dns");
+const http = require("node:http");
+const https = require("node:https");
 
 const PRIVATE_IP_RANGES = [
   /^127\./,

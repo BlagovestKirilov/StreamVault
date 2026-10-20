@@ -6,9 +6,9 @@
  */
 
 const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const crypto = require("crypto");
+const path = require("node:path");
+const fs = require("node:fs");
+const crypto = require("node:crypto");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 
@@ -69,14 +69,18 @@ app.use((req, res, next) => {
 // (400 bad config, 404, 429 rate-limited, ...) — saved with the stats history.
 // The endpoint is the route pattern ("GET /:config/catalog/:type/:id.json"), never
 // the raw URL: that keeps the list short and users' install links out of stats.
+// Route pattern for the error counts (never the raw URL — install links hold settings)
+function errorEndpoint(req) {
+  if (req.route) return `${req.method} ${req.route.path}`;
+  // A body refused before routing (too large / not JSON) still names its API route
+  if (req.method === "POST" && /^\/api\/[a-z0-9-]+$/.test(req.path)) return `POST ${req.path}`;
+  return "unknown path";
+}
+
 app.use((req, res, next) => {
   res.on("finish", () => {
     if (res.statusCode < 400 || req.path === "/health" || res.locals.skipErrorCount) return;
-    // A body refused before routing (too large / not JSON) still names its API route
-    const endpoint = req.route ? `${req.method} ${req.route.path}`
-      : req.method === "POST" && /^\/api\/[a-z0-9-]+$/.test(req.path) ? `POST ${req.path}`
-      : "unknown path";
-    countCode("responseErrors", endpoint, String(res.statusCode));
+    countCode("responseErrors", errorEndpoint(req), String(res.statusCode));
   });
   next();
 });
@@ -826,7 +830,9 @@ const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
 function isUsableOldLink(link) {
   try {
     const c = parseConfigPath(link);
-    return c.type === "m3u" ? !!c.url : c.type === "xtream" ? !!(c.server && c.username && c.password) : false;
+    if (c.type === "m3u") return !!c.url;
+    if (c.type === "xtream") return !!(c.server && c.username && c.password);
+    return false;
   } catch (_) {
     return false;
   }
@@ -1322,7 +1328,7 @@ async function catalogHandler(req, res) {
     // "&" inside a group name or search ("Sports & News") would split wrongly
     const extra = req.params.extra ? parseExtra(req.path.split("/").pop()) : {};
     const search = normalizeForSearch(extra.search || "");
-    const skip = parseInt(extra.skip) || 0;
+    const skip = Number.parseInt(extra.skip, 10) || 0;
     const PAGE_SIZE = 100;
 
     let metas = [];
@@ -1575,16 +1581,21 @@ function notePlayRejects(req, res, next) {
   next();
 }
 
+// Why a /play redirect is refused, or null when it's a stream getXtreamStreams makes
+function playRejectReason(config, streamType, streamId, ext) {
+  if (config.type !== "xtream") return "not an Xtream install";
+  if (streamType !== "live") return `stream type "${String(streamType).slice(0, 20)}" (only live)`;
+  if (!XTREAM_STREAM_ID.test(streamId)) return "stream id has unexpected characters";
+  if (!PLAY_EXTS.has(ext)) return `format "${String(ext).slice(0, 10)}" (only ts/m3u8)`;
+  return null;
+}
+
 app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRejects, extractConfig, async (req, res) => {
   const config = req.userConfig;
   const { streamType, streamId, ext } = req.params;
   // Stream ids are usually numeric, but some panels use letters too; still no
   // dots/slashes, so the redirect can only point at a stream file
-  const reason =
-    config.type !== "xtream" ? "not an Xtream install" :
-    streamType !== "live" ? `stream type "${String(streamType).slice(0, 20)}" (only live)` :
-    !XTREAM_STREAM_ID.test(streamId) ? "stream id has unexpected characters" :
-    !PLAY_EXTS.has(ext) ? `format "${String(ext).slice(0, 10)}" (only ts/m3u8)` : null;
+  const reason = playRejectReason(config, streamType, streamId, ext);
   if (reason) {
     res.locals.rejectReason = reason;
     return res.status(400).json({ error: "Invalid stream" });

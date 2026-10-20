@@ -16,9 +16,9 @@
  * and the previous version is kept as links.json.bak.
  */
 
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
 const ID_RE = /^s-[a-z0-9]{12}$/;
 const ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";

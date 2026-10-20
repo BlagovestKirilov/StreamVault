@@ -6,7 +6,7 @@
  */
 
 const axios = require("axios");
-const readline = require("readline");
+const readline = require("node:readline");
 const { assertExternalUrl, blockPrivateRedirects, guardedAgents, PROVIDER_USER_AGENT } = require("./urlguard");
 
 // Memory safety cap on live channels per playlist
