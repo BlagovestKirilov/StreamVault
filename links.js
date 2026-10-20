@@ -99,10 +99,12 @@ function createStore(dir) {
 
   function retryLater() {
     if (retryTimer) return;
-    retryTimer = setTimeout(() => { retryTimer = null; save(); }, RETRY_MS);
+    retryTimer = setTimeout(() => { retryTimer = null; void save(); }, RETRY_MS);
     retryTimer.unref();
   }
 
+  // Never rejects (errors are logged and retried), so callers don't wait for it:
+  // "void save()" = start the write in the background
   async function save() {
     if (writing) {
       dirty = true;
@@ -122,7 +124,7 @@ function createStore(dir) {
     }
     if (!dirty) return;
     if (failed) retryLater();
-    else save();
+    else void save();
   }
 
   // On shutdown: write synchronously if something hasn't been saved yet
@@ -162,7 +164,7 @@ function createStore(dir) {
       if (full()) return null;
       const id = newId();
       links.set(id, { e: encrypted, c: Date.now(), r: 1 });
-      save();
+      void save();
       return id;
     },
     /** Replace the settings of an existing link; false if it doesn't exist */
@@ -171,7 +173,7 @@ function createStore(dir) {
       if (!entry) return false;
       entry.e = encrypted;
       entry.r = (entry.r || 1) + 1;
-      save();
+      void save();
       return true;
     },
     /** Newer settings saved for an older link, or null (no hashing while there are none) */
@@ -191,7 +193,7 @@ function createStore(dir) {
         if (full()) return false;
         overrides.set(key, { e: encrypted, c: Date.now(), r: 1 });
       }
-      save();
+      void save();
       return true;
     },
     saveSync,
