@@ -570,56 +570,46 @@ const BASE_MANIFEST = {
 };
 
 // --- Parse config from URL path segment (supports encrypted, base64url, and legacy URL-encoded) ---
-function parseConfigPath(configStr) {
-  let params = {};
-
-  // Stable link: the encrypted settings are saved on the server (links.js)
-  if (linkStore.isId(configStr)) {
-    const saved = linkStore.get(configStr);
-    if (!saved) return { type: null, missing: true };
-    configStr = "e-" + saved.encrypted;
-  } else {
-    // Older link edited in place: its newer settings win over the ones inside it
-    const override = linkStore.getOverride(configStr);
-    if (override) configStr = "e-" + override.encrypted;
+// Settings object (short keys) → config the handlers use; null if not a StreamVault setup
+function configFromSettings(obj) {
+  if (!obj) return null;
+  if (obj.t === "xtream") {
+    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
   }
-
-  // Detect encrypted format: "e-" prefix followed by hex chars (iv + authTag + ciphertext)
-  if (configStr.startsWith("e-") && /^e-[0-9a-f]+$/i.test(configStr)) {
-    try {
-      const obj = decryptConfig(configStr.slice(2));
-      if (obj.t === "xtream") {
-        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
-      } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
-      }
-    } catch (e) { /* fall through */ }
+  if (obj.t === "m3u") {
+    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
   }
+  return null;
+}
 
-  // Detect base64url format: must start with "ey" (base64-encoded JSON "{") and contain only base64url chars
-  if (/^ey[A-Za-z0-9_-]+$/.test(configStr)) {
-    try {
-      // Base64url decode
-      const base64 = configStr.replace(/-/g, "+").replace(/_/g, "/");
-      const json = Buffer.from(base64, "base64").toString("utf-8");
-      const obj = JSON.parse(json);
-      if (obj.t === "xtream") {
-        return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
-      } else if (obj.t === "m3u") {
-        return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
-      }
-    } catch (e) { /* fall through to legacy parsing */ }
+// "e-<hex>": AES-256-GCM encrypted settings; null if it doesn't decrypt
+function settingsFromEncrypted(configStr) {
+  if (!/^e-[0-9a-f]+$/i.test(configStr)) return null;
+  try {
+    return decryptConfig(configStr.slice(2));
+  } catch (_) {
+    return null; // tampered or not ours — try the other formats
   }
+}
 
-  // Legacy: URL-encoded key=value&key2=value2
-  const decoded = decodeURIComponent(configStr);
-  decoded.split("&").forEach((pair) => {
+// "ey…": base64url JSON (legacy); null if it doesn't decode
+function settingsFromBase64(configStr) {
+  if (!/^ey[A-Za-z0-9_-]+$/.test(configStr)) return null;
+  try {
+    const base64 = configStr.replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
+  } catch (_) {
+    return null; // not JSON — fall through to the oldest format
+  }
+}
+
+// Oldest format: URL-encoded key=value&key2=value2
+function configFromQueryString(configStr) {
+  const params = {};
+  for (const pair of decodeURIComponent(configStr).split("&")) {
     const idx = pair.indexOf("=");
-    if (idx > -1) {
-      params[pair.substring(0, idx)] = pair.substring(idx + 1);
-    }
-  });
-
+    if (idx > -1) params[pair.substring(0, idx)] = pair.substring(idx + 1);
+  }
   if (params.sourceType === "xtream") {
     return {
       type: "xtream",
@@ -628,13 +618,32 @@ function parseConfigPath(configStr) {
       password: decodeURIComponent(params.password || ""),
       country: decodeURIComponent(params.country || ""),
     };
-  } else {
-    return {
-      type: "m3u",
-      url: decodeURIComponent(params.m3uUrl || ""),
-      country: decodeURIComponent(params.country || ""),
-    };
   }
+  return {
+    type: "m3u",
+    url: decodeURIComponent(params.m3uUrl || ""),
+    country: decodeURIComponent(params.country || ""),
+  };
+}
+
+// A link whose settings are saved on the server: a stable "s-" link, or an older
+// link edited in place. Returns the "e-" form of the saved settings, the link
+// unchanged when nothing is saved for it, or null for an unknown "s-" link.
+function resolveSavedSettings(configStr) {
+  if (linkStore.isId(configStr)) {
+    const saved = linkStore.get(configStr);
+    return saved ? "e-" + saved.encrypted : null;
+  }
+  const override = linkStore.getOverride(configStr);
+  return override ? "e-" + override.encrypted : configStr;
+}
+
+function parseConfigPath(configStr) {
+  const resolved = resolveSavedSettings(configStr);
+  if (resolved === null) return { type: null, missing: true };
+  return configFromSettings(settingsFromEncrypted(resolved))
+    || configFromSettings(settingsFromBase64(resolved))
+    || configFromQueryString(resolved);
 }
 
 // An M3U playlist link ("…/index.m3u", or a bare "http://name.m3u") typed into
@@ -963,84 +972,97 @@ function addressShape(url) {
 }
 
 // --- API: Test connection to provider ---
+// Why an Xtream test failed (provider-error kind + message for the user), or null
+function xtreamTestProblem(cats, account) {
+  // Many panels answer a bad login with an empty list instead of an error, so
+  // the account status is what tells a wrong password / expired account apart
+  const problem = accountProblem(account);
+  if (problem) return ["account", problem];
+  if (!Array.isArray(cats)) return ["invalid_response", "Invalid response from server"];
+  if (cats.length === 0) return ["no_channels", "No live channels on this account"];
+  return null;
+}
+
+// Test Connection, Xtream: login + categories (+ account status)
+async function testXtream(body, res) {
+  const { server, username, password } = normalizeXtreamLogin(body.server, body.username, body.password);
+  if (isPlaylistLink(server)) {
+    return res.status(400).json({ ok: false, error: "This is a playlist link — use the M3U tab instead" });
+  }
+  if (!server || !username || !password) {
+    return res.status(400).json({ ok: false, error: "Missing credentials" });
+  }
+  if (!(await validateExternalUrl(server))) {
+    return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
+  }
+  const config = { server: trimTrailingSlashes(server), username, password };
+  const [cats, account] = await Promise.all([
+    xtream.getLiveCategories(config),
+    xtream.getAccountInfo(config).catch(() => null), // no account info = can't check it, not a failure
+  ]);
+  const failure = xtreamTestProblem(cats, account);
+  if (failure) {
+    countCode("providerErrors", "test (xtream)", failure[0]);
+    return res.json({ ok: false, error: failure[1] });
+  }
+  res.json({
+    ok: true,
+    message: `Connected! Found ${cats.length} live categories.`,
+    account: formatAccountInfo(account),
+    // Lets the configure page fill the category picker without a second request
+    categories: cats.map(c => ({ category_id: c.category_id, category_name: c.category_name || "" })),
+  });
+}
+
+// Test Connection, M3U: playlist groups with channel counts
+async function testM3u(m3uUrl, res) {
+  if (!m3uUrl) {
+    return res.status(400).json({ ok: false, error: "Missing M3U URL" });
+  }
+  if (!(await validateExternalUrl(m3uUrl))) {
+    return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
+  }
+  // Group counts only (no channel list in memory); shared with /api/m3u-groups,
+  // so test + group picker cost one download
+  const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
+  const total = groups.reduce((sum, g) => sum + g.count, 0);
+  if (total === 0) {
+    const { kind, message } = whyNoLiveChannels(groups.shape);
+    countCode("providerErrors", "test (m3u)", kind);
+    return res.json({ ok: false, error: message });
+  }
+  res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
+}
+
+// A failed Test Connection: counted, listed (address shape only) and explained
+function answerTestFailure(body, res, e) {
+  const key = providerErrorKey(e);
+  const source = body.type === "xtream" ? "xtream" : "m3u";
+  countCode("providerErrors", `test (${source})`, key);
+  // What kind of address failed (host/path/query hidden) — e.g. to tell a
+  // wrong port from a path pasted into the Xtream server field
+  const entered = source === "xtream"
+    ? normalizeXtreamLogin(body.server, body.username, body.password).server
+    : body.m3uUrl;
+  noteRecent(recentTestFailures, { source, error: key, address: addressShape(entered) });
+  // "Use http:// instead of https://" only helps if the address IS https://;
+  // an http:// address can hit this too (provider redirects to https on a
+  // port without a certificate)
+  const sslOnHttp = key === "https_mismatch" && !/^https:/i.test(String(entered || ""));
+  const hint = sslOnHttp
+    ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider"
+    : TEST_ERROR_HINTS[key];
+  res.json({ ok: false, error: hint || safeError(e) });
+}
+
 app.post("/api/test", limitProviderChecks, async (req, res) => {
+  const body = req.body || {};
   try {
-    const { type, m3uUrl } = req.body;
-    if (type === "xtream") {
-      const { server, username, password } = normalizeXtreamLogin(req.body.server, req.body.username, req.body.password);
-      if (isPlaylistLink(server)) {
-        return res.status(400).json({ ok: false, error: "This is a playlist link — use the M3U tab instead" });
-      }
-      if (!server || !username || !password) {
-        return res.status(400).json({ ok: false, error: "Missing credentials" });
-      }
-      if (!(await validateExternalUrl(server))) {
-        return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
-      }
-      const config = { server: trimTrailingSlashes(server), username, password };
-      const [cats, account] = await Promise.all([
-        xtream.getLiveCategories(config),
-        xtream.getAccountInfo(config).catch(() => null),
-      ]);
-      // Many panels answer a bad login with an empty list instead of an error, so
-      // the account status is what tells a wrong password / expired account apart
-      const problem = accountProblem(account);
-      if (problem) {
-        countCode("providerErrors", "test (xtream)", "account");
-        return res.json({ ok: false, error: problem });
-      }
-      if (!Array.isArray(cats)) {
-        countCode("providerErrors", "test (xtream)", "invalid_response");
-        return res.json({ ok: false, error: "Invalid response from server" });
-      }
-      if (cats.length === 0) {
-        countCode("providerErrors", "test (xtream)", "no_channels");
-        return res.json({ ok: false, error: "No live channels on this account" });
-      }
-      res.json({
-        ok: true,
-        message: `Connected! Found ${cats.length} live categories.`,
-        account: formatAccountInfo(account),
-        // Lets the configure page fill the category picker without a second request
-        categories: cats.map(c => ({ category_id: c.category_id, category_name: c.category_name || "" })),
-      });
-    } else if (type === "m3u") {
-      if (!m3uUrl) {
-        return res.status(400).json({ ok: false, error: "Missing M3U URL" });
-      }
-      if (!(await validateExternalUrl(m3uUrl))) {
-        return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
-      }
-      // Group counts only (no channel list in memory); shared with /api/m3u-groups,
-      // so test + group picker cost one download
-      const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
-      const total = groups.reduce((sum, g) => sum + g.count, 0);
-      if (total === 0) {
-        const { kind, message } = whyNoLiveChannels(groups.shape);
-        countCode("providerErrors", "test (m3u)", kind);
-        return res.json({ ok: false, error: message });
-      }
-      res.json({ ok: true, message: `Connected! Found ${total} channels.`, groups });
-    } else {
-      res.status(400).json({ ok: false, error: "Unknown source type" });
-    }
+    if (body.type === "xtream") return await testXtream(body, res);
+    if (body.type === "m3u") return await testM3u(body.m3uUrl, res);
+    res.status(400).json({ ok: false, error: "Unknown source type" });
   } catch (e) {
-    const key = providerErrorKey(e);
-    const source = req.body && req.body.type === "xtream" ? "xtream" : "m3u";
-    countCode("providerErrors", `test (${source})`, key);
-    // What kind of address failed (host/path/query hidden) — e.g. to tell a
-    // wrong port from a path pasted into the Xtream server field
-    const entered = source === "xtream"
-      ? normalizeXtreamLogin(req.body.server, req.body.username, req.body.password).server
-      : req.body && req.body.m3uUrl;
-    noteRecent(recentTestFailures, { source, error: key, address: addressShape(entered) });
-    // "Use http:// instead of https://" only helps if the address IS https://;
-    // an http:// address can hit this too (provider redirects to https on a
-    // port without a certificate)
-    const hint = key === "https_mismatch" && !/^https:/i.test(String(entered || ""))
-      ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider"
-      : TEST_ERROR_HINTS[key];
-    res.json({ ok: false, error: hint || safeError(e) });
+    answerTestFailure(body, res, e);
   }
 });
 
@@ -1216,7 +1238,7 @@ app.get("/stats", limitStats, (req, res) => {
       failedProviders: [...failCache.values()].filter(f => f.until > Date.now()).length,
     },
     // Newest first; dau is live for recent days, frozen in the row for older ones
-    history: Object.keys(stats.history).sort().reverse().map(date => {
+    history: Object.keys(stats.history).sort((a, b) => b.localeCompare(a)).map(date => {
       const live = stats.dailyActive[date];
       return { date, ...stats.history[date], dau: live ? live.size : (stats.history[date].dau || 0) };
     }),
