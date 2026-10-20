@@ -768,7 +768,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
         </svg>
-        Install
+        <span id="btnInstallText">Install</span>
       </button>
       <p class="install-hint" id="installHint"></p>
 
@@ -903,7 +903,8 @@
             ? PASTED_PLAYLIST_TEXT
             : 'Enter a valid playlist URL (http://...)';
       } else if (!passed) {
-        hint.textContent = 'Install becomes available after a successful test';
+        // matches the button: "Save changes" once an installed setup has loaded
+        hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test`;
       } else {
         hint.textContent = '';
       }
@@ -1290,7 +1291,9 @@
         }
         selectedCategories = new Set((cfg.categories || []).map(String));
         updateButtons();
-        showToast('Your installed setup is loaded — change it and install again to save', true);
+        // Editing an installed StreamVault: saving updates it in place, nothing to install
+        document.getElementById('btnInstallText').textContent = 'Save changes';
+        showToast('Your installed setup is loaded — change it and press Save changes', true);
         // Test right away: loads the category list (saved choices ticked) and unlocks Install
         loadCategories();
       } catch (_) { /* keep the blank form */ }
