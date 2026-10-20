@@ -57,6 +57,8 @@ function createStore(dir) {
   // triggers one more write afterwards
   let writing = false;
   let dirty = false;
+  let retryTimer = null;
+  const RETRY_MS = 10_000; // a failing disk is retried later, not in a tight loop
 
   function serialize() {
     return JSON.stringify({ links: Object.fromEntries(links), overrides: Object.fromEntries(overrides) });
@@ -68,13 +70,19 @@ function createStore(dir) {
     dirty = false;
     const tmp = `${file}.tmp`;
     const data = serialize();
+    let failed = false;
     fs.promises.writeFile(tmp, data)
       .then(() => fs.promises.copyFile(file, bak).catch(() => {})) // no main file yet on first save
       .then(() => fs.promises.rename(tmp, file))
-      .catch((e) => { console.error("[LINKS] save failed:", e.message); dirty = true; })
+      .catch((e) => { console.error("[LINKS] save failed:", e.message); failed = true; dirty = true; })
       .finally(() => {
         writing = false;
-        if (dirty) save();
+        if (!dirty) return;
+        if (!failed) return save();
+        if (!retryTimer) {
+          retryTimer = setTimeout(() => { retryTimer = null; save(); }, RETRY_MS);
+          retryTimer.unref();
+        }
       });
   }
 
