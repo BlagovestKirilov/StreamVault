@@ -54,29 +54,43 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
   // series, a web page instead of a playlist, or not an M3U at all)
   const shape = { lines: 0, extinf: 0, vod: 0, bareUrls: 0, html: false };
 
-  function addLine(raw) {
-    const line = raw.trim();
-    if (!line) return;
-    shape.lines++;
-    if (shape.lines <= 20 && /^<(!doctype|html|head|body)/i.test(line)) shape.html = true;
-
+  // "#…" lines: EXTINF starts an entry, EXTVLCOPT/EXTHTTP add request headers
+  // for it, anything else (#EXTM3U, comments) is skipped
+  function addDirective(line) {
     if (line.startsWith("#EXTINF:")) {
       shape.extinf++;
       pendingMeta = parseExtInf(line);
-      return;
-    }
-    if (line.startsWith("#EXTVLCOPT:")) {
+    } else if (line.startsWith("#EXTVLCOPT:")) {
       pendingHeaders = parseVlcOpt(line, pendingHeaders);
-      return;
-    }
-    if (line.startsWith("#EXTHTTP:")) {
+    } else if (line.startsWith("#EXTHTTP:")) {
       pendingHeaders = parseExtHttp(line, pendingHeaders);
-      return;
     }
-    if (line.startsWith("#")) return;
-    if (!pendingMeta) { shape.bareUrls++; return; }
+  }
 
-    // URL line following an EXTINF
+  function countGroup(group) {
+    if (groupCounts.has(group) || groupCounts.size < MAX_GROUPS) {
+      groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
+    }
+  }
+
+  // Unique id: the first entry keeps the bare tvg-id, later copies get _v2, _v3
+  function nextChannelId(meta) {
+    const baseId = meta.tvgId || generateId(meta.name, channelIndex);
+    const seen = idCounts.get(baseId) || 0;
+    idCounts.set(baseId, seen + 1);
+    channelIndex++;
+    return seen === 0 ? baseId : `${baseId}_v${seen + 1}`;
+  }
+
+  function keepChannel(channel, headers) {
+    if (headers && Object.keys(headers).length > 0) channel.headers = headers;
+    channels.push(channel);
+    if (!categories[channel.group]) categories[channel.group] = [];
+    categories[channel.group].push(channel);
+  }
+
+  // The URL line that follows an EXTINF
+  function addEntry(line) {
     const { url, headers: pipeHeaders } = splitPipeHeaders(line);
     const headers = pipeHeaders ? { ...pendingHeaders, ...pipeHeaders } : pendingHeaders;
     const meta = pendingMeta;
@@ -86,37 +100,43 @@ function createLineParser({ liveOnly, groups = null, countOnly = false }) {
     // Live filter already ran, so label it "tv" directly. Do NOT use guessType
     // here: it factors in group-title, which would misclassify genuine live
     // channels in groups named e.g. "Movies" and drop them from the catalog.
-    if (liveOnly && !isLiveUrl(url)) { shape.vod++; return; }
-
-    const group = meta.groupTitle || "Uncategorized";
-    if (countOnly) {
-      if (groupCounts.has(group) || groupCounts.size < MAX_GROUPS) {
-        groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
-      }
+    if (liveOnly && !isLiveUrl(url)) {
+      shape.vod++;
       return;
     }
-
-    const baseId = meta.tvgId || generateId(meta.name, channelIndex);
-    const seen = idCounts.get(baseId) || 0;
-    idCounts.set(baseId, seen + 1);
-    channelIndex++;
-
+    const group = meta.groupTitle || "Uncategorized";
+    if (countOnly) {
+      countGroup(group);
+      return;
+    }
+    // Id assigned before the group filter, so it doesn't depend on the selection
+    const id = nextChannelId(meta);
     if (groups && !groups.has(group)) return;
 
-    const channel = {
-      id: seen === 0 ? baseId : `${baseId}_v${seen + 1}`,
+    keepChannel({
+      id,
       tvgId: meta.tvgId,
       name: meta.name,
       logo: meta.tvgLogo || "",
       group,
       url,
       type: liveOnly ? "tv" : guessType(url, meta.groupTitle),
-    };
-    if (headers && Object.keys(headers).length > 0) channel.headers = headers;
+    }, headers);
+  }
 
-    channels.push(channel);
-    if (!categories[channel.group]) categories[channel.group] = [];
-    categories[channel.group].push(channel);
+  function addLine(raw) {
+    const line = raw.trim();
+    if (!line) return;
+    shape.lines++;
+    if (shape.lines <= 20 && /^<(!doctype|html|head|body)/i.test(line)) shape.html = true;
+
+    if (line.startsWith("#")) {
+      addDirective(line);
+    } else if (pendingMeta) {
+      addEntry(line);
+    } else {
+      shape.bareUrls++; // a URL with no EXTINF before it
+    }
   }
 
   return { addLine, channels, categories, groupCounts, shape };
