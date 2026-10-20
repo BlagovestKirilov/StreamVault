@@ -12,7 +12,7 @@
 function getIp(req) {
   const fly = req.headers["fly-client-ip"];
   if (typeof fly === "string" && fly.trim()) return fly.trim();
-  return (req.socket && req.socket.remoteAddress) || "unknown";
+  return req.socket?.remoteAddress || "unknown";
 }
 
 // IP for log lines: personal data, so only the network part is kept

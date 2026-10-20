@@ -48,7 +48,12 @@ function createStore(dir) {
       break;
     } catch (e) {
       const aside = `${candidate}.corrupt-${Date.now()}`;
-      try { fs.renameSync(candidate, aside); } catch (_) {}
+      try {
+        fs.renameSync(candidate, aside);
+      } catch (renameError) {
+        // Can't move it aside: still start (from the backup or empty) and say so
+        console.error(`[LINKS] could not move ${path.basename(candidate)} aside: ${renameError.message}`);
+      }
       console.error(`[LINKS] ${path.basename(candidate)} could not be read (${e.message}) — moved to ${path.basename(aside)}`);
     }
   }
@@ -72,7 +77,8 @@ function createStore(dir) {
     const data = serialize();
     let failed = false;
     fs.promises.writeFile(tmp, data)
-      .then(() => fs.promises.copyFile(file, bak).catch(() => {})) // no main file yet on first save
+      // No main file yet on the first save: nothing to back up, carry on
+      .then(() => fs.promises.copyFile(file, bak).catch(() => null))
       .then(() => fs.promises.rename(tmp, file))
       .catch((e) => { console.error("[LINKS] save failed:", e.message); failed = true; dirty = true; })
       .finally(() => {

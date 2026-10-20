@@ -132,7 +132,7 @@ const MAX_GROUPS = 3000;
  * @returns {Object} { channels: [...], categories: { groupTitle: [...] } }
  */
 function parseM3UContent(content, groups) {
-  const parser = createLineParser({ liveOnly: false, groups: groups && groups.length ? new Set(groups) : null });
+  const parser = createLineParser({ liveOnly: false, groups: groups?.length ? new Set(groups) : null });
   content.split(/\r?\n/).forEach(parser.addLine);
   return { channels: parser.channels, categories: parser.categories };
 }
@@ -181,7 +181,7 @@ async function parseM3U(url, groups) {
   const stream = await fetchPlaylistStream(url);
 
   return new Promise((resolve, reject) => {
-    const parser = createLineParser({ liveOnly: true, groups: groups && groups.length ? new Set(groups) : null });
+    const parser = createLineParser({ liveOnly: true, groups: groups?.length ? new Set(groups) : null });
     const { channels, categories } = parser;
 
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -272,13 +272,25 @@ function parseVlcOpt(line, headers) {
 
 /** #EXTHTTP:{"User-Agent":"...","Referer":"..."} */
 function parseExtHttp(line, headers) {
+  let obj;
   try {
-    const obj = JSON.parse(line.slice("#EXTHTTP:".length));
-    for (const [k, v] of Object.entries(obj || {})) {
-      if (typeof v === "string" && /^[A-Za-z0-9-]{1,64}$/.test(k)) headers = setHeader(headers, k, v);
-    }
-  } catch (_) { /* malformed JSON — ignore */ }
+    obj = JSON.parse(line.slice("#EXTHTTP:".length));
+  } catch (_) {
+    return headers; // malformed JSON: the line adds no headers
+  }
+  for (const [k, v] of Object.entries(obj || {})) {
+    if (typeof v === "string" && /^[A-Za-z0-9-]{1,64}$/.test(k)) headers = setHeader(headers, k, v);
+  }
   return headers;
+}
+
+// %-decoded text, or the raw text when the encoding is malformed
+function decodeOrRaw(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (_) {
+    return value; // malformed %-encoding: keep it as written in the playlist
+  }
 }
 
 /** Kodi-style "http://host/stream.m3u8|User-Agent=abc&Referer=http://x" */
@@ -291,9 +303,7 @@ function splitPipeHeaders(line) {
     if (eq === -1) continue;
     const key = pair.slice(0, eq).trim();
     if (!/^[A-Za-z0-9-]{1,64}$/.test(key)) continue;
-    let value = pair.slice(eq + 1);
-    try { value = decodeURIComponent(value); } catch (_) { /* keep raw */ }
-    headers = setHeader(headers, key, value);
+    headers = setHeader(headers, key, decodeOrRaw(pair.slice(eq + 1)));
   }
   return { url: line.slice(0, idx), headers };
 }

@@ -685,7 +685,9 @@ function normalizeXtreamLogin(server, username, password) {
       if (!out.password) out.password = u.searchParams.get("password") || "";
       out.server = u.origin;
     }
-  } catch (_) { /* not a URL — validation reports it */ }
+  } catch (_) {
+    return out; // not a URL: left as typed — validation reports it
+  }
   return out;
 }
 
@@ -1678,12 +1680,17 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
 function epgTimeRange(e, timezone) {
   const startTs = Number(e.start_timestamp);
   const endTs = Number(e.stop_timestamp || e.end_timestamp);
-  if (timezone && startTs && endTs) {
-    try {
-      const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone });
-      return `${fmt.format(startTs * 1000)} - ${fmt.format(endTs * 1000)}`;
-    } catch (_) { /* invalid timezone → fallback */ }
+  if (!timezone || !startTs || !endTs) return providerTimeRange(e);
+  try {
+    const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone });
+    return `${fmt.format(startTs * 1000)} - ${fmt.format(endTs * 1000)}`;
+  } catch (_) {
+    return providerTimeRange(e); // invalid timezone: use the provider's own times
   }
+}
+
+// "HH:MM - HH:MM" as the provider wrote it (its local time)
+function providerTimeRange(e) {
   const start = e.start || "";
   const end = e.end || "";
   return start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";

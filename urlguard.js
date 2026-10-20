@@ -52,7 +52,7 @@ async function validateExternalUrl(urlStr) {
   try {
     parsed = new URL(urlStr);
   } catch (_) {
-    return false;
+    return false; // not a URL: refused like any other bad address
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
   const hostname = parsed.hostname;
@@ -64,7 +64,7 @@ async function validateExternalUrl(urlStr) {
     const addresses = await dns.promises.lookup(hostname, { all: true });
     if (addresses.length === 0 || addresses.some(a => isPrivateIp(a.address))) return false;
   } catch (_) {
-    return false;
+    return false; // name doesn't resolve: there's nothing to connect to
   }
   okHosts.set(hostname, Date.now() + OK_HOST_TTL);
   if (okHosts.size > 1000) okHosts.delete(okHosts.keys().next().value);

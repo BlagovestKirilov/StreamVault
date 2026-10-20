@@ -68,7 +68,7 @@ async function getLiveStreams(config, categoryId) {
 async function getShortEPG(config, streamId) {
   const url = `${baseUrl(config)}&action=get_short_epg&stream_id=${streamId}`;
   const { data } = await http.get(url);
-  return (data && data.epg_listings) || [];
+  return data?.epg_listings || [];
 }
 
 /**
@@ -77,7 +77,7 @@ async function getShortEPG(config, streamId) {
  */
 async function getAccountInfo(config) {
   const { data } = await http.get(baseUrl(config));
-  return (data && data.user_info) || null;
+  return data?.user_info || null;
 }
 
 module.exports = {
