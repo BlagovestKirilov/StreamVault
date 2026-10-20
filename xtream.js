@@ -6,7 +6,7 @@
  */
 
 const axios = require("axios");
-const { assertExternalUrl, blockPrivateRedirects, guardedAgents, PROVIDER_USER_AGENT } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, guardedAgents, PROVIDER_USER_AGENT, trimTrailingSlashes } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
 // in Node. Live-only responses are small, but the cap stays as a safety net.
@@ -35,7 +35,7 @@ const http = {
  */
 function baseUrl(config) {
   // Remove trailing slash from server URL
-  const server = config.server.replace(/\/+$/, "");
+  const server = trimTrailingSlashes(config.server);
   return `${server}/player_api.php?username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`;
 }
 

@@ -44,11 +44,12 @@ function decryptConfig(encStr) {
   return JSON.parse(decrypted);
 }
 
-const { isPrivateIp, validateExternalUrl } = require("./urlguard");
+const { isPrivateIp, validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
 
 const compression = require("compression");
 
 const app = express();
+app.disable("x-powered-by"); // don't advertise the framework/version
 const PORT = process.env.PORT || 7000;
 app.set("trust proxy", true);
 
@@ -715,7 +716,7 @@ function appFromUserAgent(ua) {
   return null; // okhttp, browsers, players… — unknown
 }
 
-const linkKey = (link) => (linkStore.isId(link) ? link : crypto.createHash("sha1").update(link).digest("base64"));
+const linkKey = (link) => (linkStore.isId(link) ? link : crypto.createHash("sha256").update(link).digest("base64"));
 
 function noteAppForLink(req) {
   // Addon requests only: /api/* comes from the configure page, /play from the player
@@ -783,7 +784,7 @@ app.post("/api/categories", limitProviderChecks, async (req, res) => {
     if (!(await validateExternalUrl(server))) {
       return res.status(400).json({ error: "Invalid or blocked server URL" });
     }
-    const config = { server: server.replace(/\/+$/, ""), username, password };
+    const config = { server: trimTrailingSlashes(server), username, password };
     const live = await xtream.getLiveCategories(config).catch(() => []);
     res.json({ live });
   } catch (e) {
@@ -976,7 +977,7 @@ app.post("/api/test", limitProviderChecks, async (req, res) => {
       if (!(await validateExternalUrl(server))) {
         return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
       }
-      const config = { server: server.replace(/\/+$/, ""), username, password };
+      const config = { server: trimTrailingSlashes(server), username, password };
       const [cats, account] = await Promise.all([
         xtream.getLiveCategories(config),
         xtream.getAccountInfo(config).catch(() => null),
@@ -1570,7 +1571,7 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
     res.locals.rejectReason = "server address invalid, blocked, or its DNS lookup failed";
     return res.status(400).json({ error: "Invalid or blocked server URL" });
   }
-  const server = config.server.replace(/\/+$/, "");
+  const server = trimTrailingSlashes(config.server);
   const url = `${server}/${streamType}/${config.username}/${config.password}/${streamId}.${ext}`;
   res.redirect(302, url);
 });
@@ -1716,7 +1717,7 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
 
   // id format: iptv_tv_<streamId>
   const streamId = id.replace(`iptv_${type}_`, "");
-  const server = config.server.replace(/\/+$/, "");
+  const server = trimTrailingSlashes(config.server);
 
   // Look up channel name from catalog
   let channelName = "";

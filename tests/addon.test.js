@@ -564,6 +564,22 @@ describe("connect-time address check (DNS rebinding)", () => {
   });
 });
 
+describe("Sonar fixes", () => {
+  test("trailing slashes are trimmed in linear time (no regex backtracking)", () => {
+    const { trimTrailingSlashes } = require("../urlguard");
+    expect(trimTrailingSlashes("http://a:8080///")).toBe("http://a:8080");
+    expect(trimTrailingSlashes("http://a")).toBe("http://a");
+    const start = Date.now();
+    trimTrailingSlashes("http://a" + "/".repeat(200000) + "x");
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+
+  test("responses don't advertise Express", async () => {
+    const res = await request(app).get("/health");
+    expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+});
+
 describe("provider User-Agent", () => {
   const axios = require("axios");
   afterEach(() => jest.restoreAllMocks());

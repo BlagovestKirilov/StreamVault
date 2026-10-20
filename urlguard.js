@@ -111,7 +111,15 @@ function blockPrivateRedirects(options) {
 // "axios/1.x"; identify as the player the streams are meant for.
 const PROVIDER_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
+// "http://host:8080///" → "http://host:8080". A loop instead of /\/+$/, whose
+// backtracking makes a long run of slashes take quadratic time.
+function trimTrailingSlashes(url) {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+}
+
 module.exports = {
   isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects,
-  guardedLookup, guardedAgents, PROVIDER_USER_AGENT,
+  guardedLookup, guardedAgents, PROVIDER_USER_AGENT, trimTrailingSlashes,
 };
