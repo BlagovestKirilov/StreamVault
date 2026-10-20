@@ -577,6 +577,10 @@ function parseConfigPath(configStr) {
     const saved = linkStore.get(configStr);
     if (!saved) return { type: null, missing: true };
     configStr = "e-" + saved.encrypted;
+  } else {
+    // Older link edited in place: its newer settings win over the ones inside it
+    const override = linkStore.getOverride(configStr);
+    if (override) configStr = "e-" + override.encrypted;
   }
 
   // Detect encrypted format: "e-" prefix followed by hex chars (iv + authTag + ciphertext)
@@ -681,7 +685,7 @@ function extractConfig(req, res, next) {
     }
     // Cache key for things built from the settings (category list): a stable
     // link's settings can change, so its key includes the revision
-    const saved = linkStore.get(req.params.config);
+    const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
@@ -774,6 +778,17 @@ app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
 
 // --- API: Encrypt config for secure URL ---
 const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
+// An older install link that really is a StreamVault setup (so random strings
+// can't be used to fill the store with overrides)
+function isUsableOldLink(link) {
+  try {
+    const c = parseConfigPath(link);
+    return c.type === "m3u" ? !!c.url : c.type === "xtream" ? !!(c.server && c.username && c.password) : false;
+  } catch (_) {
+    return false;
+  }
+}
+
 // Settings from the configure page → only known fields, nothing cut off silently
 function sanitizeConfig(configObj) {
   if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
@@ -803,17 +818,21 @@ app.post("/api/encrypt", limitConfig, (req, res) => {
 });
 
 // Install link from the configure page: a stable "s-<id>" link. When the page
-// was opened from an installed StreamVault ("editing" = its link), a stable link
-// is updated in place — same link, so apps don't add a second StreamVault.
-// Editing an older "e-" link (or a full store) still gives a new link.
+// was opened from an installed StreamVault ("editing" = its link), that link is
+// updated in place — same link, so apps don't add a second StreamVault. An "s-"
+// link gets its settings replaced; an older link (e-/base64/plain) gets an
+// override. Only a full store (or an unreadable old link) gives a new link.
 app.post("/api/link", limitConfig, (req, res) => {
   try {
     const { error, sanitized } = sanitizeConfig(req.body);
     if (error) return res.status(400).json({ error });
     const encrypted = encryptConfig(sanitized);
-    const editing = typeof req.body.editing === "string" ? req.body.editing.slice(0, 4096) : "";
+    // Not truncated: a cut-off link would fingerprint as a different link
+    const editing = typeof req.body.editing === "string" && req.body.editing.length <= 8192 ? req.body.editing : "";
     if (editing) countToday("reinstalls");
-    if (linkStore.isId(editing) && linkStore.update(editing, encrypted)) {
+    if (linkStore.isId(editing)) {
+      if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true });
+    } else if (editing && isUsableOldLink(editing) && linkStore.setOverride(editing, encrypted)) {
       return res.json({ config: editing, updated: true });
     }
     const id = linkStore.create(encrypted);

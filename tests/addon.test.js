@@ -950,11 +950,26 @@ describe("stable install links", () => {
     expect(man.body.catalogs[0].extra.map(e => e.name)).toEqual(["search", "skip"]);
   });
 
-  test("editing an older encrypted link gives a new stable link", async () => {
+  test("an older link is edited in place too (no second StreamVault)", async () => {
     const old = (await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://stable.example.com/c.m3u" })).body.config;
-    const res = await request(app).post("/api/link").send({ t: "m3u", m: "http://stable.example.com/c.m3u", editing: old });
+    expect(old).toMatch(/^e-/);
+    expect(await names(old)).toEqual(["News One", "Sport One"]);
+
+    const res = await request(app).post("/api/link")
+      .send({ t: "m3u", m: "http://stable.example.com/c.m3u", g: JSON.stringify(["News"]), editing: old });
+    expect(res.body).toEqual({ config: old, updated: true });
+    expect(await names(old)).toEqual(["News One"]);
+    expect((await request(app).get(`/api/config/${old}`)).body.categories).toEqual(["News"]);
+
+    // a second edit updates the same override
+    await request(app).post("/api/link").send({ t: "m3u", m: "http://stable.example.com/c.m3u", editing: old });
+    expect(await names(old)).toEqual(["News One", "Sport One"]);
+  });
+
+  test("an editing value that isn't a real StreamVault link can't store anything", async () => {
+    const res = await request(app).post("/api/link").send({ t: "m3u", m: "http://stable.example.com/d.m3u", editing: "garbage-link" });
     expect(res.body.updated).toBe(false);
-    expect(res.body.config).toMatch(/^s-/);
+    expect(res.body.config).toMatch(/^s-/); // a normal new link instead
   });
 
   test("a stable link that doesn't exist is refused clearly", async () => {
@@ -1004,6 +1019,26 @@ describe("stable install links", () => {
     fs.writeFileSync(path.join(dir, "links.json"), "{ not json");
     expect(last(run(read))).toBe("http://persist.example.com/a.m3u");
     expect(fs.readdirSync(dir).some(f => f.startsWith("links.json.corrupt-"))).toBe(true);
+  });
+
+  test("without links.json an edited older link falls back to the settings inside it", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sv-links-"));
+    const run = (code) => spawnSync(process.execPath, ["-e", code], {
+      cwd: path.join(__dirname, ".."), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
+    });
+    const last = (r) => r.stdout.trim().split("\n").pop();
+    const old = encryptConfig({ t: "m3u", m: "http://fallback.example.com/original.m3u" });
+    const r1 = run(`
+      const r = require('supertest'); const { app } = require('./addon');
+      r(app).post('/api/link').send({ t: 'm3u', m: 'http://fallback.example.com/edited.m3u', editing: 'e-${old}' })
+        .then(x => setTimeout(() => { console.log(x.body.updated); process.emit('SIGTERM'); }, 300));
+    `);
+    expect(last(r1)).toBe("true");
+    const read = `const r = require('supertest'); const { app } = require('./addon');
+      r(app).get('/api/config/e-${old}').then(x => { console.log(x.body.m3uUrl); process.exit(0); });`;
+    expect(last(run(read))).toBe("http://fallback.example.com/edited.m3u");
+    for (const f of fs.readdirSync(dir)) if (f.startsWith("links.json")) fs.unlinkSync(path.join(dir, f));
+    expect(last(run(read))).toBe("http://fallback.example.com/original.m3u");
   });
 });
 

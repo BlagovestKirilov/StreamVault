@@ -5,6 +5,11 @@
  * a new link and apps install a second StreamVault. An "s-<id>" link points to
  * settings saved here instead: editing replaces them and the link stays the same.
  *
+ * Older links ("e-…", base64, plain) can be edited in place too: their new
+ * settings are saved as an override, keyed by a SHA-256 fingerprint of the link
+ * (the link itself isn't stored). Without links.json such a link falls back to
+ * the settings inside it, so it never breaks.
+ *
  * Stored: only the already-encrypted settings (same AES-256-GCM as "e-" links),
  * never plain credentials. File: <dir>/links.json, loaded once at startup.
  * Losing it breaks every "s-" install, so writes are atomic (temp file + rename)
@@ -24,7 +29,8 @@ const MAX_LINKS = 50_000;
 function createStore(dir) {
   const file = path.join(dir, "links.json");
   const bak = `${file}.bak`;
-  const links = new Map(); // id -> { e, c (created ms), r (revision) }
+  const links = new Map();     // id -> { e, c (created ms), r (revision) }
+  const overrides = new Map(); // sha256(old link) -> { e, c, r }
 
   // Load: main file, else the backup. A file that can't be parsed is kept aside
   // (never overwritten by an empty store) and reported in the logs.
@@ -34,6 +40,9 @@ function createStore(dir) {
       const data = JSON.parse(fs.readFileSync(candidate, "utf-8"));
       for (const [id, entry] of Object.entries(data.links || {})) {
         if (ID_RE.test(id) && entry && typeof entry.e === "string") links.set(id, entry);
+      }
+      for (const [key, entry] of Object.entries(data.overrides || {})) {
+        if (/^[0-9a-f]{64}$/.test(key) && entry && typeof entry.e === "string") overrides.set(key, entry);
       }
       if (candidate === bak) console.error("[LINKS] links.json unreadable or missing — loaded links.json.bak");
       break;
@@ -50,7 +59,7 @@ function createStore(dir) {
   let dirty = false;
 
   function serialize() {
-    return JSON.stringify({ links: Object.fromEntries(links) });
+    return JSON.stringify({ links: Object.fromEntries(links), overrides: Object.fromEntries(overrides) });
   }
 
   function save() {
@@ -90,9 +99,12 @@ function createStore(dir) {
     }
   }
 
+  const full = () => links.size + overrides.size >= MAX_LINKS;
+  const fingerprint = (link) => crypto.createHash("sha256").update(link).digest("hex");
+
   return {
     isId: (id) => ID_RE.test(id),
-    size: () => links.size,
+    size: () => links.size + overrides.size,
     /** Encrypted settings + revision for a link, or null */
     get(id) {
       const entry = ID_RE.test(id) ? links.get(id) : null;
@@ -100,7 +112,7 @@ function createStore(dir) {
     },
     /** New link for these encrypted settings; null when the store is full */
     create(encrypted) {
-      if (links.size >= MAX_LINKS) return null;
+      if (full()) return null;
       const id = newId();
       links.set(id, { e: encrypted, c: Date.now(), r: 1 });
       save();
@@ -112,6 +124,26 @@ function createStore(dir) {
       if (!entry) return false;
       entry.e = encrypted;
       entry.r = (entry.r || 1) + 1;
+      save();
+      return true;
+    },
+    /** Newer settings saved for an older link, or null (no hashing while there are none) */
+    getOverride(link) {
+      if (overrides.size === 0 || typeof link !== "string") return null;
+      const entry = overrides.get(fingerprint(link));
+      return entry ? { encrypted: entry.e, revision: entry.r || 1 } : null;
+    },
+    /** Save new settings for an older link; false when the store is full */
+    setOverride(link, encrypted) {
+      const key = fingerprint(link);
+      const entry = overrides.get(key);
+      if (entry) {
+        entry.e = encrypted;
+        entry.r = (entry.r || 1) + 1;
+      } else {
+        if (full()) return false;
+        overrides.set(key, { e: encrypted, c: Date.now(), r: 1 });
+      }
       save();
       return true;
     },
