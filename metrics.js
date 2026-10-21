@@ -10,7 +10,7 @@
 const { monitorEventLoopDelay } = require("node:perf_hooks");
 
 // --- text writer ---
-const escapeLabel = (v) => String(v).replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll("\"", "\\\"");
+const escapeLabel = (v) => String(v).replaceAll("\\", "\\\\").replaceAll("\n", String.raw`\n`).replaceAll("\"", String.raw`\"`);
 
 function labelText(labels) {
   const parts = Object.entries(labels || {}).map(([k, v]) => `${k}="${escapeLabel(v)}"`);
