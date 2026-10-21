@@ -2116,6 +2116,9 @@ if (require.main === module) {
       return;
     }
     res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" }).end(buildMetricsText());
+  }).on("error", (err) => {
+    // Metrics are optional: never let them take the addon down
+    console.error(`[METRICS] port ${METRICS_PORT} unavailable (${err.message}) — metrics off, addon keeps running`);
   }).listen(METRICS_PORT, "0.0.0.0", () => {
     console.log(`Metrics on :${METRICS_PORT}/metrics (internal)`);
   });
