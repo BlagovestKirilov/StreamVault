@@ -866,7 +866,8 @@ function isUsableOldLink(link) {
 
 // Settings from the configure page → only known fields, nothing cut off silently
 function sanitizeConfig(configObj) {
-  if (!configObj || !configObj.t || (configObj.t !== "xtream" && configObj.t !== "m3u")) {
+  const type = configObj?.t;
+  if (type !== "xtream" && type !== "m3u") {
     return { error: "Invalid config" };
   }
   const sanitized = {};
@@ -1280,7 +1281,7 @@ async function getGenres(config, cacheKey) {
   const metas = config.type === "xtream"
     ? await getXtreamCatalog(config, "tv")
     : await getM3UCatalog(config, "tv");
-  const names = [...new Set(metas.map(m => m.genres && m.genres[0]).filter(Boolean))]
+  const names = [...new Set(metas.map(m => m.genres?.[0]).filter(Boolean))]
     .slice(0, MAX_GENRE_OPTIONS);
 
   setCapped(genresCache, cacheKey, { data: names, ts: Date.now() }, GENRES_CACHE_MAX);
