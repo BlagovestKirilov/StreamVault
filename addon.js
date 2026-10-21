@@ -1193,6 +1193,9 @@ function nameKey(name) {
     if (tag === undefined) kept.push(word);
     else quality = Math.max(quality, tag);
   }
+  // A trailing "TV" doesn't count either: "NOVA TV" sorts with "NOVA", not after
+  // "NOVA SPORT" ("BTV", "TVN", "TV 1000" keep theirs)
+  if (kept.length > 1 && kept.at(-1) === "tv") kept.pop();
   return { base: kept.join(" ") || normalized, quality };
 }
 
