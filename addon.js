@@ -363,6 +363,10 @@ const M3U_CACHE_MAX = 15;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
 const XTREAM_CACHE_MAX = 25;
+// Account info (expiry date) is one tiny request: re-read often so a renewal
+// clears the expiry notice quickly, and retry a failed lookup after a few minutes
+const ACCOUNT_CACHE_TTL = 30 * 60 * 1000;
+const ACCOUNT_RETRY_MS = 3 * 60 * 1000;
 
 function setCapped(cache, key, value, max) {
   cache.set(key, value);
@@ -495,10 +499,11 @@ setInterval(() => {
   for (const [key, val] of m3uCache) {
     if (now - val.ts > M3U_CACHE_TTL) m3uCache.delete(key);
   }
-  for (const cache of [xtreamCache, accountCache]) {
-    for (const [key, val] of cache) {
-      if (now - val.ts > XTREAM_CACHE_TTL) cache.delete(key);
-    }
+  for (const [key, val] of xtreamCache) {
+    if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
+  }
+  for (const [key, val] of accountCache) {
+    if (now - val.ts > ACCOUNT_CACHE_TTL) accountCache.delete(key);
   }
 }, 10 * 60 * 1000);
 
@@ -1138,6 +1143,41 @@ function channelPoster(logo, name) {
   return squareLogo(logo, nameTile) || nameTile;
 }
 
+// Channel order: picked categories in the order the user picked them (configure
+// page chips; Xtream `c` ids / M3U `g` names), otherwise categories A–Z; channels
+// A–Z inside each; channels without a category (or M3U's "Uncategorized", unless
+// picked) last. Any script (Latin, Cyrillic, Greek…), case and accents ignored,
+// numbers in names compared as numbers ("Sport 2" before "Sport 10"). Done once
+// per cache load, never per request. The genre dropdown follows the same order.
+const nameOrder = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+function sortCategory(meta) {
+  return meta.genres?.[0] || "";
+}
+
+// Real categories A–Z, then the channels without one
+function compareByName(a, b) {
+  const ca = a === "Uncategorized" ? "" : a;
+  const cb = b === "Uncategorized" ? "" : b;
+  if (ca === cb) return 0;
+  if (!ca || !cb) return ca ? -1 : 1;
+  return nameOrder.compare(ca, cb);
+}
+
+// Picked categories first, in pick order; the rest by name
+function compareCategories(a, b, rank) {
+  const ra = rank.get(a) ?? Infinity;
+  const rb = rank.get(b) ?? Infinity;
+  if (ra !== rb) return ra < rb ? -1 : 1;
+  return compareByName(a, b);
+}
+
+function sortChannels(metas, picked = []) {
+  const rank = new Map(picked.map((name, i) => [name, i]));
+  return metas.sort((a, b) =>
+    compareCategories(sortCategory(a), sortCategory(b), rank) || nameOrder.compare(a.name, b.name));
+}
+
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
 // only for the channels actually sent (one page), so the long poster links are
 // never built for a whole 10k-channel list or kept in the caches.
@@ -1202,7 +1242,7 @@ async function getGenres(config, cacheKey) {
   const cached = genresCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < GENRES_CACHE_TTL) return cached.data;
 
-  // Catalog items carry their group in `genres`; keep provider order, dedupe
+  // Catalog items carry their group in `genres` (already in channel order); dedupe
   const metas = config.type === "xtream"
     ? await getXtreamCatalog(config, "tv")
     : await getM3UCatalog(config, "tv");
@@ -1214,11 +1254,16 @@ async function getGenres(config, cacheKey) {
 }
 
 // Slow/broken provider must not block the manifest — return [] (no filter) instead
-async function getGenresWithin(config, cacheKey, ms) {
+function getGenresWithin(config, cacheKey, ms) {
+  return withinMs(getGenres(config, cacheKey), ms, []);
+}
+
+// The promise's value, or `fallback` if it fails or takes longer than `ms`
+async function withinMs(promise, ms, fallback) {
   let timer;
-  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve([]), ms); });
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); });
   try {
-    return await Promise.race([getGenres(config, cacheKey).catch(() => []), timeout]);
+    return await Promise.race([promise.catch(() => fallback), timeout]);
   } finally {
     clearTimeout(timer);
   }
@@ -1362,45 +1407,24 @@ async function catalogHandler(req, res) {
     // Parse the raw (still-encoded) segment: req.params is already decoded, so a
     // "&" inside a group name or search ("Sports & News") would split wrongly
     const extra = req.params.extra ? parseExtra(req.path.split("/").pop()) : {};
-    const search = normalizeForSearch(extra.search || "");
-    const skip = Number.parseInt(extra.skip, 10) || 0;
     const PAGE_SIZE = 100;
+    // A first page with a notice tile has 101 items; apps that send "items so far"
+    // as the next skip ask for 101, 201… — map those back so no channel is missed
+    const askedSkip = Number.parseInt(extra.skip, 10) || 0;
+    const skip = askedSkip % PAGE_SIZE === 1 ? askedSkip - 1 : askedSkip;
 
     let metas = [];
+    let notice = null; // tile shown first (account problem / expiry)
 
     if (config.type === "xtream") {
-      metas = await getXtreamCatalog(config, type);
-      // Expired/disabled accounts often return an empty list rather than an
-      // error — say so instead of showing an empty catalog
-      if (metas.length === 0 && skip === 0 && type === "tv") {
-        const problem = accountProblem(await getXtreamAccount(config));
-        if (problem) return res.json({ metas: [noticeMeta("account", type, problem)] });
-      }
+      ({ metas, notice } = await xtreamCatalogAndNotice(config, type, skip, Boolean(extra.search?.trim())));
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
     }
 
-    // Filter by category (Stremio's genre dropdown)
-    if (extra.genre) {
-      metas = metas.filter(m => m.genres && m.genres[0] === extra.genre);
-    }
-
-    // Filter by search — all words must appear in the name (any order), ignoring
-    // case, accents, punctuation and Cyrillic vs Latin spelling
-    if (extra.search?.trim()) {
-      stats.searches++;
-      countToday("searches");
-      const words = search.split(" ").filter(w => w.length > 0);
-      metas = metas.filter(m => {
-        const name = normalizeForSearch(m.name);
-        return words.every(word => name.includes(word));
-      });
-    }
-
-    // Paginate
-    metas = metas.slice(skip, skip + PAGE_SIZE);
-    // Channels carry the raw logo; build posters for this page only
-    metas = metas.map(catalogMeta);
+    // Filter, paginate; channels carry the raw logo — posters built for this page only
+    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(catalogMeta);
+    if (notice) metas.unshift(notice);
 
     res.json({ metas });
   } catch (e) {
@@ -1410,6 +1434,40 @@ async function catalogHandler(req, res) {
     const firstPage = !/(^|&)skip=[1-9]/.test(req.path.split("/").pop() || "");
     res.json({ metas: firstPage ? [noticeMeta(classifyError(e), req.params.type)] : [] });
   }
+}
+
+// Xtream channels plus the tile to show first (account problem / expiry), if any
+async function xtreamCatalogAndNotice(config, type, skip, searching) {
+  // First page (no search): account read alongside the channels for the expiry
+  // notice; never waits more than a few seconds
+  const accountPromise = skip === 0 && !searching
+    ? withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null)
+    : null;
+  const metas = await getXtreamCatalog(config, type);
+  // Expired/disabled accounts often return an empty list rather than an
+  // error — say so instead of showing an empty catalog
+  if (metas.length === 0 && skip === 0 && type === "tv") {
+    const problem = accountProblem(await getXtreamAccount(config));
+    if (problem) return { metas, notice: noticeMeta("account", type, problem) };
+  }
+  return { metas, notice: accountNotice(await accountPromise, type) };
+}
+
+// Stremio's genre dropdown, then search: all words must appear in the name (any
+// order), ignoring case, accents, punctuation and Cyrillic vs Latin spelling
+function filterCatalog(metas, extra) {
+  let result = metas;
+  if (extra.genre) result = result.filter(m => m.genres?.[0] === extra.genre);
+  if (extra.search?.trim()) {
+    stats.searches++;
+    countToday("searches");
+    const words = normalizeForSearch(extra.search).split(" ").filter(w => w.length > 0);
+    result = result.filter(m => {
+      const name = normalizeForSearch(m.name);
+      return words.every(word => name.includes(word));
+    });
+  }
+  return result;
 }
 
 // --- Error tiles: tell the user why their catalog is empty ---
@@ -1497,6 +1555,30 @@ function noticeMeta(kind, type, detail) {
   };
 }
 
+// First tile of the catalog when the account can't be used (expired/disabled
+// while the panel still lists channels) or ends within EXPIRY_WARN_DAYS
+const EXPIRY_WARN_DAYS = 7;
+const ACCOUNT_WAIT_MS = 3000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+function accountNotice(info, type) {
+  const problem = accountProblem(info);
+  if (problem) return noticeMeta("account", type, problem);
+  const exp = Number(info?.exp_date) * 1000;
+  const left = exp - Date.now();
+  if (!(left > 0 && left <= EXPIRY_WARN_DAYS * DAY_MS)) return null;
+  const when = left < DAY_MS ? "in less than a day" : `in ${Math.ceil(left / DAY_MS)} days`;
+  const date = new Date(exp).toISOString().slice(0, 10);
+  return {
+    id: "iptv_notice_expiring",
+    type: type || "tv",
+    name: `⚠️ Subscription ends ${when}`,
+    poster: makePosterUrl(`Subscription ends ${when}`),
+    posterShape: "square",
+    description: `Your IPTV subscription ends on ${date} (UTC). Renew it with your provider to keep watching. `
+      + "After renewing, this notice disappears within 30 minutes.",
+  };
+}
+
 // Opening an error tile shows its full explanation (it has no streams).
 // The account tile re-reads the (cached) account to name the exact problem.
 async function noticeMetaForAccount(config, id, type) {
@@ -1504,6 +1586,14 @@ async function noticeMetaForAccount(config, id, type) {
   if (kind === "account") {
     const problem = config.type === "xtream" ? accountProblem(await getXtreamAccount(config)) : null;
     return noticeMeta("account", type, problem);
+  }
+  if (kind === "expiring") {
+    const info = config.type === "xtream" ? await getXtreamAccount(config) : null;
+    // Renewed since the tile was shown: say so instead of an old warning
+    return accountNotice(info, type) || {
+      id, type: type || "tv", name: "✅ Subscription renewed", posterShape: "square",
+      description: "Your subscription is active. This notice disappears from the list within 30 minutes.",
+    };
   }
   return noticeMeta(NOTICES[kind] ? kind : "unknown", type);
 }
@@ -1694,6 +1784,7 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     if (category) meta.genres = [category];
     return meta;
   });
+  sortChannels(result, categoryIds.map(id => categoryNames.get(id)).filter(Boolean));
 
   setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
   return result;
@@ -1720,12 +1811,13 @@ function providerTimeRange(e) {
   return start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
 }
 
-// Account info (expiry) shown on channel pages — tiny, cached like the catalog
+// Account info (expiry) for channel pages and the expiry notice — tiny request
 const accountCache = new Map();
 async function getXtreamAccount(config) {
   const key = `${config.server}_${config.username}`;
   const cached = accountCache.get(key);
-  if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) return cached.data;
+  const ttl = cached?.data ? ACCOUNT_CACHE_TTL : ACCOUNT_RETRY_MS;
+  if (cached && Date.now() - cached.ts < ttl) return cached.data;
   return once(`account:${key}`, async () => {
     const info = await xtream.getAccountInfo(config).catch(() => null);
     setCapped(accountCache, key, { data: info, ts: Date.now() }, XTREAM_CACHE_MAX);
@@ -1837,20 +1929,26 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
 
 // --- M3U handlers ---
 
+// Sorted catalog per cached playlist: built once, dropped with the cache entry
+const m3uCatalogs = new WeakMap();
 async function getM3UCatalog(config, type) {
   // Only live TV channels are supported
   if (type !== "tv") return [];
 
-  const { channels } = await getCachedM3U(config);
-
-  // Raw logo here; catalogMeta() builds the poster for the page that's sent
-  return channels.filter((ch) => ch.type === "tv").map((ch) => ({
-    id: `iptv_tv_${ch.id}`,
-    type: "tv",
-    name: ch.name,
-    logo: ch.logo,
-    genres: [ch.group],
-  }));
+  const data = await getCachedM3U(config);
+  let catalog = m3uCatalogs.get(data);
+  if (!catalog) {
+    // Raw logo here; catalogMeta() builds the poster for the page that's sent
+    catalog = sortChannels(data.channels.filter((ch) => ch.type === "tv").map((ch) => ({
+      id: `iptv_tv_${ch.id}`,
+      type: "tv",
+      name: ch.name,
+      logo: ch.logo,
+      genres: [ch.group],
+    })), config.groups || []);
+    m3uCatalogs.set(data, catalog);
+  }
+  return catalog;
 }
 
 // Channels without a tvg-id get "m3u_<name>_<position in playlist>". When the
@@ -2082,7 +2180,15 @@ function buildMetricsText() {
     c("streams_by_type_total", "Stream requests by type since the start", n, { type });
   }
 
-  // Today (UTC) — every daily counter, the provider errors and our error responses
+  writeTodayMetrics(g);
+  writeRecentMetrics(g);
+
+  metrics.writeHttp(w);
+  return w.text();
+}
+
+// Today (UTC) — every daily counter, the provider errors and our error responses
+function writeTodayMetrics(g) {
   const today = todayKey();
   const row = stats.history[today] || {};
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyActive[today]?.size || 0, { counter: "dau" });
@@ -2099,9 +2205,11 @@ function buildMetricsText() {
       g("today_response_errors", "Today's error responses we sent, by endpoint and status", n, { endpoint, status });
     }
   }
+}
 
-  // Recent events (same masked lists as /stats, newest 20 each): one series per
-  // entry, fields as labels, value = event time — Grafana shows them as tables
+// Recent events (same masked lists as /stats, newest 20 each): one series per
+// entry, fields as labels, value = event time — Grafana shows them as tables
+function writeRecentMetrics(g) {
   const recentLists = {
     recent_errors: recentErrors,
     recent_test_failures: recentTestFailures,
@@ -2112,18 +2220,18 @@ function buildMetricsText() {
     recent_unconfigured: recentUnconfigured,
   };
   for (const [name, list] of Object.entries(recentLists)) {
-    for (const entry of list) {
-      const labels = {};
-      for (const [key, value] of Object.entries(entry)) {
-        if (value == null) continue;
-        labels[key.replaceAll(/[A-Z]/g, (ch) => "_" + ch.toLowerCase())] = String(value).slice(0, 200);
-      }
-      g(name, `Latest ${name.replaceAll("_", " ")} as in /stats (value = event time, unix seconds)`, Date.parse(entry.at) / 1000, labels);
-    }
+    const help = `Latest ${name.replaceAll("_", " ")} as in /stats (value = event time, unix seconds)`;
+    for (const entry of list) g(name, help, Date.parse(entry.at) / 1000, entryLabels(entry));
   }
+}
 
-  metrics.writeHttp(w);
-  return w.text();
+// { userAgent: "x", missing: null } → { user_agent: "x" } (values capped at 200 chars)
+function entryLabels(entry) {
+  const labels = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (value != null) labels[key.replaceAll(/[A-Z]/g, (ch) => "_" + ch.toLowerCase())] = String(value).slice(0, 200);
+  }
+  return labels;
 }
 
 // --- Start server ---

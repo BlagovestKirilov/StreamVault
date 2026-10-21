@@ -278,7 +278,7 @@ http://example.com/3.m3u8`));
 
     const man = await request(app).get(`/${cfg}/manifest.json`);
     const genre = man.body.catalogs[0].extra.find(e => e.name === "genre");
-    expect(genre.options).toEqual(["Sports & News", "Bulgaria"]);
+    expect(genre.options).toEqual(["Bulgaria", "Sports & News"]); // A–Z
 
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("Sports & News")}.json`);
     expect(cat.body.metas.map(m => m.name)).toEqual(["Diema Sport", "Ring"]);
@@ -293,11 +293,12 @@ http://example.com/3.m3u8`));
       { stream_id: 10, name: "Diema Sport", category_id: "1" },
       { stream_id: 11, name: "Nickelodeon", category_id: 2 },
     ]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
     const cfg = enc({ t: "xtream", s: "http://genre-xtream.example.com", u: "u", p: "p", c: "" });
 
     const man = await request(app).get(`/${cfg}/manifest.json`);
     const genre = man.body.catalogs[0].extra.find(e => e.name === "genre");
-    expect(genre.options).toEqual(["BG | Sport", "BG | Kids"]);
+    expect(genre.options).toEqual(["BG | Kids", "BG | Sport"]); // A–Z
 
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("BG | Kids")}.json`);
     expect(cat.body.metas.map(m => m.name)).toEqual(["Nickelodeon"]);
@@ -776,6 +777,190 @@ describe("catalog error tiles", () => {
   });
 });
 
+// ─── Channel order: categories A–Z, channels A–Z inside ───
+
+describe("channel order", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("M3U: groups A–Z, channels A–Z inside (any script, numbers as numbers), no group last", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="Спорт",Ринг
+http://example.com/1.m3u8
+#EXTINF:-1,Loose Channel
+http://example.com/2.m3u8
+#EXTINF:-1 group-title="sports",Sport 10
+http://example.com/3.m3u8
+#EXTINF:-1 group-title="Sports",Sport 2
+http://example.com/4.m3u8
+#EXTINF:-1 group-title="News",cnn
+http://example.com/5.m3u8
+#EXTINF:-1 group-title="News",BBC News
+http://example.com/6.m3u8
+#EXTINF:-1 group-title="Спорт",Диема Спорт
+http://example.com/7.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://order.example.com/list.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas.map(m => m.name)).toEqual([
+      "BBC News", "cnn",       // News
+      "Sport 2", "Sport 10",   // Sports / sports (case ignored), 2 before 10
+      "Диема Спорт", "Ринг",   // Спорт (Cyrillic after Latin)
+      "Loose Channel",         // no group
+    ]);
+  });
+
+  test("Xtream: picked categories in pick order, channels A–Z inside", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([
+      { category_id: "1", category_name: "UK Sports" },
+      { category_id: "2", category_name: "UK News" },
+    ]);
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, catId) => (catId === "1"
+      ? [{ stream_id: 1, name: "Sky Sports 1", category_id: "1" }, { stream_id: 2, name: "BT Sport", category_id: "1" }]
+      : [{ stream_id: 3, name: "Sky News", category_id: "2" }, { stream_id: 4, name: "BBC News", category_id: "2" }]));
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const names = async (c) => {
+      const cfg = enc({ t: "xtream", s: "http://order-xt.example.com", u: "u", p: "p", c });
+      return (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    };
+    expect(await names("1,2")).toEqual(["BT Sport", "Sky Sports 1", "BBC News", "Sky News"]);
+    expect(await names("2,1")).toEqual(["BBC News", "Sky News", "BT Sport", "Sky Sports 1"]);
+    const cfg = enc({ t: "xtream", s: "http://order-xt.example.com", u: "u", p: "p", c: "2,1" });
+    const genre = (await request(app).get(`/${cfg}/manifest.json`)).body.catalogs[0].extra.find(e => e.name === "genre");
+    expect(genre.options).toEqual(["UK News", "UK Sports"]);
+  });
+});
+
+test("M3U: picked groups in pick order, channels A–Z inside", async () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  jest.spyOn(m3u, "parseM3U").mockImplementation(async (_url, groups) => m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="Bulgaria",Nova
+http://example.com/1.m3u8
+#EXTINF:-1 group-title="Serbia",RTS 1
+http://example.com/2.m3u8
+#EXTINF:-1 group-title="Bulgaria",bTV
+http://example.com/3.m3u8
+#EXTINF:-1 group-title="Serbia",Pink
+http://example.com/4.m3u8`, groups));
+  const names = async (g) => {
+    const cfg = enc({ t: "m3u", m: "http://pick-order.example.com/list.m3u", g: JSON.stringify(g) });
+    return (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+  };
+  expect(await names(["Serbia", "Bulgaria"])).toEqual(["Pink", "RTS 1", "bTV", "Nova"]);
+  expect(await names(["Bulgaria", "Serbia"])).toEqual(["bTV", "Nova", "Pink", "RTS 1"]);
+  jest.restoreAllMocks();
+});
+
+// ─── Subscription expiry notice ───
+
+describe("expiry notice", () => {
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const DAY = 24 * 60 * 60;
+  const inDays = (d) => String(Math.floor(Date.now() / 1000 + d * DAY));
+  let n = 0;
+  const setup = (account) => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    const info = jest.spyOn(xtream, "getAccountInfo").mockImplementation(account);
+    return { info, cfg: enc({ t: "xtream", s: "http://expiry.example.com", u: `user${++n}`, p: "p" }) };
+  };
+  afterEach(() => jest.restoreAllMocks());
+
+  test("within 7 days: first tile on the first page only, not in search", async () => {
+    const { cfg } = setup(async () => ({ auth: 1, status: "Active", exp_date: inDays(2.5) }));
+    const first = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas;
+    expect(first.map(m => m.name)).toEqual(["⚠️ Subscription ends in 3 days", "One"]);
+    expect(first[0].id).toBe("iptv_notice_expiring");
+    expect((await request(app).get(`/${cfg}/catalog/tv/iptv_live/skip=100.json`)).body.metas).toEqual([]);
+    expect((await request(app).get(`/${cfg}/catalog/tv/iptv_live/search=one.json`)).body.metas.map(m => m.name)).toEqual(["One"]);
+
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_notice_expiring.json`)).body.meta;
+    expect(meta.description).toMatch(/^Your IPTV subscription ends on \d{4}-\d{2}-\d{2} \(UTC\)\. Renew/);
+    expect((await request(app).get(`/${cfg}/stream/tv/iptv_notice_expiring.json`)).body.streams).toEqual([]);
+  });
+
+  test("the extra tile never hides a channel on the next page", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue(
+      Array.from({ length: 150 }, (_, i) => ({ stream_id: i + 1, name: `Ch ${String(i + 1).padStart(3, "0")}` })));
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active", exp_date: inDays(2) });
+    const cfg = enc({ t: "xtream", s: "http://expiry.example.com", u: `paging${++n}`, p: "p" });
+    const page = async (skip) => (await request(app).get(`/${cfg}/catalog/tv/iptv_live${skip ? `/skip=${skip}` : ""}.json`)).body.metas;
+    const first = await page(0);
+    expect(first).toHaveLength(101);
+    expect(first.at(-1).name).toBe("Ch 100");
+    // "items so far" (101) and "fixed 100" both continue at Ch 101
+    expect((await page(101))[0].name).toBe("Ch 101");
+    expect((await page(100))[0].name).toBe("Ch 101");
+  });
+
+  test("less than a day left", async () => {
+    const { cfg } = setup(async () => ({ auth: 1, status: "Active", exp_date: inDays(0.2) }));
+    const first = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas;
+    expect(first[0].name).toBe("⚠️ Subscription ends in less than a day");
+  });
+
+  test("no tile with more than 7 days left, no expiry date, or no account info", async () => {
+    for (const account of [
+      { auth: 1, status: "Active", exp_date: inDays(8) },
+      { auth: 1, status: "Active", exp_date: null },
+      null,
+    ]) {
+      const { cfg } = setup(async () => account);
+      const names = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+      expect(names).toEqual(["One"]);
+      jest.restoreAllMocks();
+    }
+  });
+
+  test("expired but the panel still lists channels: account tile first", async () => {
+    const { cfg } = setup(async () => ({ auth: 1, status: "Active", exp_date: inDays(-1) }));
+    const first = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas;
+    expect(first[0]).toMatchObject({ id: "iptv_notice_account" });
+    expect(first[0].name).toMatch(/^⚠️ Your account expired on /);
+    expect(first[1].name).toBe("One");
+  });
+
+  test("a slow account lookup never holds the catalog back", async () => {
+    const { cfg } = setup(() => new Promise(() => {})); // never answers
+    const started = Date.now();
+    const names = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    expect(names).toEqual(["One"]);
+    expect(Date.now() - started).toBeLessThan(5000); // gives up after 3 s
+  }, 10000);
+
+  test("a renewal shows up after 30 minutes; a failed lookup is retried after 3", async () => {
+    let account = { auth: 1, status: "Active", exp_date: inDays(2) };
+    const { info, cfg } = setup(async () => account);
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    const realNow = Date.now;
+    let offset = 0;
+    jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
+
+    expect((await names())[0]).toMatch(/^⚠️ Subscription ends/);
+    account = { auth: 1, status: "Active", exp_date: inDays(30) }; // renewed
+    offset = 29 * 60 * 1000;
+    expect((await names())[0]).toMatch(/^⚠️ Subscription ends/); // still cached
+    offset = 31 * 60 * 1000;
+    expect(await names()).toEqual(["One"]);
+
+    info.mockImplementation(async () => { throw new Error("down"); });
+    offset = 62 * 60 * 1000;
+    await names(); // failed lookup cached as null
+    const calls = info.mock.calls.length;
+    account = { auth: 1, status: "Active", exp_date: inDays(1.5) };
+    info.mockImplementation(async () => account);
+    offset = 64 * 60 * 1000;
+    await names();
+    expect(info.mock.calls.length).toBe(calls); // within 3 minutes: not asked again
+    offset = 66 * 60 * 1000;
+    expect((await names())[0]).toBe("⚠️ Subscription ends in 2 days");
+  });
+});
+
 // ─── Rate limiting ───
 
 describe("rate limiting", () => {
@@ -1148,8 +1333,9 @@ http://example.com/a.m3u8
 http://example.com/b.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/posters.m3u" });
     const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas.map(m => m.name)).toEqual(["No Logo", "With Logo"]); // A–Z
 
-    const poster = new URL(metas[0].poster);
+    const poster = new URL(metas[1].poster);
     expect(poster.origin).toBe("https://wsrv.nl");
     expect(poster.searchParams.get("url")).toBe("http://cdn.example.com/logos/a wide.png");
     expect(poster.searchParams.get("fit")).toBe("contain");
@@ -1158,10 +1344,10 @@ http://example.com/b.m3u8`));
     // dead logo link → the generated name tile instead of a broken image
     expect(poster.searchParams.get("default")).toMatch(/^https:\/\/ui-avatars\.com\/api\/\?name=With%20Logo/);
 
-    expect(metas[1].poster).toMatch(/^https:\/\/ui-avatars\.com\//);
+    expect(metas[0].poster).toMatch(/^https:\/\/ui-avatars\.com\//);
 
     const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_a.json`)).body.meta;
-    expect(meta.poster).toBe(metas[0].poster);
+    expect(meta.poster).toBe(metas[1].poster);
   });
 
   test("Xtream: same posters for Stremio, raw logo only kept internally", async () => {
@@ -1417,6 +1603,7 @@ describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () =
   test("an installed link with a full Xtream link as server still loads channels", async () => {
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
     const streams = jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
     const cfg = enc({ t: "xtream", s: "http://example.com:8080/player_api.php?username=u1&password=p1", u: "", p: "" });
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
     expect(cat.body.metas.map(m => m.name)).toEqual(["One"]);
