@@ -1586,6 +1586,30 @@ describe("installs without settings (bare manifest)", () => {
     cats.mockRestore();
   });
 
+  test("players probing for subtitles next to the install link are counted, not listed", async () => {
+    const s0 = await stats();
+    for (const ext of ["srt", "vtt", "dfxp"]) {
+      const res = await request(app).head(`/e-0123456789abcdef/manifest.${ext}`);
+      expect(res.status).toBe(404);
+    }
+    const s1 = await stats();
+    expect(s1.history[0].subtitleProbes).toBe((s0.history[0].subtitleProbes || 0) + 3);
+    expect(JSON.stringify(s1.recentUnknownPaths)).not.toMatch(/manifest\.(srt|vtt|dfxp)/);
+  });
+
+  test("an address with a guide's placeholder left in gets a replace-it hint, no download", async () => {
+    const parse = jest.spyOn(require("../m3u"), "parseM3UGroups");
+    for (const m3uUrl of ["https://host.example/a/b/%3CFILENAME%3E.m3u", "https://host.example/<FILENAME>.m3u"]) {
+      const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/placeholder like <FILENAME>/);
+    }
+    const xt = await request(app).post("/api/test").send({ type: "xtream", server: "http://<your-server>:8080", username: "u", password: "p" });
+    expect(xt.body.error).toMatch(/placeholder .* server address/);
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+  });
+
   test("streaming-server probes are counted, not listed as unknown paths", async () => {
     const s0 = await stats();
     const res = await request(app).get("/c9c097cf5c1eb9fd0d910001980d191796bd3ba0/0/stats.json");
@@ -1747,6 +1771,20 @@ describe("/play redirect", () => {
     const res = await request(app).get(`/play/${xt}/live/123/ts/Diema%20Sport`);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("http://example.com:8080/live/user/pass/123.ts");
+  });
+
+  test("a failing DNS lookup on our side doesn't block play (the player connects, not us)", async () => {
+    const dns = require("node:dns");
+    const lookup = jest.spyOn(dns.promises, "lookup").mockRejectedValue(new Error("getaddrinfo EAI_AGAIN"));
+    const cfg = enc({ t: "xtream", s: "http://dns-hiccup.example.net:8080", u: "user", p: "pass" });
+    const res = await request(app).get(`/play/${cfg}/live/77/ts/x`);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe("http://dns-hiccup.example.net:8080/live/user/pass/77.ts");
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+    // literal internal addresses are still refused
+    const internal = enc({ t: "xtream", s: "http://192.168.1.10:8080", u: "user", p: "pass" });
+    expect((await request(app).get(`/play/${internal}/live/77/ts/x`)).status).toBe(400);
   });
 
   test.each([

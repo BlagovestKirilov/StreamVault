@@ -45,18 +45,32 @@ function isBlockedHostname(hostname) {
 const OK_HOST_TTL = 5 * 60 * 1000;
 const okHosts = new Map();
 
-async function validateExternalUrl(urlStr) {
-  if (!urlStr || typeof urlStr !== "string") return false;
-  if (urlStr.length > 2048) return false;
+// The parsed http(s) URL when the address itself is acceptable (scheme, length,
+// not a literal private/internal host), else null. No DNS lookup.
+function parseExternalUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== "string") return null;
+  if (urlStr.length > 2048) return null;
   let parsed;
   try {
     parsed = new URL(urlStr);
   } catch (_) {
-    return false; // not a URL: refused like any other bad address
+    return null; // not a URL: refused like any other bad address
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return isBlockedHostname(parsed.hostname) ? null : parsed;
+}
+
+// For addresses StreamVault only hands to the viewer's player (the /play
+// redirect): the server never connects to them, so a DNS check adds nothing —
+// and a passing DNS hiccup used to block playback.
+function isExternalUrlSyntax(urlStr) {
+  return parseExternalUrl(urlStr) !== null;
+}
+
+async function validateExternalUrl(urlStr) {
+  const parsed = parseExternalUrl(urlStr);
+  if (!parsed) return false;
   const hostname = parsed.hostname;
-  if (isBlockedHostname(hostname)) return false;
   const okUntil = okHosts.get(hostname);
   if (okUntil && okUntil > Date.now()) return true;
   try {
@@ -120,6 +134,6 @@ function trimTrailingSlashes(url) {
 }
 
 module.exports = {
-  isPrivateIp, validateExternalUrl, assertExternalUrl, blockPrivateRedirects,
+  isPrivateIp, validateExternalUrl, isExternalUrlSyntax, assertExternalUrl, blockPrivateRedirects,
   guardedLookup, guardedAgents, PROVIDER_USER_AGENT, trimTrailingSlashes,
 };

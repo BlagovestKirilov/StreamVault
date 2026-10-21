@@ -44,7 +44,7 @@ function decryptConfig(encStr) {
   return JSON.parse(decrypted);
 }
 
-const { isPrivateIp, validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
+const { isPrivateIp, validateExternalUrl, isExternalUrlSyntax, trimTrailingSlashes } = require("./urlguard");
 
 const compression = require("compression");
 
@@ -1007,9 +1007,16 @@ function xtreamTestProblem(cats, account) {
   return null;
 }
 
+// An address copied from a guide with its placeholder left in ("…/<FILENAME>.m3u")
+const PLACEHOLDER_RE = /<[^<>]{1,40}>|%3C[^%]{1,40}%3E/i;
+const PLACEHOLDER_HINT = "The address still contains a placeholder like <FILENAME> — replace it with your real playlist link";
+
 // Test Connection, Xtream: login + categories (+ account status)
 async function testXtream(body, res) {
   const { server, username, password } = normalizeXtreamLogin(body.server, body.username, body.password);
+  if (PLACEHOLDER_RE.test(server)) {
+    return res.status(400).json({ ok: false, error: PLACEHOLDER_HINT.replace("playlist link", "server address") });
+  }
   if (isPlaylistLink(server)) {
     return res.status(400).json({ ok: false, error: "This is a playlist link — use the M3U tab instead" });
   }
@@ -1042,6 +1049,9 @@ async function testXtream(body, res) {
 async function testM3u(m3uUrl, res) {
   if (!m3uUrl) {
     return res.status(400).json({ ok: false, error: "Missing M3U URL" });
+  }
+  if (PLACEHOLDER_RE.test(m3uUrl)) {
+    return res.status(400).json({ ok: false, error: PLACEHOLDER_HINT });
   }
   if (!(await validateExternalUrl(m3uUrl))) {
     return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
@@ -1618,8 +1628,9 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
     res.locals.rejectReason = reason;
     return res.status(400).json({ error: "Invalid stream" });
   }
-  if (!(await validateExternalUrl(config.server))) {
-    res.locals.rejectReason = "server address invalid, blocked, or its DNS lookup failed";
+  // Address check only (no DNS): the player connects to the provider, not us
+  if (!isExternalUrlSyntax(config.server)) {
+    res.locals.rejectReason = "server address invalid or blocked";
     return res.status(400).json({ error: "Invalid or blocked server URL" });
   }
   const server = trimTrailingSlashes(config.server);
@@ -1962,6 +1973,16 @@ function safeDecode(s) {
 app.get(/^\/(?:[^/]+\/)?subtitles\//, limitAddon, (req, res) => {
   countToday("foreignRequests");
   res.json({ subtitles: [] });
+});
+
+// A player given the install link (VLC for iOS) looks for subtitles next to it:
+// HEAD /<link>/manifest.srt, .vtt, .ass … Answer 404 as before, but count it per
+// day (subtitleProbes) instead of filling recentUnknownPaths.
+const SUBTITLE_PROBE = /^\/[^/]+\/manifest\.(srt|vtt|ass|ssa|sub|idx|smi|sami|txt|utf|dks|pjs|mpl2|mks|ttml|dfxp|stl|usf|rt|psb|jss|aqt|smil|lrc|sbv|scc)$/i;
+app.get(SUBTITLE_PROBE, (req, res) => {
+  countToday("subtitleProbes");
+  res.locals.skipErrorCount = true;
+  res.status(404).json({ error: "Not found" });
 });
 
 // Some client treats StreamVault as Stremio's streaming server and polls
