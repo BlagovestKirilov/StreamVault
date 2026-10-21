@@ -1172,10 +1172,37 @@ function compareCategories(a, b, rank) {
   return compareByName(a, b);
 }
 
+// Quality tags don't count when sorting, so "BTV", "BTV HD", "BTV UHD" stay
+// together (before "BTV ACTION"); same base name → lower quality first
+const QUALITY_TAGS = new Map([
+  ["SD", 1], ["LQ", 1], ["HQ", 2], ["HD", 2], ["720P", 2], ["FHD", 3], ["1080P", 3], ["1080I", 3],
+  ["UHD", 4], ["4K", 4], ["2160P", 4], ["8K", 5],
+  ["HEVC", 0], ["H265", 0], ["H.265", 0], ["H264", 0], ["H.264", 0], ["50FPS", 0], ["60FPS", 0],
+]);
+
+// "[BG] BTV (UHD)" → { base: "[BG] BTV", quality: 4 }
+function nameKey(name) {
+  const kept = [];
+  let quality = 0;
+  for (const word of String(name || "").split(" ")) {
+    const tag = QUALITY_TAGS.get(word.replaceAll(/[()[\]|]/g, "").toUpperCase());
+    if (tag === undefined) kept.push(word);
+    else quality = Math.max(quality, tag);
+  }
+  return { base: kept.join(" ").trim() || String(name || ""), quality };
+}
+
+function compareChannels(a, b) {
+  return nameOrder.compare(a.base, b.base) || a.quality - b.quality || nameOrder.compare(a.meta.name, b.meta.name);
+}
+
+// Keys computed once per channel (not per comparison), then written back in order
 function sortChannels(metas, picked = []) {
   const rank = new Map(picked.map((name, i) => [name, i]));
-  return metas.sort((a, b) =>
-    compareCategories(sortCategory(a), sortCategory(b), rank) || nameOrder.compare(a.name, b.name));
+  const keyed = metas.map(meta => ({ meta, category: sortCategory(meta), ...nameKey(meta.name) }));
+  keyed.sort((a, b) => compareCategories(a.category, b.category, rank) || compareChannels(a, b));
+  keyed.forEach((k, i) => { metas[i] = k.meta; });
+  return metas;
 }
 
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called

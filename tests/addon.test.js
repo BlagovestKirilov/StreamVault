@@ -832,6 +832,20 @@ http://example.com/7.m3u8`));
   });
 });
 
+test("quality tags don't count when sorting: versions of a channel stay together", async () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const names = ["[BG] BULGARIA 24", "[BG] BTV ACTION", "[BG] BTV UHD", "[BG] BTV", "[BG] BTV (FHD)", "[BG] BTV HD"];
+  jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent("#EXTM3U\n"
+    + names.map((n, i) => `#EXTINF:-1 group-title="[BU] BULGARIA",${n}\nhttp://example.com/${i}.m3u8`).join("\n")));
+  const cfg = enc({ t: "m3u", m: "http://quality-order.example.com/list.m3u" });
+  const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+  expect(metas.map(m => m.name)).toEqual([
+    "[BG] BTV", "[BG] BTV HD", "[BG] BTV (FHD)", "[BG] BTV UHD", "[BG] BTV ACTION", "[BG] BULGARIA 24",
+  ]);
+  jest.restoreAllMocks();
+});
+
 test("M3U: picked groups in pick order, channels A–Z inside", async () => {
   const m3u = require("../m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
