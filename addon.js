@@ -1172,24 +1172,28 @@ function compareCategories(a, b, rank) {
   return compareByName(a, b);
 }
 
-// Quality tags don't count when sorting, so "BTV", "BTV HD", "BTV UHD" stay
-// together (before "BTV ACTION"); same base name → lower quality first
+// Names are compared as search sees them (normalizeForSearch: case, accents,
+// punctuation, odd/leading spaces and Cyrillic vs Latin look-alikes ignored), so
+// a provider's hidden characters don't move a channel. Quality tags don't count
+// either: "BTV", "BTV HD", "BTV UHD" stay together (before "BTV ACTION"); same
+// base name → lower quality first. Tags match any case, also inside () or [].
 const QUALITY_TAGS = new Map([
-  ["SD", 1], ["LQ", 1], ["HQ", 2], ["HD", 2], ["720P", 2], ["FHD", 3], ["1080P", 3], ["1080I", 3],
-  ["UHD", 4], ["4K", 4], ["2160P", 4], ["8K", 5],
-  ["HEVC", 0], ["H265", 0], ["H.265", 0], ["H264", 0], ["H.264", 0], ["50FPS", 0], ["60FPS", 0],
+  ["sd", 1], ["lq", 1], ["hq", 2], ["hd", 2], ["720p", 2], ["fhd", 3], ["1080p", 3], ["1080i", 3],
+  ["uhd", 4], ["4k", 4], ["2160p", 4], ["8k", 5],
+  ["hevc", 0], ["h265", 0], ["h264", 0], ["50fps", 0], ["60fps", 0],
 ]);
 
-// "[BG] BTV (UHD)" → { base: "[BG] BTV", quality: 4 }
+// "[BG] BTV (UHD)" → { base: "bg btv", quality: 4 }
 function nameKey(name) {
+  const normalized = normalizeForSearch(name || "");
   const kept = [];
   let quality = 0;
-  for (const word of String(name || "").split(" ")) {
-    const tag = QUALITY_TAGS.get(word.replaceAll(/[()[\]|]/g, "").toUpperCase());
+  for (const word of normalized.split(" ")) {
+    const tag = QUALITY_TAGS.get(word);
     if (tag === undefined) kept.push(word);
     else quality = Math.max(quality, tag);
   }
-  return { base: kept.join(" ").trim() || String(name || ""), quality };
+  return { base: kept.join(" ") || normalized, quality };
 }
 
 function compareChannels(a, b) {

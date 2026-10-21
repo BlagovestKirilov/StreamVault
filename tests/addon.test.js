@@ -846,6 +846,21 @@ test("quality tags don't count when sorting: versions of a channel stay together
   jest.restoreAllMocks();
 });
 
+test("hidden characters and Cyrillic look-alikes in names don't move a channel", async () => {
+  const m3u = require("../m3u");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  // leading spaces, a non-breaking space, Cyrillic А/Т typed in a Latin name, lower-case tag
+  const names = ["  [BG] TVN", "[BG] BTV ACTION", "[BG]\u00a0BOX TV", "[BG] \u0422V1", "[BG] btv uhd", "[BG] \u0410CTION"];
+  jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent("#EXTM3U\n"
+    + names.map((n, i) => `#EXTINF:-1 group-title="G",${n}\nhttp://example.com/${i}.m3u8`).join("\n")));
+  const cfg = enc({ t: "m3u", m: "http://hidden-chars.example.com/list.m3u" });
+  const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+  expect(metas.map(m => m.name.trim())).toEqual([
+    "[BG] \u0410CTION", "[BG]\u00a0BOX TV", "[BG] btv uhd", "[BG] BTV ACTION", "[BG] \u0422V1", "[BG] TVN",
+  ]);
+  jest.restoreAllMocks();
+});
+
 test("M3U: picked groups in pick order, channels A–Z inside", async () => {
   const m3u = require("../m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
