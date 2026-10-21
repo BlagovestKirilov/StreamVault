@@ -6,3 +6,8 @@ stats.json*
 secrets.txt
 links.json*
 grafana
+# Not needed to run the server
+tests
+*.md
+.github
+.claude

@@ -115,4 +115,4 @@ The codebase was cleaned of all Sonar findings; new code must not bring them bac
 - If GitHub Actions is down: `fly deploy --remote-only` from the repo (deploys the local folder — commit first). GitHub's `FLY_API_TOKEN` is an app-scoped **deploy** token (`fly tokens list`).
 - GitHub Actions (`.github/workflows/fly-deploy.yml`): tests (Node 24) then deploys on every push to `master` — **pushing is deploying**, no manual `fly deploy` needed.
 - **Never `git push` unless the owner explicitly says to push in that request.** Commit locally, report what changed, and wait. An earlier "push it" covers only that change.
-- Docker: `node:24-alpine`, `npm ci --omit=dev`.
+- Docker: `node:24-alpine`, `npm ci --omit=dev`. `.dockerignore` keeps tests, `*.md`, `.github`, `.claude`, `grafana`, `.idea` and local data (`stats.json*`, `links.json*`) out of the image — the server must never read any of them.
