@@ -2100,6 +2100,28 @@ function buildMetricsText() {
     }
   }
 
+  // Recent events (same masked lists as /stats, newest 20 each): one series per
+  // entry, fields as labels, value = event time — Grafana shows them as tables
+  const recentLists = {
+    recent_errors: recentErrors,
+    recent_test_failures: recentTestFailures,
+    recent_bad_links: recentBadLinks,
+    recent_play_rejects: recentPlayRejects,
+    recent_empty_streams: recentEmptyStreams,
+    recent_unknown_paths: recentUnknownPaths,
+    recent_unconfigured: recentUnconfigured,
+  };
+  for (const [name, list] of Object.entries(recentLists)) {
+    for (const entry of list) {
+      const labels = {};
+      for (const [key, value] of Object.entries(entry)) {
+        if (value == null) continue;
+        labels[key.replaceAll(/[A-Z]/g, (ch) => "_" + ch.toLowerCase())] = String(value).slice(0, 200);
+      }
+      g(name, `Latest ${name.replaceAll("_", " ")} as in /stats (value = event time, unix seconds)`, Date.parse(entry.at) / 1000, labels);
+    }
+  }
+
   metrics.writeHttp(w);
   return w.text();
 }

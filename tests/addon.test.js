@@ -586,6 +586,15 @@ describe("Prometheus metrics", () => {
     ]) expect(text).toContain(needle);
   });
 
+  test("recent /stats lists are exported with snake_case labels and the event time", async () => {
+    await request(app).get("/nothing/here.json").set("User-Agent", 'Odd "Agent"');
+    const line = buildMetricsText().split("\n").find(l => l.startsWith("streamvault_recent_unknown_paths{") && l.includes("Odd"));
+    expect(line).toContain('method="GET"');
+    expect(line).toContain('user_agent="Odd \\"Agent\\""');
+    const seconds = Number(line.split(" ").pop());
+    expect(Math.abs(seconds - Date.now() / 1000)).toBeLessThan(60);
+  });
+
   test("label values are escaped and histogram buckets are cumulative", () => {
     metrics.observeRequest('GET /x"y\\z', 200, 0.3);
     const w = metrics.createWriter();
