@@ -1985,8 +1985,13 @@ app.get(/^\/(?:[^/]+\/)?subtitles\//, limitAddon, (req, res) => {
 // A player given the install link (VLC for iOS) looks for subtitles next to it:
 // HEAD /<link>/manifest.srt, .vtt, .ass … Answer 404 as before, but count it per
 // day (subtitleProbes) instead of filling recentUnknownPaths.
-const SUBTITLE_PROBE = /^\/[^/]+\/manifest\.(srt|vtt|ass|ssa|sub|idx|smi|sami|txt|utf|dks|pjs|mpl2|mks|ttml|dfxp|stl|usf|rt|psb|jss|aqt|smil|lrc|sbv|scc)$/i;
-app.get(SUBTITLE_PROBE, (req, res) => {
+const SUBTITLE_EXTS = new Set([
+  "srt", "vtt", "ass", "ssa", "sub", "idx", "smi", "sami", "txt", "utf", "dks", "pjs", "mpl2", "mks",
+  "ttml", "dfxp", "stl", "usf", "rt", "psb", "jss", "aqt", "smil", "lrc", "sbv", "scc",
+]);
+app.get(/^\/[^/]+\/manifest\.[a-z0-9]{2,5}$/i, (req, res, next) => {
+  const ext = req.path.slice(req.path.lastIndexOf(".") + 1).toLowerCase();
+  if (!SUBTITLE_EXTS.has(ext)) return next(); // other files: the normal 404 below
   countToday("subtitleProbes");
   res.locals.skipErrorCount = true;
   res.status(404).json({ error: "Not found" });
