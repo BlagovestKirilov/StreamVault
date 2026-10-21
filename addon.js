@@ -1173,8 +1173,8 @@ function compareCategories(a, b, rank) {
 }
 
 // Names are compared as search sees them (normalizeForSearch: case, accents,
-// punctuation, odd/leading spaces and Cyrillic vs Latin look-alikes ignored), so
-// a provider's hidden characters don't move a channel. Quality tags don't count
+// punctuation and odd/leading spaces ignored, Cyrillic transliterated by sound),
+// so a provider's hidden characters don't move a channel. Quality tags don't count
 // either: "BTV", "BTV HD", "BTV UHD" stay together (before "BTV ACTION"); same
 // base name → lower quality first. Tags match any case, also inside () or [].
 const QUALITY_TAGS = new Map([
