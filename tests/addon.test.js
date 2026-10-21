@@ -1093,6 +1093,46 @@ describe("speed", () => {
     expect(epg).toHaveBeenCalledTimes(2);
   });
 
+  test("saving settings reloads the channel list (at most once per 2 minutes)", async () => {
+    let version = "Old";
+    const parse = jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist(version));
+    const settings = { t: "m3u", m: "http://force-refresh.example.com/list.m3u" };
+    const cfg = enc(settings);
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    const save = () => request(app).post("/api/link").send(settings);
+
+    expect(await names()).toEqual(["Old"]);
+    version = "New";
+    expect(await names()).toEqual(["Old"]); // still cached
+    expect((await save()).status).toBe(200);
+    expect(await names()).toEqual(["New"]); // reloaded right after saving
+    expect(parse).toHaveBeenCalledTimes(2);
+
+    version = "Newer";
+    await save(); // within 2 minutes: no second reload
+    expect(await names()).toEqual(["New"]);
+    offset = 2.5 * 60 * 1000;
+    await save();
+    expect(await names()).toEqual(["Newer"]);
+    expect(parse).toHaveBeenCalledTimes(3);
+  });
+
+  test("saving an Xtream setup reloads its channels and account", async () => {
+    let name = "Old";
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async () => [{ stream_id: 1, name }]);
+    const info = jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const settings = { t: "xtream", s: "http://force-xt.example.com/", u: "fx", p: "p", c: "" };
+    const cfg = enc(settings);
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    expect(await names()).toEqual(["Old"]);
+    name = "New";
+    const calls = info.mock.calls.length;
+    await request(app).post("/api/link").send(settings);
+    expect(await names()).toEqual(["New"]);
+    expect(info.mock.calls.length).toBe(calls + 1); // account read again too
+  });
+
   test("provider connections are kept alive with a short idle timeout", () => {
     for (const agent of Object.values(urlguard.guardedAgents)) {
       expect(agent.keepAlive).toBe(true);

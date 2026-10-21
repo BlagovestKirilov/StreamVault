@@ -490,10 +490,15 @@ function usableEntry(entry, ttl, staleFor, refresh) {
   return entry;
 }
 
+// Same playlist with a different group selection is a different (smaller) entry
+function m3uCacheKey(config) {
+  const groups = config.groups || [];
+  return groups.length ? `${config.url}\u0001${groups.join("\u0001")}` : config.url;
+}
+
 async function getCachedM3U(config) {
   const groups = config.groups || [];
-  // Same playlist with a different group selection is a different (smaller) entry
-  const key = groups.length ? `${config.url}\u0001${groups.join("\u0001")}` : config.url;
+  const key = m3uCacheKey(config);
   const load = () => once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
     const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
     setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
@@ -931,6 +936,10 @@ app.post("/api/link", limitConfig, (req, res) => {
     const { error, sanitized } = sanitizeConfig(req.body);
     if (error) return res.status(400).json({ error });
     const encrypted = encryptConfig(sanitized);
+    // Saving reloads the channel list (configure page hint says so)
+    const config = configFromSettings(sanitized);
+    if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
+    forceRefresh(config);
     // Not truncated: a cut-off link would fingerprint as a different link
     const editing = typeof req.body.editing === "string" && req.body.editing.length <= 8192 ? req.body.editing : "";
     if (editing) countToday("reinstalls");
@@ -1801,12 +1810,20 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
 
 // --- Xtream Codes handlers ---
 
+function xtreamCacheKey(config, type, categoryIds) {
+  return `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
+}
+
+function xtreamCategoryIds(config) {
+  return (config.country || "").split(",").filter(Boolean);
+}
+
 async function getXtreamCatalog(config, type) {
   // Only live TV channels are supported
   if (type !== "tv") return [];
 
-  const categoryIds = (config.country || "").split(",").filter(Boolean);
-  const cacheKey = `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
+  const categoryIds = xtreamCategoryIds(config);
+  const cacheKey = xtreamCacheKey(config, type, categoryIds);
   const load = () => once(`xtream:${cacheKey}`, () =>
     withFailureCache(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey)));
   const cached = usableEntry(xtreamCache.get(cacheKey), XTREAM_CACHE_TTL, XTREAM_STALE_MS, load);
@@ -1886,6 +1903,31 @@ async function getXtreamAccount(config) {
   const ttl = entry?.data ? ACCOUNT_CACHE_TTL : ACCOUNT_RETRY_MS;
   const cached = usableEntry(entry, ttl, ACCOUNT_STALE_MS, load);
   return cached ? cached.data : load();
+}
+
+// "Save changes" on the configure page: forget this setup's cached channel list
+// (and Xtream account, and a remembered provider failure) so the next request
+// downloads them fresh — new channels show at once instead of after the TTL.
+// At most once per FORCED_REFRESH_MS per setup: each reload is a full download.
+const FORCED_REFRESH_MS = 2 * 60 * 1000;
+const forcedRefreshes = new Map(); // cache key -> last forced refresh (ms)
+function forceRefresh(config) {
+  const key = config.type === "xtream"
+    ? xtreamCacheKey(config, "tv", xtreamCategoryIds(config))
+    : m3uCacheKey(config);
+  const last = forcedRefreshes.get(key);
+  if (!key || (last && Date.now() - last < FORCED_REFRESH_MS)) return false;
+  forcedRefreshes.delete(key); // re-insert: newest last for setCapped
+  setCapped(forcedRefreshes, key, Date.now(), 1000);
+  if (config.type === "xtream") {
+    xtreamCache.delete(key);
+    failCache.delete(`xtream:${key}`);
+    accountCache.delete(`${config.server}_${config.username}`);
+  } else {
+    m3uCache.delete(key);
+    failCache.delete(`m3u:${key}`);
+  }
+  return true;
 }
 
 // TV guide listings for one channel (see EPG_CACHE_TTL); failures aren't kept

@@ -911,6 +911,8 @@
       } else if (!passed) {
         // matches the button: "Save changes" once an installed setup has loaded
         hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test`;
+      } else if (document.getElementById('btnInstallText').textContent === 'Save changes') {
+        hint.textContent = 'Saving also reloads your channel list from your provider';
       } else {
         hint.textContent = '';
       }
