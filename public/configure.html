@@ -1169,12 +1169,6 @@
       renderSelectedTags();
     }
 
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
-
     function renderCategoryList() {
       const query = (document.getElementById('catSearch').value || '').toLowerCase();
       const list = document.getElementById('catList');

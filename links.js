@@ -200,4 +200,4 @@ function createStore(dir) {
   };
 }
 
-module.exports = { createStore, MAX_LINKS };
+module.exports = { createStore };

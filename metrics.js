@@ -89,4 +89,4 @@ function writeEventLoop(w) {
   loopDelay.reset(); // per scrape window
 }
 
-module.exports = { createWriter, observeRequest, writeHttp, writeEventLoop, BUCKETS };
+module.exports = { createWriter, observeRequest, writeHttp, writeEventLoop };
