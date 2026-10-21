@@ -367,6 +367,16 @@ const XTREAM_CACHE_MAX = 25;
 // clears the expiry notice quickly, and retry a failed lookup after a few minutes
 const ACCOUNT_CACHE_TTL = 30 * 60 * 1000;
 const ACCOUNT_RETRY_MS = 3 * 60 * 1000;
+// After its TTL an entry is still answered at once for this long while one
+// background load refreshes it (usableEntry), so users don't wait for re-downloads
+const M3U_STALE_MS = 50 * 60 * 1000;
+const XTREAM_STALE_MS = 4 * 60 * 60 * 1000;
+const ACCOUNT_STALE_MS = 6 * 60 * 60 * 1000;
+// TV guide per channel, briefly: reopening a channel page (apps often ask twice)
+// doesn't wait for the provider again. Keyed by panel + stream, not the user.
+const EPG_CACHE_TTL = 3 * 60 * 1000;
+const EPG_CACHE_MAX = 1000;
+const epgCache = new Map();
 
 function setCapped(cache, key, value, max) {
   cache.set(key, value);
@@ -465,19 +475,32 @@ function handleProviderError(where, req, e) {
   recordError(where, req.userConfig, e);
 }
 
+// Cache entry → fresh: use it. Expired but within `staleFor`: use it anyway and
+// refresh it in the background (once() keeps that to one load, download slots
+// and the failure cache still apply), so nobody waits for a re-download; a failed
+// refresh keeps the old copy. Older or missing: null — the caller loads and waits.
+function usableEntry(entry, ttl, staleFor, refresh) {
+  if (!entry) return null;
+  const age = Date.now() - entry.ts;
+  if (age < ttl) return entry;
+  if (age >= ttl + staleFor) return null;
+  refresh().catch((e) => {
+    if (!e?.fromFailureCache) console.warn(`[REFRESH] kept the previous copy: ${safeError(e)}`);
+  });
+  return entry;
+}
+
 async function getCachedM3U(config) {
   const groups = config.groups || [];
   // Same playlist with a different group selection is a different (smaller) entry
   const key = groups.length ? `${config.url}\u0001${groups.join("\u0001")}` : config.url;
-  const cached = m3uCache.get(key);
-  if (cached && Date.now() - cached.ts < M3U_CACHE_TTL) {
-    return cached.data;
-  }
-  return once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
+  const load = () => once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
     const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
     setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   }));
+  const cached = usableEntry(m3uCache.get(key), M3U_CACHE_TTL, M3U_STALE_MS, load);
+  return cached ? cached.data : load();
 }
 
 // Config "g" = JSON array of M3U group-titles the user picked (empty/invalid = all)
@@ -496,14 +519,18 @@ function parseGroups(g) {
 // --- Cache eviction (runs every 10 min) ---
 setInterval(() => {
   const now = Date.now();
+  // Entries stay usable (stale) for a while after their TTL — see usableEntry
   for (const [key, val] of m3uCache) {
-    if (now - val.ts > M3U_CACHE_TTL) m3uCache.delete(key);
+    if (now - val.ts > M3U_CACHE_TTL + M3U_STALE_MS) m3uCache.delete(key);
   }
   for (const [key, val] of xtreamCache) {
-    if (now - val.ts > XTREAM_CACHE_TTL) xtreamCache.delete(key);
+    if (now - val.ts > XTREAM_CACHE_TTL + XTREAM_STALE_MS) xtreamCache.delete(key);
   }
   for (const [key, val] of accountCache) {
-    if (now - val.ts > ACCOUNT_CACHE_TTL) accountCache.delete(key);
+    if (now - val.ts > ACCOUNT_CACHE_TTL + ACCOUNT_STALE_MS) accountCache.delete(key);
+  }
+  for (const [key, val] of epgCache) {
+    if (now - val.ts > EPG_CACHE_TTL) epgCache.delete(key);
   }
 }, 10 * 60 * 1000);
 
@@ -523,6 +550,7 @@ setInterval(() => {
     m3uCache.clear();
     xtreamCache.clear();
     accountCache.clear();
+    epgCache.clear();
     memStats.critEvictions++;
     memStats.lastEviction = new Date().toISOString();
     console.warn(`[MEM] heap ${mb.toFixed(0)} MB — cleared all caches`);
@@ -1349,6 +1377,7 @@ app.get("/stats", limitStats, (req, res) => {
       m3u: `${m3uCache.size}/${M3U_CACHE_MAX}`,
       xtream: `${xtreamCache.size}/${XTREAM_CACHE_MAX}`,
       accounts: `${accountCache.size}/${XTREAM_CACHE_MAX}`,
+      epg: `${epgCache.size}/${EPG_CACHE_MAX}`,
       genres: `${genresCache.size}/${GENRES_CACHE_MAX}`,
       // stable install links saved on the volume (links.json)
       links: linkStore.size(),
@@ -1778,12 +1807,10 @@ async function getXtreamCatalog(config, type) {
 
   const categoryIds = (config.country || "").split(",").filter(Boolean);
   const cacheKey = `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
-  const cached = xtreamCache.get(cacheKey);
-  if (cached && Date.now() - cached.ts < XTREAM_CACHE_TTL) {
-    return cached.data;
-  }
-  return once(`xtream:${cacheKey}`, () =>
+  const load = () => once(`xtream:${cacheKey}`, () =>
     withFailureCache(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey)));
+  const cached = usableEntry(xtreamCache.get(cacheKey), XTREAM_CACHE_TTL, XTREAM_STALE_MS, load);
+  return cached ? cached.data : load();
 }
 
 async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
@@ -1850,13 +1877,26 @@ function providerTimeRange(e) {
 const accountCache = new Map();
 async function getXtreamAccount(config) {
   const key = `${config.server}_${config.username}`;
-  const cached = accountCache.get(key);
-  const ttl = cached?.data ? ACCOUNT_CACHE_TTL : ACCOUNT_RETRY_MS;
-  if (cached && Date.now() - cached.ts < ttl) return cached.data;
-  return once(`account:${key}`, async () => {
+  const entry = accountCache.get(key);
+  const load = () => once(`account:${key}`, async () => {
     const info = await xtream.getAccountInfo(config).catch(() => null);
     setCapped(accountCache, key, { data: info, ts: Date.now() }, XTREAM_CACHE_MAX);
     return info;
+  });
+  const ttl = entry?.data ? ACCOUNT_CACHE_TTL : ACCOUNT_RETRY_MS;
+  const cached = usableEntry(entry, ttl, ACCOUNT_STALE_MS, load);
+  return cached ? cached.data : load();
+}
+
+// TV guide listings for one channel (see EPG_CACHE_TTL); failures aren't kept
+async function getCachedEPG(config, streamId) {
+  const key = `${trimTrailingSlashes(config.server)}_${streamId}`;
+  const cached = epgCache.get(key);
+  if (cached && Date.now() - cached.ts < EPG_CACHE_TTL) return cached.data;
+  return once(`epg:${key}`, async () => {
+    const data = await xtream.getShortEPG(config, streamId);
+    setCapped(epgCache, key, { data, ts: Date.now() }, EPG_CACHE_MAX);
+    return data;
   });
 }
 
@@ -1890,7 +1930,7 @@ async function getXtreamMeta(config, type, id) {
 
   // Fetch EPG for live channels
   try {
-    const epg = await xtream.getShortEPG(config, streamId);
+    const epg = await getCachedEPG(config, streamId);
     if (epg?.length > 0) {
       const lines = epg.map(e => {
         const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
@@ -2196,6 +2236,7 @@ function buildMetricsText() {
   cache("m3u", m3uCache.size, M3U_CACHE_MAX);
   cache("xtream", xtreamCache.size, XTREAM_CACHE_MAX);
   cache("accounts", accountCache.size, XTREAM_CACHE_MAX);
+  cache("epg", epgCache.size, EPG_CACHE_MAX);
   cache("genres", genresCache.size, GENRES_CACHE_MAX);
   cache("link_apps", linkApps.size, LINK_APPS_MAX);
   g("failed_providers", "Providers in the 2-minute failure cache", [...failCache.values()].filter(f => f.until > Date.now()).length);

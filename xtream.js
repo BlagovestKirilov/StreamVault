@@ -6,7 +6,7 @@
  */
 
 const axios = require("axios");
-const { assertExternalUrl, blockPrivateRedirects, guardedAgents, PROVIDER_USER_AGENT, trimTrailingSlashes } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
 // in Node. Live-only responses are small, but the cap stays as a safety net.
@@ -24,7 +24,7 @@ const client = axios.create({
 const http = {
   async get(url) {
     await assertExternalUrl(url);
-    return client.get(url);
+    return retryOnClosedConnection(() => client.get(url));
   },
 };
 

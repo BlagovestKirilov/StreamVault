@@ -107,11 +107,28 @@ function guardedLookup(hostname, options, callback) {
   });
 }
 
-// Pass to axios as { httpAgent, httpsAgent } — also used for redirects it follows
+// Pass to axios as { httpAgent, httpsAgent } — also used for redirects it follows.
+// Keep-alive: connections to a provider are reused (no new TCP/TLS setup per
+// request); idle ones close after 4 s (sooner if the server says so) and at most
+// 16 per provider. Every new connection still goes through guardedLookup.
+const AGENT_OPTIONS = { lookup: guardedLookup, keepAlive: true, timeout: 4000, maxSockets: 16, maxFreeSockets: 4 };
 const guardedAgents = {
-  httpAgent: new http.Agent({ lookup: guardedLookup }),
-  httpsAgent: new https.Agent({ lookup: guardedLookup }),
+  httpAgent: new http.Agent(AGENT_OPTIONS),
+  httpsAgent: new https.Agent(AGENT_OPTIONS),
 };
+
+// A kept-alive connection the provider had already closed fails at once with
+// ECONNRESET/EPIPE before the request reaches it; GETs are safe to send again,
+// so retry once on a fresh connection.
+const STALE_CONNECTION_CODES = new Set(["ECONNRESET", "EPIPE"]);
+async function retryOnClosedConnection(request) {
+  try {
+    return await request();
+  } catch (e) {
+    if (!STALE_CONNECTION_CODES.has(e?.code)) throw e;
+    return request();
+  }
+}
 
 // axios (follow-redirects) hook: reject redirects that jump to an internal host
 function blockPrivateRedirects(options) {
@@ -135,5 +152,5 @@ function trimTrailingSlashes(url) {
 
 module.exports = {
   isPrivateIp, validateExternalUrl, isExternalUrlSyntax, assertExternalUrl, blockPrivateRedirects,
-  guardedLookup, guardedAgents, PROVIDER_USER_AGENT, trimTrailingSlashes,
+  guardedLookup, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes,
 };

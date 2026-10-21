@@ -967,6 +967,7 @@ describe("expiry notice", () => {
     let account = { auth: 1, status: "Active", exp_date: inDays(2) };
     const { info, cfg } = setup(async () => account);
     const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    const settle = () => new Promise(resolve => setImmediate(resolve)); // background refresh
     const realNow = Date.now;
     let offset = 0;
     jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
@@ -976,11 +977,15 @@ describe("expiry notice", () => {
     offset = 29 * 60 * 1000;
     expect((await names())[0]).toMatch(/^⚠️ Subscription ends/); // still cached
     offset = 31 * 60 * 1000;
+    // Expired: answered at once from the old copy while it refreshes, then fresh
+    expect((await names())[0]).toMatch(/^⚠️ Subscription ends/);
+    await settle();
     expect(await names()).toEqual(["One"]);
 
     info.mockImplementation(async () => { throw new Error("down"); });
     offset = 62 * 60 * 1000;
-    await names(); // failed lookup cached as null
+    await names(); // refresh fails → cached as null
+    await settle();
     const calls = info.mock.calls.length;
     account = { auth: 1, status: "Active", exp_date: inDays(1.5) };
     info.mockImplementation(async () => account);
@@ -988,7 +993,128 @@ describe("expiry notice", () => {
     await names();
     expect(info.mock.calls.length).toBe(calls); // within 3 minutes: not asked again
     offset = 66 * 60 * 1000;
+    await names(); // retried in the background
+    await settle();
     expect((await names())[0]).toBe("⚠️ Subscription ends in 2 days");
+  });
+});
+
+// ─── Speed: stale-while-refresh, TV guide cache, kept-alive connections ───
+
+describe("speed", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const urlguard = require("../urlguard");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const playlist = (name) => m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1,${name}\nhttp://example.com/1.m3u8`);
+  let offset = 0;
+  beforeEach(() => {
+    offset = 0;
+    const realNow = Date.now;
+    jest.spyOn(Date, "now").mockImplementation(() => realNow() + offset);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  test("an expired playlist is answered at once and refreshed in the background", async () => {
+    let version = "Old";
+    const parse = jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist(version));
+    const cfg = enc({ t: "m3u", m: "http://swr.example.com/list.m3u" });
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+
+    expect(await names()).toEqual(["Old"]);
+    version = "New";
+    offset = 11 * 60 * 1000;                 // past the 10-minute TTL
+    expect(await names()).toEqual(["Old"]);  // no waiting for the download
+    await settle();
+    expect(await names()).toEqual(["New"]);  // refreshed copy
+    expect(parse).toHaveBeenCalledTimes(2);
+
+    version = "Newest";
+    offset = 11 * 60 * 1000 + 61 * 60 * 1000; // older than TTL + stale window
+    expect(await names()).toEqual(["Newest"]); // too old to show: waits for a fresh one
+  });
+
+  test("a failed background refresh keeps the previous channels", async () => {
+    const parse = jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("Kept"));
+    const cfg = enc({ t: "m3u", m: "http://swr-fail.example.com/list.m3u" });
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    expect(await names()).toEqual(["Kept"]);
+    parse.mockRejectedValue(new Error("Request failed with status code 503"));
+    offset = 11 * 60 * 1000;
+    expect(await names()).toEqual(["Kept"]);
+    await settle();
+    expect(await names()).toEqual(["Kept"]); // not the "Provider not responding" tile
+  });
+
+  test("Xtream channel list: same, after 4 hours", async () => {
+    let name = "Old";
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    const streams = jest.spyOn(xtream, "getLiveStreams").mockImplementation(async () => [{ stream_id: 1, name }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const cfg = enc({ t: "xtream", s: "http://swr-xt.example.com", u: "swr", p: "p" });
+    const names = async () => (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
+    expect(await names()).toEqual(["Old"]);
+    name = "New";
+    offset = 4.1 * 60 * 60 * 1000;
+    expect(await names()).toEqual(["Old"]);
+    await settle();
+    expect(await names()).toEqual(["New"]);
+    expect(streams).toHaveBeenCalledTimes(2);
+  });
+
+  test("the TV guide is reused for 3 minutes", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 7, name: "Seven" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const listing = { title: Buffer.from("News").toString("base64"), start: "2026-01-01 10:00:00", end: "2026-01-01 11:00:00" };
+    const epg = jest.spyOn(xtream, "getShortEPG").mockResolvedValue([listing]);
+    const cfg = enc({ t: "xtream", s: "http://epg-cache.example.com", u: "e", p: "p" });
+    const open = async () => (await request(app).get(`/${cfg}/meta/tv/iptv_tv_7.json`)).body.meta.description;
+
+    expect(await open()).toContain("News");
+    expect(await open()).toContain("News");
+    expect(epg).toHaveBeenCalledTimes(1);
+    offset = 3.5 * 60 * 1000;
+    await open();
+    expect(epg).toHaveBeenCalledTimes(2);
+  });
+
+  test("a TV guide failure isn't kept", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 8, name: "Eight" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const epg = jest.spyOn(xtream, "getShortEPG").mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValue([{ title: Buffer.from("Film").toString("base64") }]);
+    const cfg = enc({ t: "xtream", s: "http://epg-fail.example.com", u: "e", p: "p" });
+    const open = async () => (await request(app).get(`/${cfg}/meta/tv/iptv_tv_8.json`)).body.meta.description;
+    expect(await open()).not.toContain("Film");
+    expect(await open()).toContain("Film");
+    expect(epg).toHaveBeenCalledTimes(2);
+  });
+
+  test("provider connections are kept alive with a short idle timeout", () => {
+    for (const agent of Object.values(urlguard.guardedAgents)) {
+      expect(agent.keepAlive).toBe(true);
+      expect(agent.options.timeout).toBe(4000);
+      expect(agent.maxSockets).toBe(16);
+    }
+  });
+
+  test("a request on a connection the provider already closed is retried once", async () => {
+    const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+    const flaky = jest.fn().mockRejectedValueOnce(reset).mockResolvedValue("ok");
+    await expect(urlguard.retryOnClosedConnection(flaky)).resolves.toBe("ok");
+    expect(flaky).toHaveBeenCalledTimes(2);
+
+    const down = jest.fn().mockRejectedValue(reset);
+    await expect(urlguard.retryOnClosedConnection(down)).rejects.toBe(reset);
+    expect(down).toHaveBeenCalledTimes(2); // only one retry
+
+    const timeout = Object.assign(new Error("timeout"), { code: "ECONNABORTED" });
+    const slow = jest.fn().mockRejectedValue(timeout);
+    await expect(urlguard.retryOnClosedConnection(slow)).rejects.toBe(timeout);
+    expect(slow).toHaveBeenCalledTimes(1); // other errors aren't retried
   });
 });
 
