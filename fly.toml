@@ -23,6 +23,12 @@ primary_region = 'ams'
     method = "GET"
     path = "/health"
 
+# App metrics for Fly's Grafana (fly-metrics.net): scraped from inside Fly's
+# network only — port 9091 is not one of the public services above
+[metrics]
+  port = 9091
+  path = "/metrics"
+
 [mounts]
   source = "data"
   destination = "/data"

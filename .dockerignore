@@ -5,3 +5,4 @@ node_modules
 stats.json*
 secrets.txt
 links.json*
+grafana

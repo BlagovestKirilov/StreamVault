@@ -51,6 +51,9 @@ const compression = require("compression");
 const app = express();
 app.disable("x-powered-by"); // don't advertise the framework/version
 const PORT = process.env.PORT || 7000;
+// Internal Prometheus endpoint for Fly's metrics (fly.toml [metrics]); not public
+const METRICS_PORT = Number(process.env.METRICS_PORT) || 9091;
+const metrics = require("./metrics");
 app.set("trust proxy", true);
 
 // --- Gzip compression (shrinks catalog/meta JSON egress) ---
@@ -78,7 +81,11 @@ function errorEndpoint(req) {
 }
 
 app.use((req, res, next) => {
+  const started = process.hrtime.bigint();
   res.on("finish", () => {
+    // Every response: count + duration for the metrics, by route pattern
+    const route = req.route ? `${req.method} ${req.route.path}` : `${req.method} unmatched`;
+    metrics.observeRequest(route, res.statusCode, Number(process.hrtime.bigint() - started) / 1e9);
     if (res.statusCode < 400 || req.path === "/health" || res.locals.skipErrorCount) return;
     countCode("responseErrors", errorEndpoint(req), String(res.statusCode));
   });
@@ -2018,11 +2025,95 @@ function maskPath(p) {
     .join("/").slice(0, 150);
 }
 
+// --- Metrics (Prometheus text) for Fly's built-in Grafana ---
+// Same numbers as /stats, as gauges/counters Grafana can graph over time.
+function buildMetricsText() {
+  const w = metrics.createWriter();
+  const g = (name, help, value, labels) => w.add(`streamvault_${name}`, "gauge", help, value, labels);
+  const c = (name, help, value, labels) => w.add(`streamvault_${name}`, "counter", help, value, labels);
+
+  // Process: memory, CPU, uptime, event loop
+  const mem = process.memoryUsage();
+  const heapLimit = require("node:v8").getHeapStatistics().heap_size_limit;
+  g("memory_bytes", "Process memory", mem.rss, { kind: "rss" });
+  g("memory_bytes", "Process memory", mem.heapUsed, { kind: "heap_used" });
+  g("memory_bytes", "Process memory", mem.heapTotal, { kind: "heap_total" });
+  g("memory_bytes", "Process memory", mem.external, { kind: "external" });
+  g("memory_bytes", "Process memory", heapLimit, { kind: "heap_limit" });
+  g("memory_threshold_bytes", "Heap watchdog thresholds", HEAP_WARN_MB * 1024 * 1024, { level: "warn" });
+  g("memory_threshold_bytes", "Heap watchdog thresholds", HEAP_CRIT_MB * 1024 * 1024, { level: "crit" });
+  c("memory_evictions_total", "Cache evictions by the heap watchdog", memStats.warnEvictions, { level: "warn" });
+  c("memory_evictions_total", "Cache evictions by the heap watchdog", memStats.critEvictions, { level: "crit" });
+  const cpu = process.cpuUsage();
+  c("cpu_seconds_total", "CPU time used by the process", cpu.user / 1e6, { mode: "user" });
+  c("cpu_seconds_total", "CPU time used by the process", cpu.system / 1e6, { mode: "system" });
+  g("uptime_seconds", "Seconds since the process started", process.uptime());
+  metrics.writeEventLoop(w);
+
+  // Caches and downloads
+  const cache = (name, size, max) => {
+    g("cache_entries", "Entries in each in-memory cache", size, { cache: name });
+    if (max) g("cache_capacity", "Maximum entries per cache", max, { cache: name });
+  };
+  cache("m3u", m3uCache.size, M3U_CACHE_MAX);
+  cache("xtream", xtreamCache.size, XTREAM_CACHE_MAX);
+  cache("accounts", accountCache.size, XTREAM_CACHE_MAX);
+  cache("genres", genresCache.size, GENRES_CACHE_MAX);
+  cache("link_apps", linkApps.size, LINK_APPS_MAX);
+  g("failed_providers", "Providers in the 2-minute failure cache", [...failCache.values()].filter(f => f.until > Date.now()).length);
+  g("downloads_running", "Big provider downloads running now", downloadsRunning);
+  g("downloads_capacity", "Big provider downloads allowed at once", MAX_PARALLEL_DOWNLOADS);
+  g("downloads_waiting", "Big provider downloads waiting for a slot", downloadQueue.length);
+  g("inflight_loads", "Shared in-flight loads (once())", inflight.size);
+  g("stable_links", "Saved stable install links + edited old links (links.json)", linkStore.size());
+
+  // All-time usage (from stats.json, survives restarts)
+  c("installs_total", "Installs (new users) since the start", stats.installs);
+  c("configures_total", "Configure page visits since the start", stats.configures);
+  c("streams_total", "Stream requests since the start", stats.streams);
+  c("searches_total", "Searches since the start", stats.searches);
+  g("unique_users", "Unique users since the start", stats.users.size);
+  for (const [type, n] of Object.entries(stats.streamsByType || {})) {
+    c("streams_by_type_total", "Stream requests by type since the start", n, { type });
+  }
+
+  // Today (UTC) — every daily counter, the provider errors and our error responses
+  const today = todayKey();
+  const row = stats.history[today] || {};
+  g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyActive[today]?.size || 0, { counter: "dau" });
+  for (const [counter, value] of Object.entries(row)) {
+    if (typeof value === "number" && counter !== "dau") g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
+  }
+  for (const [where, codes] of Object.entries(row.providerErrors || {})) {
+    for (const [code, n] of Object.entries(codes)) {
+      g("today_provider_errors", "Today's provider failures by where and status/kind", n, { where, code });
+    }
+  }
+  for (const [endpoint, codes] of Object.entries(row.responseErrors || {})) {
+    for (const [status, n] of Object.entries(codes)) {
+      g("today_response_errors", "Today's error responses we sent, by endpoint and status", n, { endpoint, status });
+    }
+  }
+
+  metrics.writeHttp(w);
+  return w.text();
+}
+
 // --- Start server ---
 if (require.main === module) {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`StreamVault IPTV running on 0.0.0.0:${PORT}`);
   });
+  // Internal only: fly.toml exposes 7000 to the internet, this port just to Fly's scraper
+  require("node:http").createServer((req, res) => {
+    if (req.url !== "/metrics") {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" }).end(buildMetricsText());
+  }).listen(METRICS_PORT, "0.0.0.0", () => {
+    console.log(`Metrics on :${METRICS_PORT}/metrics (internal)`);
+  });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats };
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, getIp, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats, buildMetricsText };
