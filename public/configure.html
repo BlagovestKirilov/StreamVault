@@ -852,7 +852,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
             </svg>
-            Open Stremio
+            <span id="stremioLinkText">Open Stremio</span>
           </a>
         </div>
         <p class="result-hint" id="installHints">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.<br/>Have another StreamVault that only shows “Set up StreamVault first”? Delete it from your addons.</p>
@@ -1090,8 +1090,15 @@
       for (const id of ['installHints', 'tvTip']) {
         document.getElementById(id).style.display = updated ? 'none' : '';
       }
-      // Saved in Nuvio: there's no Stremio to open (Copy stays)
-      document.getElementById('stremioLink').style.display = updated && encData.app === 'Nuvio' ? 'none' : '';
+      // Saved in Nuvio: there's no Stremio to open (Copy stays). Saved on a phone:
+      // the button opens Stremio Web, the one place there with Upgrade
+      const link = document.getElementById('stremioLink');
+      const webUpgrade = updated && ON_PHONE;
+      link.style.display = updated && encData.app === 'Nuvio' ? 'none' : '';
+      link.href = stremioWebLink(manifestUrl);
+      link.target = webUpgrade ? '_blank' : '';
+      link.rel = webUpgrade ? 'noopener' : '';
+      document.getElementById('stremioLinkText').textContent = webUpgrade ? 'Upgrade in Stremio Web' : 'Open Stremio';
       document.getElementById('installUrl').value = manifestUrl;
       openResult();
       return updated;
@@ -1129,15 +1136,24 @@
     // app only if it saw it load this StreamVault.
     function savedHint(app) {
       if (app === 'Nuvio') return 'Fully close and reopen Nuvio to see the changes — just switching back to it keeps the old categories.';
-      const stremio = 'Stremio opens StreamVault — press Update there to load the changes.';
+      const stremio = ON_PHONE
+        ? 'The Stremio phone app has no Upgrade button: tap “Upgrade in Stremio Web”, sign in with your Stremio account if asked and press Upgrade — your phone gets it the next time Stremio starts.'
+        : 'Stremio opens StreamVault — press Upgrade there to load the changes.';
       return app === 'Stremio' ? stremio : `${stremio} In Nuvio: fully close and reopen the app.`;
+    }
+
+    // Phones: the Stremio app's dialog for an installed addon has no Upgrade (the
+    // desktop app and Stremio Web do, and addons sync through the Stremio account)
+    const ON_PHONE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // Web link that Stremio handles on all platforms (Stremio Web's addon dialog)
+    function stremioWebLink(manifestUrl) {
+      return `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
     }
 
     // Open the new link in the app (Stremio, or whichever app handles stremio://)
     function openInApp(manifestUrl, configPath) {
       const base = window.location.origin;
-      // Web link that Stremio handles on all platforms; the native deep link is opened below
-      document.getElementById('stremioLink').href = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`;
       const stremioUrl = `stremio://${base.replace(/^https?:\/\//, '')}/${configPath}/manifest.json`;
       // Prefetch manifest to warm up server/DNS/TLS, then open the app
       fetch(manifestUrl).finally(() => {
@@ -1178,10 +1194,11 @@
           return;
         }
         const manifestUrl = `${window.location.origin}/${encData.config}/manifest.json`;
-        // Same link, new settings. Stremio still opens it: only a (re)install
-        // replaces the copy it stored (same link → Update, no duplicate)
+        // Same link, new settings. Stremio on a PC still opens it: only a
+        // (re)install replaces the copy it stored (same link → Upgrade, no
+        // duplicate). Not on phones (no Upgrade there) and not for Nuvio.
         const updated = showInstallResult(encData, manifestUrl);
-        if (!updated || encData.app !== 'Nuvio') openInApp(manifestUrl, encData.config);
+        if (!updated || (encData.app !== 'Nuvio' && !ON_PHONE)) openInApp(manifestUrl, encData.config);
       } catch (e) {
         showToast('Failed to generate install URL');
       } finally {
