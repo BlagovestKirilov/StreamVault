@@ -901,6 +901,20 @@ describe("home rows, merged versions, clean names", () => {
     expect(await names(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("UK| NEWS")}.json`)).toEqual(["BBC News"]); // real one still works
   });
 
+  test("each Save changes gives the manifest a newer version, so apps replace their stored copy", async () => {
+    xtreamSetup("1"); // mocks
+    const settings = { t: "xtream", s: "http://version-bump.example.com", u: "u", p: "p", c: "1" };
+    const link = (await request(app).post("/api/link").send(settings)).body.config;
+    const version = async () => (await request(app).get(`/${link}/manifest.json`)).body.version;
+    expect(await version()).toBe("1.2.1");
+    await request(app).post("/api/link").send({ ...settings, c: "1,2", editing: link });
+    expect(await version()).toBe("1.2.2");
+    await request(app).post("/api/link").send({ ...settings, c: "1", editing: link });
+    expect(await version()).toBe("1.2.3");
+    // a link that was never saved keeps the base version
+    expect((await request(app).get(`/${enc(settings)}/manifest.json`)).body.version).toBe("1.2.0");
+  });
+
   test("channel list not ready: the manifest still lists the picked categories (Xtream and M3U)", async () => {
     const cfg = xtreamSetup("2,1");
     xtream.getLiveStreams.mockRejectedValue(new Error("timeout of 15000ms exceeded")); // list not available

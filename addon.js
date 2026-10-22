@@ -788,6 +788,7 @@ function extractConfig(req, res, next) {
     // link's settings can change, so its key includes the revision
     const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
+    req.configRevision = saved ? saved.revision : 0;
     noteAppForLink(req);
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
@@ -1398,7 +1399,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // Channel list not ready in time (e.g. right after Save changes added a category):
   // the picked categories still go into the manifest — apps keep it until restart
   if (genres.length === 0) genres = await withinMs(pickedCategoryNames(req.userConfig), PICKED_NAMES_TIMEOUT_MS, []);
-  res.json(configuredManifest(genres, cType, req.userConfig));
+  res.json({ ...configuredManifest(genres, cType, req.userConfig), version: manifestVersion(req.configRevision) });
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
@@ -1434,6 +1435,13 @@ function categoryRows(genres, config) {
   return genres.slice(0, MAX_CATEGORY_ROWS).map(name => ({
     type: "tv", id: categoryCatalogId(name), name: cleanName(name), extra: [{ name: "skip" }],
   }));
+}
+
+// Apps keep the manifest they installed and replace it when its version changes:
+// each Save changes of a saved link (revision) gives "1.2.<revision>", so the new
+// category list / rows reach the app. Links never saved stay on the base version.
+function manifestVersion(revision) {
+  return revision ? BASE_MANIFEST.version.replace(/\.\d+$/, `.${revision}`) : BASE_MANIFEST.version;
 }
 
 function configuredManifest(genres, type, config = {}) {
