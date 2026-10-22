@@ -1106,14 +1106,18 @@
     // area closes it; focus goes back to the button
     function openResult() {
       const dialog = document.getElementById('result');
-      if (!dialog.open) dialog.showModal();
+      if (dialog.open) return;
+      // Very old browsers (iOS Safari < 15.4) have no showModal: show it in place
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else dialog.setAttribute('open', '');
       document.documentElement.style.overflow = 'hidden';
     }
 
     function closeResult() {
       const dialog = document.getElementById('result');
       if (!dialog.open) return;
-      dialog.close();
+      if (typeof dialog.close === 'function') dialog.close();
+      else dialog.removeAttribute('open');
       resultClosed();
     }
 
