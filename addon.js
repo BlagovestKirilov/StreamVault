@@ -1659,9 +1659,10 @@ async function catalogHandler(req, res) {
   }
 }
 
-// A category the app still offers from an older setup (apps keep the category
-// list / rows they loaded at start): an explaining tile on the first page instead
-// of an empty screen. Counted per day as staleCategories.
+// A category with nothing to show — usually one the app still offers from an older
+// setup (apps keep the category list / rows they loaded at start), sometimes a
+// picked one the provider emptied: an explaining tile on the first page instead of
+// an empty screen. Counted per day as staleCategories.
 function staleCategoryAnswer(extra, metas, skip, type) {
   if (!extra.genre || metas.length === 0 || metas.some(m => m.genres?.[0] === extra.genre)) return null;
   if (skip > 0) return { metas: [] };
@@ -1713,8 +1714,8 @@ function filterCatalog(metas, extra) {
 // --- Error tiles: tell the user why their catalog is empty ---
 const NOTICES = {
   category_gone: {
-    name: "Category not in your setup",
-    description: "This category isn't in your StreamVault setup any more — your app is still showing an older category list. Close and reopen the app to refresh it, or open Configure on StreamVault to add the category back.",
+    name: "No channels in this category",
+    description: "Either this category isn't in your StreamVault setup any more and your app is still showing an older category list, or your provider has no channels in it right now. Close and reopen the app to refresh the list, or check your categories in Configure on StreamVault.",
   },
   provider_down: {
     name: "Provider not responding",
