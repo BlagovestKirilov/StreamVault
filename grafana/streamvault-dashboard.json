@@ -1278,7 +1278,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#B6E3A8"
+                  "fixedColor": "#C8F2C2"
                 }
               }
             ]
@@ -1301,7 +1301,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /:config/meta/"
+              "options": "^GET /:config/meta/.*"
             },
             "properties": [
               {
@@ -1316,7 +1316,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /:config/stream/"
+              "options": "^GET /:config/stream/.*"
             },
             "properties": [
               {
@@ -1331,14 +1331,14 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^(GET|HEAD) /play/"
+              "options": "^GET /play/.*"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5794F2"
+                  "fixedColor": "#3274D9"
                 }
               }
             ]
@@ -1346,7 +1346,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "configure"
+              "options": "^HEAD /play/.*"
             },
             "properties": [
               {
@@ -1361,22 +1361,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /api/config/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#C0D8FF"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "^POST /api/test$"
+              "options": "^GET (/:config)?/configure$"
             },
             "properties": [
               {
@@ -1391,6 +1376,36 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "^GET /api/config/.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9AE6E6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/test$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF7EC9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "^POST /api/link$"
             },
             "properties": [
@@ -1398,7 +1413,37 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#FFCB7D"
+                  "fixedColor": "#FFB357"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/(categories|m3u-groups)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D683CE"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/encrypt$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#CA95E5"
                 }
               }
             ]
@@ -1414,6 +1459,96 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#E0B400"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) /(manifest\\.json|catalog/.*|meta/.*|stream/.*)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8F7A5A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*subtitles.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6E9FA6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*stats\\.json.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#7A8C9E"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) /health$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6CCF8E"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^GET /(stats|robots\\.txt)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#A1887F"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) unmatched$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808080"
                 }
               }
             ]
@@ -1496,7 +1631,7 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#B6E3A8"
+                  "fixedColor": "#C8F2C2"
                 }
               }
             ]
@@ -1519,7 +1654,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /:config/meta/"
+              "options": "^GET /:config/meta/.*"
             },
             "properties": [
               {
@@ -1534,7 +1669,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /:config/stream/"
+              "options": "^GET /:config/stream/.*"
             },
             "properties": [
               {
@@ -1549,14 +1684,14 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^(GET|HEAD) /play/"
+              "options": "^GET /play/.*"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5794F2"
+                  "fixedColor": "#3274D9"
                 }
               }
             ]
@@ -1564,7 +1699,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "configure"
+              "options": "^HEAD /play/.*"
             },
             "properties": [
               {
@@ -1579,22 +1714,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "^GET /api/config/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#C0D8FF"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "^POST /api/test$"
+              "options": "^GET (/:config)?/configure$"
             },
             "properties": [
               {
@@ -1609,6 +1729,36 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "^GET /api/config/.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9AE6E6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/test$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FF7EC9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "^POST /api/link$"
             },
             "properties": [
@@ -1616,7 +1766,37 @@
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#FFCB7D"
+                  "fixedColor": "#FFB357"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/(categories|m3u-groups)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D683CE"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^POST /api/encrypt$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#CA95E5"
                 }
               }
             ]
@@ -1632,6 +1812,96 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#E0B400"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) /(manifest\\.json|catalog/.*|meta/.*|stream/.*)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8F7A5A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*subtitles.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6E9FA6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*stats\\.json.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#7A8C9E"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) /health$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6CCF8E"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^GET /(stats|robots\\.txt)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#A1887F"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(GET|HEAD) unmatched$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808080"
                 }
               }
             ]
