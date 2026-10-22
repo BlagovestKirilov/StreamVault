@@ -1313,7 +1313,8 @@ function catalogView(list) {
   const byKey = new Map(); // first appearance keeps the sorted order
   for (const meta of list) {
     const { mergeBase, quality } = nameKey(meta.name);
-    const key = JSON.stringify([meta.genres?.[0] || "", mergeBase]);
+    // A name of only symbols/emoji normalizes to "": key it by itself, not with all such names
+    const key = JSON.stringify([meta.genres?.[0] || "", mergeBase || meta.name]);
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push({ meta, quality });
   }

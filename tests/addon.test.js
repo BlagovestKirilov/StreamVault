@@ -921,6 +921,17 @@ describe("home rows, merged versions, clean names", () => {
     expect(meta.name).toBe("BTV");
   });
 
+  test("names made only of symbols are never merged with each other", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="G",📺
+http://example.com/a.m3u8
+#EXTINF:-1 group-title="G",⚽
+http://example.com/b.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://symbol-names.example.com/list.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas.map(m => m.name).sort()).toEqual(["⚽", "📺"].sort());
+  });
+
   test("M3U: a merged tile offers each version's stream", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
 #EXTINF:-1 group-title="G",Kino
