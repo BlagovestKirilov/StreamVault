@@ -1627,6 +1627,8 @@ async function catalogHandler(req, res) {
     }
     metas = catalogView(metas).display;
     if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
+    const stale = staleCategoryAnswer(extra, metas, skip, type);
+    if (stale) return res.json(stale);
 
     // Filter, paginate; channels carry the raw logo — posters built for this page only
     metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(catalogMeta);
@@ -1640,6 +1642,16 @@ async function catalogHandler(req, res) {
     const firstPage = !/(^|&)skip=[1-9]/.test(req.path.split("/").pop() || "");
     res.json({ metas: firstPage ? [noticeMeta(classifyError(e), req.params.type)] : [] });
   }
+}
+
+// A category the app still offers from an older setup (apps keep the category
+// list / rows they loaded at start): an explaining tile on the first page instead
+// of an empty screen. Counted per day as staleCategories.
+function staleCategoryAnswer(extra, metas, skip, type) {
+  if (!extra.genre || metas.length === 0 || metas.some(m => m.genres?.[0] === extra.genre)) return null;
+  if (skip > 0) return { metas: [] };
+  countToday("staleCategories");
+  return { metas: [noticeMeta("category_gone", type)] };
 }
 
 // The category behind a category row's id ("\u0000" = none: an empty row)
@@ -1685,6 +1697,10 @@ function filterCatalog(metas, extra) {
 
 // --- Error tiles: tell the user why their catalog is empty ---
 const NOTICES = {
+  category_gone: {
+    name: "Category not in your setup",
+    description: "This category isn't in your StreamVault setup any more — your app is still showing an older category list. Close and reopen the app to refresh it, or open Configure on StreamVault to add the category back.",
+  },
   provider_down: {
     name: "Provider not responding",
     description: "Your IPTV provider's server returned an error or didn't respond. This is usually temporary — try again in a few minutes.",

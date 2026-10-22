@@ -887,7 +887,18 @@ describe("home rows, merged versions, clean names", () => {
     expect(catalogs[1].extra).toEqual([{ name: "skip" }]);
     expect(await names(`/${cfg}/catalog/tv/${catalogs[1].id}.json`)).toEqual(["BBC News"]);
     expect(await names(`/${cfg}/catalog/tv/${catalogs[2].id}.json`)).toEqual(["BTV", "NOVA"]);
-    expect(await names(`/${cfg}/catalog/tv/iptv_cat_000000000000.json`)).toEqual([]); // unknown row
+    expect(await names(`/${cfg}/catalog/tv/iptv_cat_000000000000.json`)).toEqual(["⚠️ Category not in your setup"]); // old row
+  });
+
+  test("a category the app still lists from an older setup explains itself instead of an empty screen", async () => {
+    const cfg = xtreamSetup("2,1"); // KIDS isn't picked any more
+    const path = `/${cfg}/catalog/tv/iptv_live/genre=KIDS.json`;
+    const metas = (await request(app).get(path)).body.metas;
+    expect(metas).toEqual([expect.objectContaining({ id: "iptv_notice_category_gone", name: "⚠️ Category not in your setup" })]);
+    expect((await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=KIDS&skip=100.json`)).body.metas).toEqual([]);
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_notice_category_gone.json`)).body.meta;
+    expect(meta.description).toMatch(/Close and reopen the app to refresh it, or open Configure/);
+    expect(await names(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("UK| NEWS")}.json`)).toEqual(["BBC News"]); // real one still works
   });
 
   test("no extra rows with one or no picked categories", async () => {
