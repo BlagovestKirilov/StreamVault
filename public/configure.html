@@ -783,7 +783,7 @@
         </div>
         <input type="text" class="result-url" id="installUrl" aria-label="Install link" readonly />
         <!-- Shown instead of the install steps when an installed StreamVault was edited in place -->
-        <p class="result-hint" id="updatedHint" style="display:none;">Your StreamVault keeps the same link, so there's nothing to install again.<br/><span id="restartHint">Close and reopen your app to see the changes.</span></p>
+        <p class="result-hint" id="updatedHint" style="display:none;">Your StreamVault keeps the same link, so there's nothing to install again.<br/><span id="restartHint">Fully close and reopen your app to see the changes — just switching back to it keeps the old categories.</span></p>
         <div class="result-btns" id="resultBtns">
           <button class="btn-sm btn-copy" onclick="copyUrl()">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -1034,8 +1034,8 @@
       // The server knows the app only if it saw it load this StreamVault
       const knownApp = encData.app === 'Nuvio' || encData.app === 'Stremio';
       document.getElementById('restartHint').textContent = knownApp
-        ? `Restart ${encData.app} to see the changes.`
-        : 'Close and reopen your app to see the changes.';
+        ? `Fully close and reopen ${encData.app} to see the changes — just switching back to it keeps the old categories.`
+        : 'Fully close and reopen your app to see the changes — just switching back to it keeps the old categories.';
       for (const id of ['resultBtns', 'installHints', 'tvTip']) {
         document.getElementById(id).style.display = updated ? 'none' : '';
       }

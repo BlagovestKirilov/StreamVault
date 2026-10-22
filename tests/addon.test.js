@@ -901,6 +901,20 @@ describe("home rows, merged versions, clean names", () => {
     expect(await names(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("UK| NEWS")}.json`)).toEqual(["BBC News"]); // real one still works
   });
 
+  test("channel list not ready: the manifest still lists the picked categories (Xtream and M3U)", async () => {
+    const cfg = xtreamSetup("2,1");
+    xtream.getLiveStreams.mockRejectedValue(new Error("timeout of 15000ms exceeded")); // list not available
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] BULGARIA"]);
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "BULGARIA"]);
+
+    jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("timeout of 30000ms exceeded"));
+    const m3uCfg = enc({ t: "m3u", m: "http://not-ready.example.com/list.m3u", g: JSON.stringify(["Sport", "News"]) });
+    const m3uMan = (await request(app).get(`/${m3uCfg}/manifest.json`)).body;
+    expect(m3uMan.catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["Sport", "News"]);
+    expect(m3uMan.catalogs.map(c => c.name)).toEqual(["StreamVault Live", "Sport", "News"]);
+  });
+
   test("no extra rows with one or no picked categories", async () => {
     for (const c of ["", "1"]) {
       const cfg = xtreamSetup(c);

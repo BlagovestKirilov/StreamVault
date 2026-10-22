@@ -1394,11 +1394,26 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
-  const genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
+  let genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
+  // Channel list not ready in time (e.g. right after Save changes added a category):
+  // the picked categories still go into the manifest — apps keep it until restart
+  if (genres.length === 0) genres = await withinMs(pickedCategoryNames(req.userConfig), PICKED_NAMES_TIMEOUT_MS, []);
   res.json(configuredManifest(genres, cType, req.userConfig));
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
+const PICKED_NAMES_TIMEOUT_MS = 3000;
+// Picked categories by name in pick order, without the channel list: M3U group
+// names are in the settings; Xtream ids → names via the (small) category list
+async function pickedCategoryNames(config) {
+  if (config.type === "m3u") return (config.groups || []).slice(0, MAX_GENRE_OPTIONS);
+  const ids = xtreamCategoryIds(config);
+  if (ids.length === 0) return [];
+  const categories = await xtream.getLiveCategories(config);
+  const names = new Map((Array.isArray(categories) ? categories : []).map(c => [String(c.category_id), c.category_name]));
+  return ids.map(id => names.get(id)).filter(Boolean).slice(0, MAX_GENRE_OPTIONS);
+}
+
 const GENRES_TIMEOUT_MS = 8000;      // manifest must stay fast; fall back to no filter
 const GENRES_CACHE_TTL = 6 * 60 * 60 * 1000;
 const GENRES_CACHE_MAX = 500;
