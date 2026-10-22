@@ -1031,11 +1031,7 @@
       const updated = encData.updated === true;
       document.getElementById('resultTitle').textContent = updated ? 'Saved — StreamVault updated' : 'Ready to install';
       document.getElementById('updatedHint').style.display = updated ? 'block' : 'none';
-      // The server knows the app only if it saw it load this StreamVault
-      const knownApp = encData.app === 'Nuvio' || encData.app === 'Stremio';
-      document.getElementById('restartHint').textContent = knownApp
-        ? `Fully close and reopen ${encData.app} to see the changes — just switching back to it keeps the old categories.`
-        : 'Fully close and reopen your app to see the changes — just switching back to it keeps the old categories.';
+      document.getElementById('restartHint').textContent = savedHint(encData.app);
       for (const id of ['resultBtns', 'installHints', 'tvTip']) {
         document.getElementById(id).style.display = updated ? 'none' : '';
       }
@@ -1045,6 +1041,16 @@
     }
 
     // Open the new link in the app (Stremio, or whichever app handles stremio://)
+    // How the app picks up saved changes. Stremio keeps its stored copy until the
+    // addon is installed again: the page opens it (same link → "Update", no second
+    // StreamVault). Nuvio reads it again on a full restart. The server knows the
+    // app only if it saw it load this StreamVault.
+    function savedHint(app) {
+      if (app === 'Nuvio') return 'Fully close and reopen Nuvio to see the changes — just switching back to it keeps the old categories.';
+      const stremio = 'Stremio opens StreamVault — press Update there to load the changes.';
+      return app === 'Stremio' ? stremio : `${stremio} In Nuvio: fully close and reopen the app.`;
+    }
+
     function openInApp(manifestUrl, configPath) {
       const base = window.location.origin;
       // Web link that Stremio handles on all platforms; the native deep link is opened below
@@ -1089,9 +1095,10 @@
           return;
         }
         const manifestUrl = `${window.location.origin}/${encData.config}/manifest.json`;
-        // Same link, new settings: nothing to install, the app picks them up
+        // Same link, new settings. Stremio still opens it: only a (re)install
+        // replaces the copy it stored (same link → Update, no duplicate)
         const updated = showInstallResult(encData, manifestUrl);
-        if (!updated) openInApp(manifestUrl, encData.config);
+        if (!updated || encData.app !== 'Nuvio') openInApp(manifestUrl, encData.config);
       } catch (e) {
         showToast('Failed to generate install URL');
       } finally {
