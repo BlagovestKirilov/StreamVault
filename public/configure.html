@@ -251,6 +251,17 @@
       font-size: 0.85rem;
       color: var(--muted);
     }
+    .field label.check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .check-row input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+    }
     @keyframes spin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
@@ -755,6 +766,12 @@
         <div class="cat-selected" id="catSelected"></div>
       </div>
 
+      <!-- Display option -->
+      <div class="field">
+        <label class="check-row" for="cleanNames"><input type="checkbox" id="cleanNames" checked /> Clean channel names</label>
+        <p class="cat-hint">Hides provider tags like [BG] or UK | in front of channel names</p>
+      </div>
+
       <!-- Test Connection button -->
       <button class="btn-test" id="btnTest" onclick="testConnection()">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -1000,13 +1017,18 @@
     }
 
     // Settings to save for the tested details, or { error } when the selection is too long
+    // "1" = hide provider tags ([BG], UK |) in channel names
+    function cleanNamesSetting() {
+      return document.getElementById('cleanNames').checked ? '1' : '';
+    }
+
     function buildInstallSettings(body) {
       if (source === 'xtream') {
         const categoryIds = [...selectedCategories].join(',');
         if (categoryIds.length > 2048) return { error: 'Too many categories selected — pick fewer' };
-        return { settings: { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds } };
+        return { settings: { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds, n: cleanNamesSetting() } };
       }
-      const settings = { t: 'm3u', m: body.m3uUrl, c: '' };
+      const settings = { t: 'm3u', m: body.m3uUrl, c: '', n: cleanNamesSetting() };
       // Selected group-titles (empty = whole playlist)
       if (selectedCategories.size > 0) {
         const g = JSON.stringify([...selectedCategories]);
@@ -1305,6 +1327,8 @@
           document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
         }
         selectedCategories = new Set((cfg.categories || []).map(String));
+        // Older installs have no such setting: keep their names as they were
+        document.getElementById('cleanNames').checked = cfg.cleanNames === true;
         updateButtons();
         // Editing an installed StreamVault: saving updates it in place, nothing to install
         document.getElementById('btnInstallText').textContent = 'Save changes';

@@ -473,10 +473,10 @@ describe("configure page API", () => {
     const xt = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: "1,2" });
     const r1 = await request(app).get(`/api/config/${xt.body.config}`);
     expect(r1.headers["cache-control"]).toBe("no-store");
-    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"] });
+    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"], cleanNames: false });
 
     const r2 = await request(app).get(`/api/config/${enc({ t: "m3u", m: "http://e.com/x.m3u", g: JSON.stringify(["News"]) })}`);
-    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"] });
+    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"], cleanNames: false });
   });
 
   test("GET /api/config rejects an invalid link", async () => {
@@ -833,7 +833,7 @@ http://example.com/7.m3u8`));
   });
 });
 
-test("quality tags don't count when sorting: versions of a channel stay together", async () => {
+test("quality versions of a channel are one tile; trailing TV doesn't move a channel", async () => {
   const m3u = require("../m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const names = ["[BG] BULGARIA 24", "[BG] BTV ACTION", "[BG] BTV UHD", "[BG] BTV", "[BG] BTV (FHD)", "[BG] BTV HD",
@@ -843,10 +843,115 @@ test("quality tags don't count when sorting: versions of a channel stay together
   const cfg = enc({ t: "m3u", m: "http://quality-order.example.com/list.m3u" });
   const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
   expect(metas.map(m => m.name)).toEqual([
-    "[BG] BTV", "[BG] BTV HD", "[BG] BTV (FHD)", "[BG] BTV UHD", "[BG] BTV ACTION", "[BG] BULGARIA 24",
-    "[BG] NOVA", "[BG] NOVA TV UHD", "[BG] NOVA SPORT", "[BG] NOVA SPORT UHD", // trailing "TV" ignored
+    "[BG] BTV",                                   // BTV + HD + (FHD) + UHD
+    "[BG] BTV ACTION", "[BG] BULGARIA 24",
+    "[BG] NOVA", "[BG] NOVA TV UHD",              // "X TV" may be another channel: own tile, sorted with NOVA
+    "[BG] NOVA SPORT",                            // NOVA SPORT + UHD
   ]);
+  expect(metas[0].id).toBe("iptv_tv_m3u_bg_btv_uhd_2"); // the best version's id
   jest.restoreAllMocks();
+});
+
+describe("home rows, merged versions, clean names", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const CATEGORIES = [
+    { category_id: "1", category_name: "[BU] BULGARIA" },
+    { category_id: "2", category_name: "UK| NEWS" },
+    { category_id: "3", category_name: "KIDS" },
+  ];
+  const STREAMS = {
+    1: [{ stream_id: 11, name: "[BG] BTV", category_id: "1" }, { stream_id: 12, name: "[BG] BTV UHD", category_id: "1" },
+      { stream_id: 13, name: "[BG] BTV HD", category_id: "1" }, { stream_id: 14, name: "[BG] NOVA", category_id: "1" }],
+    2: [{ stream_id: 21, name: "UK: BBC News", category_id: "2" }],
+    3: [{ stream_id: 31, name: "Nick Jr", category_id: "3" }],
+  };
+  let setups = 0; // own provider address per setup: no cached account/list shared between tests
+  const xtreamSetup = (c, n = "") => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(CATEGORIES);
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_cfg, catId) => (catId ? STREAMS[catId] : Object.values(STREAMS).flat()));
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    return enc({ t: "xtream", s: `http://rows-${++setups}.example.com`, u: "u", p: "p", c, n });
+  };
+  const names = async (path) => (await request(app).get(path)).body.metas.map(m => m.name);
+  afterEach(() => jest.restoreAllMocks());
+
+  test("one home row per picked category, in pick order, after the main row", async () => {
+    const cfg = xtreamSetup("2,1");
+    const { catalogs, version } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(version).toBe("1.2.0");
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "UK| NEWS", "[BU] BULGARIA"]);
+    expect(catalogs[1].id).toMatch(/^iptv_cat_[0-9a-f]{12}$/);
+    expect(catalogs[1].extra).toEqual([{ name: "skip" }]);
+    expect(await names(`/${cfg}/catalog/tv/${catalogs[1].id}.json`)).toEqual(["UK: BBC News"]);
+    expect(await names(`/${cfg}/catalog/tv/${catalogs[2].id}.json`)).toEqual(["[BG] BTV", "[BG] NOVA"]);
+    expect(await names(`/${cfg}/catalog/tv/iptv_cat_000000000000.json`)).toEqual([]); // unknown row
+  });
+
+  test("no extra rows with one or no picked categories", async () => {
+    for (const c of ["", "1"]) {
+      const cfg = xtreamSetup(c);
+      const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+      expect(catalogs.map(x => x.id)).toEqual(["iptv_live"]);
+      jest.restoreAllMocks();
+    }
+  });
+
+  test("the expiry tile stays in the main row only", async () => {
+    const cfg = xtreamSetup("2,1");
+    xtream.getAccountInfo.mockResolvedValue({ auth: 1, status: "Active", exp_date: String(Math.floor(Date.now() / 1000) + 2 * 86400) });
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect((await names(`/${cfg}/catalog/tv/iptv_live.json`))[0]).toMatch(/^⚠️ Subscription ends/);
+    expect(await names(`/${cfg}/catalog/tv/${catalogs[1].id}.json`)).toEqual(["UK: BBC News"]);
+  });
+
+  test("a merged tile plays every version, best first; an old version id still plays itself first", async () => {
+    const cfg = xtreamSetup("1");
+    expect(await names(`/${cfg}/catalog/tv/iptv_live.json`)).toEqual(["[BG] BTV", "[BG] NOVA"]);
+    const titles = async (id) => (await request(app).get(`/${cfg}/stream/tv/${id}.json`)).body.streams
+      .map(st => `${st.name.split("\n")[1]} ${st.title.split("\n")[0]}`);
+    expect(await titles("iptv_tv_12")).toEqual([
+      "TS [BG] BTV UHD", "HLS [BG] BTV UHD", "TS [BG] BTV HD", "HLS [BG] BTV HD", "TS [BG] BTV", "HLS [BG] BTV",
+    ]);
+    expect((await titles("iptv_tv_11")).slice(0, 2)).toEqual(["TS [BG] BTV", "HLS [BG] BTV"]);
+    expect(await titles("iptv_tv_14")).toEqual(["TS [BG] NOVA", "HLS [BG] NOVA"]); // single version unchanged
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta;
+    expect(meta.name).toBe("[BG] BTV");
+  });
+
+  test("M3U: a merged tile offers each version's stream", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="G",Kino
+http://example.com/sd.m3u8
+#EXTINF:-1 group-title="G",Kino FHD
+http://example.com/fhd.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://merge-m3u.example.com/list.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas.map(m => m.name)).toEqual(["Kino"]);
+    const { streams } = (await request(app).get(`/${cfg}/stream/tv/${metas[0].id}.json`)).body;
+    expect(streams.map(st => st.url)).toEqual(["http://example.com/fhd.m3u8", "http://example.com/sd.m3u8"]);
+  });
+
+  test("clean names: provider tags hidden in tiles, rows, channel page and streams — only when chosen", async () => {
+    const clean = xtreamSetup("2,1", "1");
+    const { catalogs } = (await request(app).get(`/${clean}/manifest.json`)).body;
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "BULGARIA"]);
+    expect(await names(`/${clean}/catalog/tv/iptv_live.json`)).toEqual(["BBC News", "BTV", "NOVA"]);
+    expect((await request(app).get(`/${clean}/meta/tv/iptv_tv_12.json`)).body.meta.name).toBe("BTV");
+    const { streams } = (await request(app).get(`/${clean}/stream/tv/iptv_tv_21.json`)).body;
+    expect(streams[0].title.split("\n")[0]).toBe("BBC News");
+    expect(streams[0].url).toMatch(/\/BBC%20News$/);
+
+    const raw = xtreamSetup("2,1");
+    expect(await names(`/${raw}/catalog/tv/iptv_live.json`)).toEqual(["UK: BBC News", "[BG] BTV", "[BG] NOVA"]);
+  });
+
+  test("the clean-names setting is saved and read back for editing", async () => {
+    const link = (await request(app).post("/api/link").send({ t: "m3u", m: "http://clean-flag.example.com/x.m3u", n: "1" })).body.config;
+    expect((await request(app).get(`/api/config/${link}`)).body.cleanNames).toBe(true);
+  });
 });
 
 test("hidden characters and Cyrillic look-alikes in names don't move a channel", async () => {
@@ -1694,9 +1799,9 @@ describe("live-stats fixes", () => {
     // 29 characters, then an emoji: the old substring(0, 30) cut it in half
     const name = "Sport Channel HD Premium 4K S📺 extra";
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
-#EXTINF:-1 tvg-id="e1" tvg-logo="https://cdn.example.com/e1.png",${name}
+#EXTINF:-1 tvg-id="e1" group-title="A" tvg-logo="https://cdn.example.com/e1.png",${name}
 http://example.com/1.m3u8
-#EXTINF:-1 tvg-id="e2",${name}
+#EXTINF:-1 tvg-id="e2" group-title="B",${name}
 http://example.com/2.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/emoji-names.m3u" });
     const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);

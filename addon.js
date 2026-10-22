@@ -599,7 +599,7 @@ setInterval(() => {
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
   id: "community.streamvault.addon",
-  version: "1.1.0",
+  version: "1.2.0",
   name: "StreamVault IPTV",
   // The empty install (no settings) says so, so it's easy to tell apart from a
   // connected one in an app's addon list (configuredManifest replaces this)
@@ -661,10 +661,10 @@ const BASE_MANIFEST = {
 function configFromSettings(obj) {
   if (!obj) return null;
   if (obj.t === "xtream") {
-    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
+    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "", cleanNames: obj.n === "1" };
   }
   if (obj.t === "m3u") {
-    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
+    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g), cleanNames: obj.n === "1" };
   }
   return null;
 }
@@ -911,7 +911,7 @@ app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
 });
 
 // --- API: Encrypt config for secure URL ---
-const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g", "n"]);
 // An older install link that really is a StreamVault setup (so random strings
 // can't be used to fill the store with overrides)
 function isUsableOldLink(link) {
@@ -1010,10 +1010,10 @@ app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
   if (c.type === "xtream") {
     return res.json({
       type: "xtream", server: c.server, username: c.username, password: c.password,
-      categories: (c.country || "").split(",").filter(Boolean),
+      categories: (c.country || "").split(",").filter(Boolean), cleanNames: c.cleanNames,
     });
   }
-  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
+  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [], cleanNames: c.cleanNames });
 });
 
 // Why an Xtream account can't be used, or null when it looks fine / is unknown
@@ -1260,10 +1260,81 @@ function nameKey(name) {
     if (tag === undefined) kept.push(word);
     else quality = Math.max(quality, tag);
   }
+  // Versions of one channel differ only by quality tags at the END of the name
+  // ("BTV", "BTV HD", "BTV (UHD)") — merged into one tile. A tag inside a name
+  // ("Sport HD Premium") is part of the name.
+  const words = normalized.split(" ");
+  let end = words.length;
+  while (end > 1 && QUALITY_TAGS.has(words[end - 1])) end--;
+  const mergeBase = words.slice(0, end).join(" ");
   // A trailing "TV" doesn't count either: "NOVA TV" sorts with "NOVA", not after
   // "NOVA SPORT" ("BTV", "TVN", "TV 1000" keep theirs)
   if (kept.length > 1 && kept.at(-1) === "tv") kept.pop();
-  return { base: kept.join(" ") || normalized, quality };
+  return { base: kept.join(" ") || normalized, mergeBase, quality };
+}
+
+// "[BG] BTV (UHD)" → "[BG] BTV" (display name of a merged tile): trailing tags only
+function stripQualityTags(name) {
+  const words = String(name || "").trim().split(" ");
+  let end = words.length;
+  while (end > 1 && QUALITY_TAGS.has(words[end - 1].replaceAll(/[()[\]|]/g, "").toLowerCase())) end--;
+  return words.slice(0, end).join(" ");
+}
+
+// Leading provider tags "[BG] ", "(UK) ", "|AR| ", "VIP| ", "UK: ", "BG - " —
+// bounded parts only (no backtracking); at most two ("|AR| VIP| …")
+const NAME_PREFIX = /^(?:\[[^\]]{1,8}\]|\([^)]{1,8}\)|\|[^|]{1,8}\||[A-Za-z0-9]{2,4} ?\||[A-Z]{2} ?:|[A-Z]{2} -) */;
+function cleanName(name) {
+  let out = String(name || "").trim();
+  for (let i = 0; i < 2; i++) {
+    const match = NAME_PREFIX.exec(out);
+    if (!match || match[0].length >= out.length) break;
+    out = out.slice(match[0].length);
+  }
+  return out;
+}
+
+// What the user sees: provider tags removed when they chose "clean names"
+function displayName(name, config) {
+  return config?.cleanNames ? cleanName(name) : name;
+}
+
+// One tile per channel: versions of a channel in the same category that differ
+// only by quality ("BTV", "BTV HD", "BTV UHD") share a tile, named without the
+// tag, with the best version's id; its streams offer every version, best first.
+// Built once per cached list (WeakMap: dropped with it).
+const MAX_VERSIONS = 6;
+const catalogViews = new WeakMap();
+function catalogView(list) {
+  let view = catalogViews.get(list);
+  if (view) return view;
+  const byKey = new Map(); // first appearance keeps the sorted order
+  for (const meta of list) {
+    const { mergeBase, quality } = nameKey(meta.name);
+    const key = JSON.stringify([meta.genres?.[0] || "", mergeBase]);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push({ meta, quality });
+  }
+  const display = [];
+  const versionsById = new Map(); // channel id -> its channel's versions, best first
+  for (const members of byKey.values()) {
+    const versions = members.sort((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS).map(m => m.meta);
+    if (versions.length === 1) {
+      display.push(versions[0]);
+      continue;
+    }
+    display.push({ ...versions[0], name: stripQualityTags(versions[0].name) });
+    for (const m of members) versionsById.set(m.meta.id, versions);
+  }
+  view = { display, versionsById };
+  catalogViews.set(list, view);
+  return view;
+}
+
+// A channel's name as its tile shows it (a merged tile has no quality tag)
+function channelTitle(list, item) {
+  const versions = catalogView(list).versionsById.get(item.id);
+  return versions?.[0] === item ? stripQualityTags(item.name) : item.name;
 }
 
 function compareChannels(a, b) {
@@ -1282,8 +1353,9 @@ function sortChannels(metas, picked = []) {
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
 // only for the channels actually sent (one page), so the long poster links are
 // never built for a whole 10k-channel list or kept in the caches.
-function catalogMeta({ logo, ...item }) {
-  return { ...item, poster: channelPoster(logo, item.name), posterShape: "square" };
+function catalogMeta({ logo, ...item }, config) {
+  const name = displayName(item.name, config);
+  return { ...item, name, poster: channelPoster(logo, name), posterShape: "square" };
 }
 
 // --- Routes ---
@@ -1320,7 +1392,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
   const genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
-  res.json(configuredManifest(genres, cType));
+  res.json(configuredManifest(genres, cType, req.userConfig));
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
@@ -1330,7 +1402,23 @@ const GENRES_CACHE_MAX = 500;
 const MAX_GENRE_OPTIONS = 300;
 const genresCache = new Map();       // config path -> { data: [names], ts }
 
-function configuredManifest(genres, type) {
+// One extra home-screen row per category the user picked (pick order), after the
+// main row. Ids come from the name, so an app's row settings survive edits.
+const MAX_CATEGORY_ROWS = 8;
+const MAIN_CATALOG_ID = "iptv_live";
+function categoryCatalogId(name) {
+  return `iptv_cat_${crypto.createHash("sha256").update(name).digest("hex").slice(0, 12)}`;
+}
+
+function categoryRows(genres, config) {
+  const picked = config.type === "xtream" ? xtreamCategoryIds(config).length : (config.groups || []).length;
+  if (picked < 2 || genres.length < 2) return [];
+  return genres.slice(0, MAX_CATEGORY_ROWS).map(name => ({
+    type: "tv", id: categoryCatalogId(name), name: displayName(name, config), extra: [{ name: "skip" }],
+  }));
+}
+
+function configuredManifest(genres, type, config = {}) {
   const extra = [{ name: "search" }];
   // A single group (e.g. everything "Uncategorized") makes a useless dropdown
   if (genres.length > 1) extra.push({ name: "genre", options: genres, isRequired: false });
@@ -1341,7 +1429,7 @@ function configuredManifest(genres, type) {
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
     description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
-    catalogs: BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })),
+    catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config)],
     behaviorHints: { configurable: true },
   };
 }
@@ -1525,17 +1613,20 @@ async function catalogHandler(req, res) {
     const askedSkip = Number.parseInt(extra.skip, 10) || 0;
     const skip = askedSkip % PAGE_SIZE === 1 ? askedSkip - 1 : askedSkip;
 
+    const mainRow = req.params.id === MAIN_CATALOG_ID;
     let metas = [];
-    let notice = null; // tile shown first (account problem / expiry)
+    let notice = null; // tile shown first (account problem / expiry) — main row only
 
     if (config.type === "xtream") {
-      ({ metas, notice } = await xtreamCatalogAndNotice(config, type, skip, Boolean(extra.search?.trim())));
+      ({ metas, notice } = await xtreamCatalogAndNotice(config, type, skip, Boolean(extra.search?.trim()) || !mainRow));
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
     }
+    metas = catalogView(metas).display;
+    if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
 
     // Filter, paginate; channels carry the raw logo — posters built for this page only
-    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(catalogMeta);
+    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(m => catalogMeta(m, config));
     if (notice) metas.unshift(notice);
 
     res.json({ metas });
@@ -1548,11 +1639,18 @@ async function catalogHandler(req, res) {
   }
 }
 
+// The category behind a category row's id ("\u0000" = none: an empty row)
+function categoryForRow(id, metas) {
+  const names = new Set(metas.map(m => m.genres?.[0]).filter(Boolean));
+  for (const name of names) if (categoryCatalogId(name) === id) return name;
+  return "\u0000";
+}
+
 // Xtream channels plus the tile to show first (account problem / expiry), if any
-async function xtreamCatalogAndNotice(config, type, skip, searching) {
-  // First page (no search): account read alongside the channels for the expiry
-  // notice; never waits more than a few seconds
-  const accountPromise = skip === 0 && !searching
+async function xtreamCatalogAndNotice(config, type, skip, noExpiryTile) {
+  // First page of the main row (no search): account read alongside the channels
+  // for the expiry notice; never waits more than a few seconds
+  const accountPromise = skip === 0 && !noExpiryTile
     ? withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null)
     : null;
   const metas = await getXtreamCatalog(config, type);
@@ -2004,8 +2102,8 @@ async function getXtreamMeta(config, type, id) {
   const catalog = await getXtreamCatalog(config, type);
   const item = catalog.find(m => m.id === id);
 
-  const name = item ? item.name : `Stream ${streamId}`;
-  const poster = item ? channelPoster(item.logo, item.name) : makePosterUrl(name);
+  const name = item ? displayName(channelTitle(catalog, item), config) : `Stream ${streamId}`;
+  const poster = item ? channelPoster(item.logo, name) : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
   // Subscription expiry (cached; fetched alongside the EPG)
@@ -2041,22 +2139,27 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
   // Only live TV channels are supported
   if (type !== "tv") return [];
 
-  // id format: iptv_tv_<streamId>
-  const streamId = id.replace(`iptv_${type}_`, "");
-  const server = trimTrailingSlashes(config.server);
-
-  // Look up channel name from catalog
-  let channelName = "";
+  let catalog = [];
   try {
-    const catalog = await getXtreamCatalog(config, type);
-    const item = catalog.find(m => m.id === id);
-    if (item) channelName = item.name;
+    catalog = await getXtreamCatalog(config, type);
   } catch (_) {
     // Catalog unavailable: the stream still plays, titled "Channel <id>"
   }
+  // The picked channel first, then its other versions (HD/FHD/UHD), best first
+  const item = catalog.find(m => m.id === id);
+  const others = (catalogView(catalog).versionsById.get(id) || []).filter(v => v.id !== id);
+  return [{ id, name: item?.name }, ...others]
+    .flatMap(channel => xtreamStreamPair(config, channel, baseUrl, configPath));
+}
+
+// TS + HLS for one Xtream channel
+function xtreamStreamPair(config, channel, baseUrl, configPath) {
+  // id format: iptv_tv_<streamId>
+  const streamId = channel.id.replace("iptv_tv_", "");
+  const server = trimTrailingSlashes(config.server);
 
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
-  const tvName = channelName || `Channel ${streamId}`;
+  const tvName = (channel.name && displayName(channel.name, config)) || `Channel ${streamId}`;
   const safeName = encodeURIComponent(tvName.toWellFormed());
   // Route through /play redirect so VLC shows channel name (last path segment)
   const useRedirect = baseUrl && configPath;
@@ -2067,7 +2170,7 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
     ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
     : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
 
-  const streams = [
+  return [
     {
       name: "StreamVault\nTS",
       title: `${tvName}\nMPEG-TS (best for VLC)`,
@@ -2079,10 +2182,8 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
       title: `${tvName}\nHLS / m3u8 (fallback)`,
       url: hlsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-    }
+    },
   ];
-
-  return streams;
 }
 
 // --- M3U handlers ---
@@ -2147,11 +2248,14 @@ async function getM3UMeta(config, type, id) {
 
   if (!channel) return null;
 
+  const catalog = await getM3UCatalog(config, type);
+  const item = catalog.find(m => m.id === id);
+  const name = displayName(item ? channelTitle(catalog, item) : channel.name, config);
   return {
     id,
     type,
-    name: channel.name,
-    poster: channelPoster(channel.logo, channel.name),
+    name,
+    poster: channelPoster(channel.logo, name),
     posterShape: "square",
     genres: [channel.group],
     description: `Group: ${channel.group}`,
@@ -2169,16 +2273,19 @@ async function getM3UStreams(config, id) {
 
   if (!channel) return [];
 
-  // Other entries sharing this tvg-id are usually quality variants (HD/FHD/UHD)
-  // of the same channel — offer them after the one the user picked. A tvg-id
-  // shared by many entries is junk (e.g. "0"), so skip variants then.
-  let variants = [];
+  // The same channel's other versions: same name apart from a quality tag (the
+  // merged tile, best first), then entries sharing its tvg-id. A tvg-id shared
+  // by many entries is junk (e.g. "0"), so those are skipped then.
+  const catalog = await getM3UCatalog(config, "tv");
+  const sameName = (catalogView(catalog).versionsById.get(id) || [])
+    .map(v => channels.find(ch => `iptv_tv_${ch.id}` === v.id && ch.type === "tv"));
+  let sameTvgId = [];
   if (channel.tvgId) {
-    variants = channels.filter((ch) => ch.tvgId === channel.tvgId && ch !== channel && ch.type === "tv");
-    if (variants.length > MAX_M3U_VARIANTS) variants = [];
+    sameTvgId = channels.filter((ch) => ch.tvgId === channel.tvgId && ch.type === "tv");
+    if (sameTvgId.length > MAX_M3U_VARIANTS + 1) sameTvgId = [];
   }
-
-  return [channel, ...variants].map(m3uStream);
+  const versions = [...new Set([channel, ...sameName, ...sameTvgId].filter(Boolean))];
+  return versions.map(ch => m3uStream(ch, config));
 }
 
 const MAX_M3U_VARIANTS = 5;
@@ -2190,13 +2297,13 @@ function streamFormat(url) {
   return "Live";
 }
 
-function m3uStream(ch) {
+function m3uStream(ch, config) {
   const behaviorHints = { notWebReady: true, bingeGroup: "streamvault-live" };
   // Playlist-provided User-Agent/Referer — some providers reject requests without them
   if (ch.headers) behaviorHints.proxyHeaders = { request: ch.headers };
   return {
     name: `StreamVault\n${streamFormat(ch.url)}`,
-    title: ch.group ? `${ch.name}\n${ch.group}` : ch.name,
+    title: ch.group ? `${displayName(ch.name, config)}\n${ch.group}` : displayName(ch.name, config),
     url: ch.url,
     behaviorHints,
   };
