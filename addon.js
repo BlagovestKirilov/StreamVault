@@ -1261,17 +1261,25 @@ function nameKey(name) {
     if (tag === undefined) kept.push(word);
     else quality = Math.max(quality, tag);
   }
-  // Versions of one channel differ only by quality tags at the END of the name
-  // ("BTV", "BTV HD", "BTV (UHD)") — merged into one tile. A tag inside a name
-  // ("Sport HD Premium") is part of the name.
-  const words = normalized.split(" ");
-  let end = words.length;
-  while (end > 1 && QUALITY_TAGS.has(words[end - 1])) end--;
-  const mergeBase = words.slice(0, end).join(" ");
+  const mergeBase = mergeWords(normalized.split(" "));
   // A trailing "TV" doesn't count either: "NOVA TV" sorts with "NOVA", not after
   // "NOVA SPORT" ("BTV", "TVN", "TV 1000" keep theirs)
   if (kept.length > 1 && kept.at(-1) === "tv") kept.pop();
   return { base: kept.join(" ") || normalized, mergeBase, quality };
+}
+
+// Versions of one channel differ only by quality tags and a "TV" at the END of
+// the name ("BTV", "BTV HD", "BOX TV" + "BOX UHD", "BALKANIKA MUSIC TV UHD") —
+// merged into one tile. A tag inside a name ("Sport HD Premium") is part of it.
+function mergeWords(words) {
+  let end = words.length;
+  const dropTags = () => {
+    while (end > 1 && QUALITY_TAGS.has(words[end - 1])) end--;
+  };
+  dropTags();
+  if (end > 1 && words[end - 1] === "tv") end--;
+  dropTags();
+  return words.slice(0, end).join(" ");
 }
 
 // "[BG] BTV (UHD)" → "[BG] BTV" (display name of a merged tile): trailing tags only
@@ -1321,24 +1329,28 @@ function catalogView(list) {
   }
   const display = [];
   const versionsById = new Map(); // channel id -> its channel's versions, best first
+  const titles = new Map();       // merged tile id -> its name
   for (const members of byKey.values()) {
-    const versions = members.sort((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS).map(m => m.meta);
+    const ordered = members.sort((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS);
+    const versions = ordered.map(m => m.meta);
     if (versions.length === 1) {
       display.push(versions[0]);
       continue;
     }
-    display.push({ ...versions[0], name: stripQualityTags(versions[0].name) });
+    // Named like the plain version as the provider wrote it ("BOX TV", not "BOX")
+    const title = stripQualityTags((ordered.find(m => m.quality === 0) || ordered[0]).meta.name);
+    display.push({ ...versions[0], name: title });
+    titles.set(versions[0].id, title);
     for (const m of members) versionsById.set(m.meta.id, versions);
   }
-  view = { display, versionsById };
+  view = { display, versionsById, titles };
   catalogViews.set(list, view);
   return view;
 }
 
-// A channel's name as its tile shows it (a merged tile has no quality tag)
+// A channel's name as its tile shows it (a merged tile: its group's name)
 function channelTitle(list, item) {
-  const versions = catalogView(list).versionsById.get(item.id);
-  return versions?.[0] === item ? stripQualityTags(item.name) : item.name;
+  return catalogView(list).titles.get(item.id) ?? item.name;
 }
 
 function compareChannels(a, b) {

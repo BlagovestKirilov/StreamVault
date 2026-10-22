@@ -845,7 +845,7 @@ test("quality versions of a channel are one tile; trailing TV doesn't move a cha
   expect(metas.map(m => m.name)).toEqual([
     "BTV",                                        // BTV + HD + (FHD) + UHD
     "BTV ACTION", "BULGARIA 24",
-    "NOVA", "NOVA TV UHD",                        // "X TV" may be another channel: own tile, sorted with NOVA
+    "NOVA",                                       // NOVA + NOVA TV UHD (a trailing "TV" doesn't count)
     "NOVA SPORT",                                 // NOVA SPORT + UHD
   ]);
   expect(metas[0].id).toBe("iptv_tv_m3u_bg_btv_uhd_2"); // the best version's id
@@ -958,6 +958,27 @@ describe("home rows, merged versions, clean names", () => {
     expect(await titles("iptv_tv_14")).toEqual(["TS NOVA", "HLS NOVA"]); // single version unchanged
     const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta;
     expect(meta.name).toBe("BTV");
+  });
+
+  test("a trailing TV doesn't split a channel: BOX TV + BOX UHD, BALKANIKA MUSIC + … TV UHD", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1 group-title="G",[BG] BOX TV
+http://example.com/box.m3u8
+#EXTINF:-1 group-title="G",[BG] BOX UHD
+http://example.com/box-uhd.m3u8
+#EXTINF:-1 group-title="G",[BG] BALKANIKA MUSIC
+http://example.com/bm.m3u8
+#EXTINF:-1 group-title="G",[BG] BALKANIKA MUSIC TV UHD
+http://example.com/bm-uhd.m3u8
+#EXTINF:-1 group-title="G",[BG] TV 1000
+http://example.com/tv1000.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://trailing-tv.example.com/list.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    expect(metas.map(m => m.name)).toEqual(["BALKANIKA MUSIC", "BOX TV", "TV 1000"]); // plain version's name
+    const box = metas.find(m => m.name === "BOX TV");
+    const { streams } = (await request(app).get(`/${cfg}/stream/tv/${box.id}.json`)).body;
+    expect(streams.map(st => st.url)).toEqual(["http://example.com/box-uhd.m3u8", "http://example.com/box.m3u8"]);
+    expect((await request(app).get(`/${cfg}/meta/tv/${box.id}.json`)).body.meta.name).toBe("BOX TV");
   });
 
   test("names made only of symbols are never merged with each other", async () => {
