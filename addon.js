@@ -1281,13 +1281,20 @@ function stripQualityTags(name) {
   return words.slice(0, end).join(" ");
 }
 
-// Leading provider tags "[BG] ", "(UK) ", "|AR| ", "VIP| ", "UK: ", "BG - " —
-// bounded parts only (no backtracking); at most two ("|AR| VIP| …")
-const NAME_PREFIX = /^(?:\[[^\]]{1,8}\]|\([^)]{1,8}\)|\|[^|]{1,8}\||[A-Za-z0-9]{2,4} ?\||[A-Z]{2} ?:|[A-Z]{2} -) */;
+// Leading provider tags — bounded parts only (no backtracking); at most two are
+// removed ("|AR| VIP| …")
+const NAME_PREFIXES = [
+  /^\[[^\]]{1,8}\] */,        // "[BG] "
+  /^\([^)]{1,8}\) */,         // "(UK) "
+  /^\|[^|]{1,8}\| */,         // "|AR| "
+  /^[A-Za-z0-9]{2,4} ?\| */,  // "VIP| ", "UK | "
+  /^[A-Z]{2} ?: */,           // "UK: "
+  /^[A-Z]{2} - */,            // "BG - "
+];
 function cleanName(name) {
   let out = String(name || "").trim();
   for (let i = 0; i < 2; i++) {
-    const match = NAME_PREFIX.exec(out);
+    const match = NAME_PREFIXES.map(re => re.exec(out)).find(Boolean);
     if (!match || match[0].length >= out.length) break;
     out = out.slice(match[0].length);
   }
