@@ -417,7 +417,7 @@ http://example.com/c.m3u8`;
   });
 
   test("catalog and genre options only contain the selected groups", async () => {
-    const spy = jest.spyOn(m3u, "parseM3U").mockImplementation(async (url, groups) => m3u.parseM3UContent(playlist, groups));
+    const spy = jest.spyOn(m3u, "parseM3U").mockImplementation(async (_url, groups) => m3u.parseM3UContent(playlist, groups));
     const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const cfg = enc({ t: "m3u", m: "http://groups-test.example.com/x.m3u", g: JSON.stringify(["Sports"]) });
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
@@ -530,7 +530,7 @@ describe("connect-time address check (DNS rebinding)", () => {
   afterEach(() => jest.restoreAllMocks());
 
   const lookupWith = (addresses) =>
-    jest.spyOn(dns, "lookup").mockImplementation((host, opts, cb) => cb(null, addresses));
+    jest.spyOn(dns, "lookup").mockImplementation((_host, _opts, cb) => cb(null, addresses));
   const run = (opts) => new Promise(res => guardedLookup("x.example", opts, (...a) => res(a)));
 
   test("refuses a host that resolves to a private address, passes public ones", async () => {
@@ -545,7 +545,7 @@ describe("connect-time address check (DNS rebinding)", () => {
 
   test("a domain that passes the early check but then resolves inside is never connected to", async () => {
     let hits = 0;
-    const server = http.createServer((req, res) => { hits++; res.end("[]"); });
+    const server = http.createServer((_req, res) => { hits++; res.end("[]"); });
     await new Promise(r => server.listen(0, "127.0.0.1", r));
     const port = server.address().port;
     try {
@@ -1529,7 +1529,7 @@ describe("stable install links", () => {
     '#EXTINF:-1 tvg-id="s1" group-title="Sport",Sport One', "http://example.com/s1.m3u8",
   ].join("\n");
   // like the real parser: only the selected groups
-  beforeEach(() => jest.spyOn(m3u, "parseM3U").mockImplementation(async (url, groups) => m3u.parseM3UContent(playlist, groups)));
+  beforeEach(() => jest.spyOn(m3u, "parseM3U").mockImplementation(async (_url, groups) => m3u.parseM3UContent(playlist, groups)));
   afterEach(() => jest.restoreAllMocks());
   const names = async (link) => (await request(app).get(`/${link}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
 

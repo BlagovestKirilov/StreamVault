@@ -438,6 +438,7 @@
     /* One block per app in the player tip box */
     .app-tip strong, .app-tip span { display: block; }
     .app-tip + .app-tip { margin-top: 10px; }
+    .app-tip-note { margin-top: 10px; }
 
     .tv-tip {
       margin-top: 14px;
@@ -660,15 +661,14 @@
       <div class="app-tip">
         <strong style="color: var(--accent);"><svg class="tip-icon tip-icon-vlc" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M9.4 10h5.2"/><path d="M7.8 15h8.4"/><path d="M6 20l5-15h2l5 15"/></svg>Stremio — live TV needs VLC</strong>
         <span>Settings &rarr; Advanced/Playback &rarr; Default Player &rarr; External &rarr; VLC</span>
+        <span>Your channels: Board (home screen) &rarr; “StreamVault Live” row, or Discover &rarr; TV.</span>
       </div>
       <div class="app-tip">
         <strong style="color: var(--accent);"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Nuvio — plays live TV in its internal player</strong>
         <span>After installing, restart Nuvio to see your channels.</span>
+        <span>Your channels: Home screen &rarr; “StreamVault Live” row.</span>
       </div>
-      <div class="app-tip">
-        <strong style="color: var(--accent);"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 3l-4 4-4-4"/></svg>Where to find your channels — Stremio &amp; Nuvio</strong>
-        <span>On the home screen, in the “StreamVault Live” row — pick 2 or more categories and each gets its own row too. In Stremio also under Discover &rarr; TV.</span>
-      </div>
+      <p class="app-tip-note">Pick 2 or more categories and each also gets its own row in both apps.</p>
     </div>
 
     <!-- Shown when the page was opened by scanning the "Set up StreamVault first" tile -->

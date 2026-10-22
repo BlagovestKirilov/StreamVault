@@ -97,7 +97,7 @@ app.use(express.json({ limit: "16kb" }));
 // A refused body gets a short JSON answer the configure page can show — not
 // Express's default HTML page plus a stack trace in the logs. Real form data is
 // far below 16 KB; the usual cause is playlist text pasted instead of its link.
-app.use((err, req, res, next) => {
+app.use((err, _req, res, next) => {
   if (err.type === "entity.too.large") {
     return res.status(413).json({ ok: false, error: "Too much text sent — paste the playlist link (http://…), not the playlist itself" });
   }
@@ -109,13 +109,13 @@ app.use((err, req, res, next) => {
 
 // Some apps build resource URLs from the full manifest URL instead of its folder:
 // "/<config>/manifest.json/meta/tv/x.json". Treat it as "/<config>/meta/tv/x.json".
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   if (req.url.includes("/manifest.json/")) req.url = req.url.replace("/manifest.json/", "/");
   next();
 });
 
 // --- Health check for Fly.io (must be unauthenticated for Fly's built-in checks) ---
-app.get("/health", (req, res) => {
+app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
@@ -148,7 +148,7 @@ app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d"
 // (and counted) the page twice.
 const ICON_FILE = path.join(__dirname, "public", "img", "logo.png");
 // (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png)
-app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (req, res) => {
+app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
 });
 
@@ -858,7 +858,7 @@ function serveConfigure(req, res) {
 }
 // Crawlers may index the configure page (people find the addon) but nothing
 // else — install links carry users' (encrypted) settings
-app.get("/robots.txt", (req, res) => {
+app.get("/robots.txt", (_req, res) => {
   res.type("text/plain").set("Cache-Control", "public, max-age=86400")
     .send("User-agent: *\nAllow: /configure\nAllow: /public/\nDisallow: /\n");
 });
@@ -1363,14 +1363,14 @@ function catalogMeta({ logo, ...item }) {
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
-app.get("/manifest.json", limitAddon, (req, res) => {
+app.get("/manifest.json", limitAddon, (_req, res) => {
   res.json(BASE_MANIFEST);
 });
 
 // Configured manifest (user completed install)
 // Some users paste the configure page's link ("…/<link>/configure") into the app
 // and it adds /manifest.json: answer it as the install link it was meant to be
-app.get("/:config/configure/manifest.json", (req, res, next) => {
+app.get("/:config/configure/manifest.json", (req, _res, next) => {
   req.url = `/${req.params.config}/manifest.json`;
   next();
 });
@@ -2342,7 +2342,7 @@ function safeDecode(s) {
 // Some apps (Nuvio on webOS) ask every addon for subtitles, although the
 // manifest offers none — with or without settings, sometimes with a mangled
 // tail. Answer "no subtitles" at once instead of a 404; counted as foreignRequests.
-app.get(/^\/(?:[^/]+\/)?subtitles\//, limitAddon, (req, res) => {
+app.get(/^\/(?:[^/]+\/)?subtitles\//, limitAddon, (_req, res) => {
   countToday("foreignRequests");
   res.json({ subtitles: [] });
 });
@@ -2366,7 +2366,7 @@ app.get(/^\/[^/]+\/manifest\.[a-z0-9]{2,5}$/i, (req, res, next) => {
 // "/<infoHash>/<fileIdx>/stats.json" every second. Answer 404 as before, but
 // count it per day (streamingServerProbes) instead of filling recentUnknownPaths
 // and the "unknown path" 404 count.
-app.get(/^\/[0-9a-f]{40}\/\d+\/stats\.json$/i, (req, res) => {
+app.get(/^\/[0-9a-f]{40}\/\d+\/stats\.json$/i, (_req, res) => {
   countToday("streamingServerProbes");
   res.locals.skipErrorCount = true;
   res.status(404).json({ error: "Not found" });
