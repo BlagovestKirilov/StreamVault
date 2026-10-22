@@ -738,6 +738,7 @@ describe("catalog error tiles", () => {
     ["Request failed with status code 503", "iptv_notice_provider_down", "Provider not responding"],
     ["Request failed with status code 512", "iptv_notice_provider_down", "Provider not responding"],
     ["Request failed with status code 403", "iptv_notice_provider_refused", "Provider refused access"],
+    ["Request failed with status code 451", "iptv_notice_provider_refused", "Provider refused access"],
     ["Request failed with status code 404", "iptv_notice_not_found", "Playlist not found"],
     ["Invalid or blocked URL", "iptv_notice_bad_address", "Address doesn't work"],
     ["timeout of 30000ms exceeded", "iptv_notice_provider_down", "Provider not responding"],
@@ -1139,6 +1140,41 @@ describe("speed", () => {
       expect(agent.options.timeout).toBe(4000);
       expect(agent.maxSockets).toBe(16);
     }
+  });
+
+  test("a failed background refresh is logged once, however many requests waited on it", async () => {
+    const parse = jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("Kept"));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = enc({ t: "m3u", m: "http://refresh-log.example.com/list.m3u" });
+    const get = () => request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    await get();
+    let fail;
+    parse.mockImplementation(() => new Promise((_, reject) => { fail = reject; }));
+    offset = 11 * 60 * 1000;
+    await Promise.all([get(), get(), get(), get()]); // all answered from the old copy
+    fail(new Error("Request failed with status code 503"));
+    await settle();
+    expect(warn.mock.calls.filter(c => String(c[0]).startsWith("[REFRESH]"))).toHaveLength(1);
+  });
+
+  test("only new installs are logged", async () => {
+    const log = jest.spyOn(console, "log").mockImplementation(() => {});
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://install-log.example.com/list.m3u" });
+    const ip = "198.51.100.77";
+    await request(app).get(`/${cfg}/manifest.json`).set("Fly-Client-IP", ip);
+    await request(app).get(`/${cfg}/manifest.json`).set("Fly-Client-IP", ip);
+    const lines = log.mock.calls.map(c => String(c[0])).filter(l => l.startsWith("[INSTALL]"));
+    expect(lines).toEqual([expect.stringMatching(/NEW install — type: m3u$/)]);
+  });
+
+  test("a configure-page link with /manifest.json added works as the install link", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://configure-manifest.example.com/list.m3u" });
+    const res = await request(app).get(`/${cfg}/configure/manifest.json`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe("community.streamvault.addon");
+    expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
   });
 
   test("a request on a connection the provider already closed is retried once", async () => {

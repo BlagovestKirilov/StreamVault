@@ -357,12 +357,13 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
-// A full (10k-channel cap) playlist measured ~5 MB parsed → 15 ≈ 75 MB worst case,
-// well under the 450 MB watchdog; fewer re-downloads as users grow
-const M3U_CACHE_MAX = 15;
+// A full (10k-channel cap) playlist measured ~5 MB parsed → 40 ≈ 200 MB worst case,
+// under the 450 MB watchdog (heap peaked ~125 MB with 15); a full cache pushed out
+// lists still in use, and each came back as a full re-download
+const M3U_CACHE_MAX = 40;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
-const XTREAM_CACHE_MAX = 25;
+const XTREAM_CACHE_MAX = 50;
 // Account info (expiry date) is one tiny request: re-read often so a renewal
 // clears the expiry notice quickly, and retry a failed lookup after a few minutes
 const ACCOUNT_CACHE_TTL = 30 * 60 * 1000;
@@ -479,13 +480,17 @@ function handleProviderError(where, req, e) {
 // refresh it in the background (once() keeps that to one load, download slots
 // and the failure cache still apply), so nobody waits for a re-download; a failed
 // refresh keeps the old copy. Older or missing: null — the caller loads and waits.
+const reportedRefreshErrors = new WeakSet();
 function usableEntry(entry, ttl, staleFor, refresh) {
   if (!entry) return null;
   const age = Date.now() - entry.ts;
   if (age < ttl) return entry;
   if (age >= ttl + staleFor) return null;
   refresh().catch((e) => {
-    if (!e?.fromFailureCache) console.warn(`[REFRESH] kept the previous copy: ${safeError(e)}`);
+    // Requests sharing one refresh (once()) get the same error object: log it once
+    if (e?.fromFailureCache || reportedRefreshErrors.has(e)) return;
+    if (e !== null && typeof e === "object") reportedRefreshErrors.add(e);
+    console.warn(`[REFRESH] kept the previous copy: ${safeError(e)}`);
   });
   return entry;
 }
@@ -1008,6 +1013,7 @@ const TEST_ERROR_HINTS = {
   https_mismatch: "Your server address should probably start with http:// instead of https://",
   "429": "Your provider is limiting requests — try again in a few minutes",
   "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
+  "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
 };
 
 // A playlist link that works but has no live TV: say which of the usual causes
@@ -1265,6 +1271,13 @@ app.get("/manifest.json", limitAddon, (req, res) => {
 });
 
 // Configured manifest (user completed install)
+// Some users paste the configure page's link ("…/<link>/configure") into the app
+// and it adds /manifest.json: answer it as the install link it was meant to be
+app.get("/:config/configure/manifest.json", (req, res, next) => {
+  req.url = `/${req.params.config}/manifest.json`;
+  next();
+});
+
 app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) => {
   const ip = getIp(req);
   const user = userKey(ip);
@@ -1282,7 +1295,9 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   const today = new Date().toISOString().slice(0, 10);
   if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
   stats.dailyActive[today].add(user);
-  console.log(`[INSTALL] ${maskIp(ip)} ${isNew ? 'NEW install' : 'existing user'} — type: ${cType}`);
+  // Returning users aren't logged (apps re-read the manifest constantly — it was
+  // most of the log); they're counted in /stats as launches / dau
+  if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
   const genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
   res.json(configuredManifest(genres, cType));
 });
@@ -1551,7 +1566,7 @@ const NOTICES = {
   },
   provider_refused: {
     name: "Provider refused access",
-    description: "Your IPTV provider refused the connection. Check that your subscription is active and your login is correct. If it keeps happening, contact your provider.",
+    description: "Your IPTV provider refused the connection. Check that your subscription is active and your login is correct. Some providers also block servers like StreamVault's — if it keeps happening, contact your provider.",
   },
   not_found: {
     name: "Playlist not found",
@@ -1587,7 +1602,8 @@ const NOTICES = {
 function classifyError(e) {
   const key = providerErrorKey(e);
   const status = Number(key);
-  if (status === 401 || status === 403) return "provider_refused";
+  // 451: the provider blocks servers in some countries / data centres
+  if (status === 401 || status === 403 || status === 451) return "provider_refused";
   if (status === 404) return "not_found";
   if (status === 429) return "provider_limited";
   if (status >= 500) return "provider_down";
