@@ -597,6 +597,7 @@
     }
     .btn-open:active { opacity: 0.8; }
 
+    #restartHint { white-space: pre-line; } /* savedHint's second line (Nuvio) */
     .result-hint {
       margin-top: 12px;
       font-size: 0.76rem;
@@ -1139,9 +1140,9 @@
     function savedHint(app) {
       if (app === 'Nuvio') return 'Fully close and reopen Nuvio to see the changes — just switching back to it keeps the old categories.';
       const stremio = ON_PHONE
-        ? 'The Stremio phone app has no Upgrade button: tap Open Stremio and Uninstall StreamVault there, then tap Open Stremio again and Install — it\'s the same link, your settings stay.'
+        ? 'The Stremio phone app has no Upgrade button: tap Open Stremio, press Uninstall and then Install, then fully close and reopen Stremio — same link, your settings stay.'
         : 'Stremio opens StreamVault — press Upgrade there to load the changes.';
-      return app === 'Stremio' ? stremio : `${stremio} In Nuvio: fully close and reopen the app.`;
+      return app === 'Stremio' ? stremio : `${stremio}\nIn Nuvio: fully close and reopen the app.`;
     }
 
     // Phones: the Stremio app's dialog for an installed addon has no Upgrade (the
