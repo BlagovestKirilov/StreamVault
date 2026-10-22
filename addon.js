@@ -165,8 +165,9 @@ let stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
-  dailyActive: {},  // { "2026-05-31": Set([user keys]) }
-  history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau } }
+  dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
+  dailyViewers: {}, // same, but users who opened a channel and got something to play
+  history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
 
 // Unique users are counted by a one-way code of the IP, never the IP itself, so
@@ -189,10 +190,11 @@ try {
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
+  if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.history) stats.history = {};
-  // Restore daily active Sets
-  for (const day of Object.keys(stats.dailyActive)) {
-    stats.dailyActive[day] = toUserKeys(stats.dailyActive[day]);
+  // Restore the per-day Sets
+  for (const daily of [stats.dailyActive, stats.dailyViewers]) {
+    for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
   // No stats.json yet (first start) or unreadable: start counting from zero
@@ -206,24 +208,45 @@ function saveStatsData() {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
-  // Keep only last 30 days of dailyActive
-  const dailySerialized = {};
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 30);
-  for (const [day, keys] of Object.entries(stats.dailyActive)) {
-    if (new Date(day) >= cutoff) dailySerialized[day] = [...keys];
-  }
-  // Keep 90 days of per-day rows; freeze each day's unique-user count into its
-  // row so it survives after dailyActive (30 days) drops the IP list
+  // Keep 90 days of per-day rows; freeze each day's unique-user counts into its
+  // row so they survive after the per-day lists (30 days) are dropped
   const historyCutoff = new Date();
   historyCutoff.setDate(historyCutoff.getDate() - HISTORY_DAYS);
   const history = {};
   for (const [day, row] of Object.entries(stats.history)) {
     if (new Date(day) < historyCutoff) continue;
-    history[day] = stats.dailyActive[day] ? { ...row, dau: stats.dailyActive[day].size } : row;
+    history[day] = { ...row, ...uniqueCounts(day) };
   }
   stats.history = history;
-  return { ...stats, users: [...stats.users], dailyActive: dailySerialized };
+  return {
+    ...stats, users: [...stats.users],
+    dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
+  };
+}
+
+// Only the last `days` days of a { day: Set } map, as arrays (for stats.json)
+function lastDays(daily, days) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const kept = {};
+  for (const [day, keys] of Object.entries(daily)) {
+    if (new Date(day) >= cutoff) kept[day] = [...keys];
+  }
+  return kept;
+}
+
+// { dau, viewers } for a day still in the per-day lists (older days: {})
+function uniqueCounts(day) {
+  const counts = {};
+  if (stats.dailyActive[day]) counts.dau = stats.dailyActive[day].size;
+  if (stats.dailyViewers[day]) counts.viewers = stats.dailyViewers[day].size;
+  return counts;
+}
+
+function addDailyUser(daily, user) {
+  const today = todayKey();
+  if (!daily[today]) daily[today] = new Set();
+  daily[today].add(user);
 }
 
 // --- Per-day history (trends) + failures (provider problems) ---
@@ -1292,9 +1315,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   if (stats.configType[cType] !== undefined) stats.configType[cType]++;
   if (isNew && stats.installsByType[cType] !== undefined) stats.installsByType[cType]++;
   countToday("launches"); // Stremio fetches the manifest each time the app starts
-  const today = new Date().toISOString().slice(0, 10);
-  if (!stats.dailyActive[today]) stats.dailyActive[today] = new Set();
-  stats.dailyActive[today].add(user);
+  addDailyUser(stats.dailyActive, user);
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
@@ -1365,13 +1386,15 @@ app.get("/stats", limitStats, (req, res) => {
   const d = Math.floor(uptime / 86400);
   const h = Math.floor((uptime % 86400) / 3600);
   const m = Math.floor((uptime % 3600) / 60);
-  // Daily active users (last 7 days)
+  // Daily active users and viewers (last 7 days)
   const last7 = {};
+  const viewers7 = {};
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     last7[key] = stats.dailyActive[key] ? stats.dailyActive[key].size : 0;
+    viewers7[key] = stats.dailyViewers[key] ? stats.dailyViewers[key].size : 0;
   }
   const mem = process.memoryUsage();
   const avgStreamsPerUser = stats.users.size > 0 ? +(stats.streams / stats.users.size).toFixed(1) : 0;
@@ -1387,6 +1410,8 @@ app.get("/stats", limitStats, (req, res) => {
     installsByType: stats.installsByType,
     avgStreamsPerUser,
     dailyActiveUsers: last7,
+    // Unique users per day who opened a channel and got something to play
+    dailyViewers: viewers7,
     uptime: d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`,
     lastRestarted: PROCESS_START,
     startedAt: stats.startedAt,
@@ -1411,11 +1436,10 @@ app.get("/stats", limitStats, (req, res) => {
       // providers that failed in the last 2 min and are not being retried yet
       failedProviders: [...failCache.values()].filter(f => f.until > Date.now()).length,
     },
-    // Newest first; dau is live for recent days, frozen in the row for older ones
-    history: Object.keys(stats.history).sort((a, b) => b.localeCompare(a)).map(date => {
-      const live = stats.dailyActive[date];
-      return { date, ...stats.history[date], dau: live ? live.size : (stats.history[date].dau || 0) };
-    }),
+    // Newest first; dau/viewers are live for recent days, frozen in the row for older ones
+    history: Object.keys(stats.history).sort((a, b) => b.localeCompare(a)).map(date => (
+      { date, dau: 0, ...stats.history[date], ...uniqueCounts(date) }
+    )),
     // Since last restart (newest first, max 20 each; no URLs or credentials)
     recentErrors,
     recentUnknownPaths,
@@ -1758,6 +1782,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 
     stats.streams++;
     countToday("streams");
+    if (streams.length > 0) addDailyUser(stats.dailyViewers, userKey(getIp(req)));
     if (streams.length === 0) {
       countToday("emptyStreams");
       noteRecent(recentEmptyStreams, {
@@ -2326,8 +2351,9 @@ function writeTodayMetrics(g) {
   const today = todayKey();
   const row = stats.history[today] || {};
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyActive[today]?.size || 0, { counter: "dau" });
+  g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyViewers[today]?.size || 0, { counter: "viewers" });
   for (const [counter, value] of Object.entries(row)) {
-    if (typeof value === "number" && counter !== "dau") g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
+    if (typeof value === "number" && counter !== "dau" && counter !== "viewers") g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
   }
   for (const [where, codes] of Object.entries(row.providerErrors || {})) {
     for (const [code, n] of Object.entries(codes)) {

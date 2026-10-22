@@ -1361,6 +1361,38 @@ describe("stats file saving", () => {
     json.users.concat(json.dailyActive[today]).forEach(u => expect(u).toMatch(/^[0-9a-f]{16}$/));
   });
 
+  test("viewers: unique users per day who got something to play, saved as one-way codes", () => {
+    const dir = tmpDir();
+    const today = new Date().toISOString().slice(0, 10);
+    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/v.m3u" })).toString("base64").replace(/=+$/, "");
+    const r = run(dir, `
+      const r = require('supertest'); const { app, buildMetricsText } = require('./addon');
+      const m3u = require('./m3u');
+      const list = '#EXTM3U\\n#EXTINF:-1 tvg-id="a",A\\nhttp://example.com/a.m3u8\\n#EXTINF:-1 tvg-id="b",B\\nhttp://example.com/b.m3u8';
+      m3u.parseM3U = async () => m3u.parseM3UContent(list);
+      const play = (id, ip) => r(app).get('/${cfg}/stream/tv/iptv_tv_' + id + '.json').set('Fly-Client-IP', ip);
+      play('a', '203.0.113.1')
+        .then(() => play('b', '203.0.113.1'))          // same person, second channel
+        .then(() => play('a', '198.51.100.2'))         // another person
+        .then(() => play('gone', '192.0.2.3'))         // nothing to play: not a viewer
+        .then(() => r(app).get('/stats'))
+        .then(x => {
+          const metric = buildMetricsText().split('\\n').find(l => l.startsWith('streamvault_today{counter="viewers"}'));
+          console.log(JSON.stringify({ stats: x.body, metric }));
+          process.emit('SIGTERM');
+        });
+    `);
+    const { stats, metric } = JSON.parse(r.stdout.trim().split("\n").pop());
+    expect(stats.dailyViewers[today]).toBe(2);
+    expect(stats.history.find(row => row.date === today).viewers).toBe(2);
+    expect(metric).toBe('streamvault_today{counter="viewers"} 2');
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8"));
+    expect(saved.dailyViewers[today]).toHaveLength(2);
+    saved.dailyViewers[today].forEach(u => expect(u).toMatch(/^[0-9a-f]{16}$/));
+    expect(JSON.stringify(saved)).not.toMatch(/203\.0\.113|198\.51\.100/);
+    expect(saved.history[today].viewers).toBe(2); // frozen into the row for after 30 days
+  });
+
   test("overlapping saves are skipped, and the async save is atomic", () => {
     const dir = tmpDir();
     const r = run(dir, `
