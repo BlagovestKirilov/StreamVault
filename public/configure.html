@@ -490,7 +490,7 @@
     }
 
     /* Success message */
-    /* Install / Saved result: centred dialog; bottom sheet on phones (below) */
+    /* Install / Saved result: a dialog centred on the screen (phones and PCs) */
     .result-overlay {
       position: fixed;
       inset: 0;
@@ -525,7 +525,6 @@
       from { opacity: 0; transform: translateY(8px) scale(0.98); }
       to { opacity: 1; transform: none; }
     }
-    .result-grip { display: none; }
     .result-close {
       position: absolute;
       top: 10px;
@@ -632,29 +631,6 @@
     }
 
     /* Responsive */
-    @media (max-width: 600px) {
-      .result-overlay { align-items: flex-end; padding: 0; }
-      .result {
-        width: 100%;
-        max-height: 88dvh;
-        border-radius: 18px 18px 0 0;
-        border-bottom: none;
-        padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-        animation-name: sheetUp;
-      }
-      .result-grip {
-        display: block;
-        width: 40px;
-        height: 4px;
-        margin: -10px auto 12px;
-        border-radius: 2px;
-        background: var(--border);
-      }
-    }
-    @keyframes sheetUp {
-      from { transform: translateY(100%); }
-      to { transform: none; }
-    }
     @media (prefers-reduced-motion: reduce) {
       .result-overlay.open, .result { animation: none; }
     }
@@ -850,10 +826,9 @@
     <div style="height: 30px;"></div>
   </div>
 
-  <!-- Result: bottom sheet on phones, centred dialog on larger screens -->
+  <!-- Result: a dialog centred on the screen (phones and PCs) -->
   <div class="result-overlay" id="resultOverlay">
       <div class="result" id="result" role="dialog" aria-modal="true" aria-labelledby="resultTitle" tabindex="-1">
-        <span class="result-grip" aria-hidden="true"></span>
         <button type="button" class="result-close" id="resultClose" onclick="closeResult()" aria-label="Close">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
