@@ -661,10 +661,10 @@ const BASE_MANIFEST = {
 function configFromSettings(obj) {
   if (!obj) return null;
   if (obj.t === "xtream") {
-    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "", cleanNames: obj.n === "1" };
+    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
   }
   if (obj.t === "m3u") {
-    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g), cleanNames: obj.n === "1" };
+    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
   }
   return null;
 }
@@ -911,7 +911,7 @@ app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
 });
 
 // --- API: Encrypt config for secure URL ---
-const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g", "n"]);
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
 // An older install link that really is a StreamVault setup (so random strings
 // can't be used to fill the store with overrides)
 function isUsableOldLink(link) {
@@ -1010,10 +1010,10 @@ app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
   if (c.type === "xtream") {
     return res.json({
       type: "xtream", server: c.server, username: c.username, password: c.password,
-      categories: (c.country || "").split(",").filter(Boolean), cleanNames: c.cleanNames,
+      categories: (c.country || "").split(",").filter(Boolean),
     });
   }
-  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [], cleanNames: c.cleanNames });
+  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
 });
 
 // Why an Xtream account can't be used, or null when it looks fine / is unknown
@@ -1301,11 +1301,6 @@ function cleanName(name) {
   return out;
 }
 
-// What the user sees: provider tags removed when they chose "clean names"
-function displayName(name, config) {
-  return config?.cleanNames ? cleanName(name) : name;
-}
-
 // One tile per channel: versions of a channel in the same category that differ
 // only by quality ("BTV", "BTV HD", "BTV UHD") share a tile, named without the
 // tag, with the best version's id; its streams offer every version, best first.
@@ -1360,8 +1355,8 @@ function sortChannels(metas, picked = []) {
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
 // only for the channels actually sent (one page), so the long poster links are
 // never built for a whole 10k-channel list or kept in the caches.
-function catalogMeta({ logo, ...item }, config) {
-  const name = displayName(item.name, config);
+function catalogMeta({ logo, ...item }) {
+  const name = cleanName(item.name);
   return { ...item, name, poster: channelPoster(logo, name), posterShape: "square" };
 }
 
@@ -1421,7 +1416,7 @@ function categoryRows(genres, config) {
   const picked = config.type === "xtream" ? xtreamCategoryIds(config).length : (config.groups || []).length;
   if (picked < 2 || genres.length < 2) return [];
   return genres.slice(0, MAX_CATEGORY_ROWS).map(name => ({
-    type: "tv", id: categoryCatalogId(name), name: displayName(name, config), extra: [{ name: "skip" }],
+    type: "tv", id: categoryCatalogId(name), name: cleanName(name), extra: [{ name: "skip" }],
   }));
 }
 
@@ -1633,7 +1628,7 @@ async function catalogHandler(req, res) {
     if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
 
     // Filter, paginate; channels carry the raw logo — posters built for this page only
-    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(m => catalogMeta(m, config));
+    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(catalogMeta);
     if (notice) metas.unshift(notice);
 
     res.json({ metas });
@@ -2109,7 +2104,7 @@ async function getXtreamMeta(config, type, id) {
   const catalog = await getXtreamCatalog(config, type);
   const item = catalog.find(m => m.id === id);
 
-  const name = item ? displayName(channelTitle(catalog, item), config) : `Stream ${streamId}`;
+  const name = item ? cleanName(channelTitle(catalog, item)) : `Stream ${streamId}`;
   const poster = item ? channelPoster(item.logo, name) : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
@@ -2166,7 +2161,7 @@ function xtreamStreamPair(config, channel, baseUrl, configPath) {
   const server = trimTrailingSlashes(config.server);
 
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
-  const tvName = (channel.name && displayName(channel.name, config)) || `Channel ${streamId}`;
+  const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
   const safeName = encodeURIComponent(tvName.toWellFormed());
   // Route through /play redirect so VLC shows channel name (last path segment)
   const useRedirect = baseUrl && configPath;
@@ -2257,7 +2252,7 @@ async function getM3UMeta(config, type, id) {
 
   const catalog = await getM3UCatalog(config, type);
   const item = catalog.find(m => m.id === id);
-  const name = displayName(item ? channelTitle(catalog, item) : channel.name, config);
+  const name = cleanName(item ? channelTitle(catalog, item) : channel.name);
   return {
     id,
     type,
@@ -2292,7 +2287,7 @@ async function getM3UStreams(config, id) {
     if (sameTvgId.length > MAX_M3U_VARIANTS + 1) sameTvgId = [];
   }
   const versions = [...new Set([channel, ...sameName, ...sameTvgId].filter(Boolean))];
-  return versions.map(ch => m3uStream(ch, config));
+  return versions.map(m3uStream);
 }
 
 const MAX_M3U_VARIANTS = 5;
@@ -2304,13 +2299,13 @@ function streamFormat(url) {
   return "Live";
 }
 
-function m3uStream(ch, config) {
+function m3uStream(ch) {
   const behaviorHints = { notWebReady: true, bingeGroup: "streamvault-live" };
   // Playlist-provided User-Agent/Referer — some providers reject requests without them
   if (ch.headers) behaviorHints.proxyHeaders = { request: ch.headers };
   return {
     name: `StreamVault\n${streamFormat(ch.url)}`,
-    title: ch.group ? `${displayName(ch.name, config)}\n${ch.group}` : displayName(ch.name, config),
+    title: ch.group ? `${cleanName(ch.name)}\n${ch.group}` : cleanName(ch.name),
     url: ch.url,
     behaviorHints,
   };
