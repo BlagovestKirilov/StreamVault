@@ -851,7 +851,7 @@
   </div>
 
   <!-- Result: bottom sheet on phones, centred dialog on larger screens -->
-  <div class="result-overlay" id="resultOverlay" onclick="if (event.target === this) closeResult()">
+  <div class="result-overlay" id="resultOverlay">
       <div class="result" id="result" role="dialog" aria-modal="true" aria-labelledby="resultTitle" tabindex="-1">
         <span class="result-grip" aria-hidden="true"></span>
         <button type="button" class="result-close" id="resultClose" onclick="closeResult()" aria-label="Close">
@@ -1142,6 +1142,11 @@
     function closeResultOnEscape(event) {
       if (event.key === 'Escape') closeResult();
     }
+
+    // A tap on the dimmed area around the pop-up closes it (keyboard: Esc)
+    document.getElementById('resultOverlay').addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) closeResult();
+    });
 
     // How the app picks up saved changes. Stremio keeps its stored copy until the
     // addon is installed again: the page opens it (same link → "Update", no second
