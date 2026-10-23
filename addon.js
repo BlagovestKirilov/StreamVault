@@ -380,13 +380,14 @@ process.on("uncaughtException", (err) => {
 // --- In-memory caches ---
 const m3uCache = new Map();
 const M3U_CACHE_TTL = 10 * 60 * 1000;
-// A full (10k-channel cap) playlist measured ~5 MB parsed → 40 ≈ 200 MB worst case,
-// under the 450 MB watchdog (heap peaked ~125 MB with 15); a full cache pushed out
-// lists still in use, and each came back as a full re-download
-const M3U_CACHE_MAX = 40;
+// A full (10k-channel cap) playlist ≈ 2–5 MB parsed, ~1.5× that with its sorted
+// catalog + merged view. 15 is proven (heap peaked ~125 MB); 40 (with Xtream at 50)
+// drove the heap to 591 MB and 43 clear-all evictions in one evening (2026-10-22)
+const M3U_CACHE_MAX = 15;
 const xtreamCache = new Map();
 const XTREAM_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
-const XTREAM_CACHE_MAX = 50;
+// Xtream lists have no channel cap (big panels: 30k+ channels) — keep this small
+const XTREAM_CACHE_MAX = 25;
 // Account info (expiry date) is one tiny request: re-read often so a renewal
 // clears the expiry notice quickly, and retry a failed lookup after a few minutes
 const ACCOUNT_CACHE_TTL = 30 * 60 * 1000;
@@ -574,27 +575,55 @@ const HEAP_WARN_MB = 450;
 const HEAP_CRIT_MB = 550;
 // Surfaced in /stats so cache sizes can be tuned from real numbers (since last restart)
 const memStats = { heapPeakMB: 0, rssPeakMB: 0, warnEvictions: 0, critEvictions: 0, lastEviction: null };
+// After evicting, collect garbage at once so the next check sees the real heap:
+// without it heapUsed stays high until V8 collects on its own, and the watchdog
+// kept clearing every cache every 10 s for minutes. Enabled at runtime (no
+// startup flag: a flag Node rejected would stop the server from starting).
+const collectGarbage = (() => {
+  try {
+    require("node:v8").setFlagsFromString("--expose-gc");
+    return require("node:vm").runInNewContext("gc");
+  } catch (e) {
+    console.warn(`[MEM] manual GC unavailable (${e.message}) — the watchdog relies on V8's own collection`);
+    return null;
+  }
+})();
+
+// Oldest half of a cache (insertion order = oldest first)
+function evictOldestHalf(cache) {
+  const keys = [...cache.keys()];
+  keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => cache.delete(k));
+}
+
 setInterval(() => {
   const { heapUsed, rss } = process.memoryUsage();
-  const mb = heapUsed / 1024 / 1024;
-  memStats.heapPeakMB = Math.max(memStats.heapPeakMB, Math.round(mb));
   memStats.rssPeakMB = Math.max(memStats.rssPeakMB, Math.round(rss / 1024 / 1024));
+  checkMemory(heapUsed / 1024 / 1024);
+}, 10 * 1000);
+
+// Watchdog step for a measured heap size (MB)
+function checkMemory(mb) {
+  memStats.heapPeakMB = Math.max(memStats.heapPeakMB, Math.round(mb));
   if (mb > HEAP_CRIT_MB) {
     m3uCache.clear();
     xtreamCache.clear();
     accountCache.clear();
     epgCache.clear();
     memStats.critEvictions++;
-    memStats.lastEviction = new Date().toISOString();
-    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — cleared all caches`);
   } else if (mb > HEAP_WARN_MB) {
-    const keys = [...m3uCache.keys()];
-    keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => m3uCache.delete(k));
+    // Both big caches: Xtream lists are uncapped and can be the larger part
+    evictOldestHalf(m3uCache);
+    evictOldestHalf(xtreamCache);
     memStats.warnEvictions++;
-    memStats.lastEviction = new Date().toISOString();
-    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — evicted oldest M3U cache entries`);
+  } else {
+    return;
   }
-}, 10 * 1000);
+  memStats.lastEviction = new Date().toISOString();
+  collectGarbage?.();
+  const after = process.memoryUsage().heapUsed / 1024 / 1024;
+  const what = mb > HEAP_CRIT_MB ? "cleared all caches" : "evicted the oldest half of the M3U and Xtream caches";
+  console.warn(`[MEM] heap ${mb.toFixed(0)} MB — ${what}; ${after.toFixed(0)} MB after collection`);
+}
 
 // --- Base manifest (unconfigured) — Stremio shows the config form ---
 const BASE_MANIFEST = {
@@ -2576,4 +2605,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats, buildMetricsText };
+module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats, buildMetricsText, checkMemory };

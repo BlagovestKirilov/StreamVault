@@ -1364,6 +1364,54 @@ describe("speed", () => {
   });
 });
 
+// ─── Memory watchdog ───
+
+describe("memory watchdog", () => {
+  const m3u = require("../m3u");
+  const xtream = require("../xtream");
+  const { checkMemory } = require("../addon");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const caches = async () => (await request(app).get("/stats")).body.caches;
+  const used = (value) => Number(value.split("/")[0]);
+  afterEach(() => jest.restoreAllMocks());
+
+  test("warn level evicts the oldest half of BOTH the M3U and Xtream caches; crit clears all; it logs the heap after collecting", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent("#EXTM3U\n#EXTINF:-1,One\nhttp://example.com/1.m3u8"));
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    for (let i = 0; i < 6; i++) {
+      await request(app).get(`/${enc({ t: "m3u", m: `http://wd-${i}.example.com/l.m3u` })}/catalog/tv/iptv_live.json`);
+      await request(app).get(`/${enc({ t: "xtream", s: `http://wd-xt-${i}.example.com`, u: "u", p: "p" })}/catalog/tv/iptv_live.json`);
+    }
+    const full = await caches();
+    expect(used(full.m3u)).toBeGreaterThanOrEqual(6);
+    expect(used(full.xtream)).toBeGreaterThanOrEqual(6);
+
+    checkMemory(460); // above warn (450), below crit (550)
+    const half = await caches();
+    expect(used(half.m3u)).toBe(Math.floor(used(full.m3u) / 2));
+    expect(used(half.xtream)).toBe(Math.floor(used(full.xtream) / 2));
+    expect(warn.mock.calls.at(-1)[0]).toMatch(/^\[MEM\] heap 460 MB — evicted the oldest half of the M3U and Xtream caches; \d+ MB after collection$/);
+
+    checkMemory(560);
+    const none = await caches();
+    expect([used(none.m3u), used(none.xtream), used(none.accounts), used(none.epg)]).toEqual([0, 0, 0, 0]);
+    expect(warn.mock.calls.at(-1)[0]).toMatch(/cleared all caches; \d+ MB after collection$/);
+
+    const before = warn.mock.calls.length;
+    checkMemory(300); // healthy: nothing happens, nothing logged
+    expect(warn.mock.calls.length).toBe(before);
+  });
+
+  test("cache sizes are back to the proven 15 M3U / 25 Xtream lists", async () => {
+    const c = await caches();
+    expect(c.m3u.split("/")[1]).toBe("15");
+    expect(c.xtream.split("/")[1]).toBe("25");
+  });
+});
+
 // ─── Rate limiting ───
 
 describe("rate limiting", () => {
