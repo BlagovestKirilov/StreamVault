@@ -1405,6 +1405,23 @@ describe("memory watchdog", () => {
     expect(warn.mock.calls.length).toBe(before);
   });
 
+  test("a full cache drops the least recently USED list, not the first one added", async () => {
+    const parses = {};
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async (url) => {
+      parses[url] = (parses[url] || 0) + 1;
+      return m3u.parseM3UContent("#EXTM3U\n#EXTINF:-1,One\nhttp://example.com/1.m3u8");
+    });
+    const url = (i) => `http://lru-${i}.example.com/l.m3u`;
+    const open = (i) => request(app).get(`/${enc({ t: "m3u", m: url(i) })}/catalog/tv/iptv_live.json`);
+    for (let i = 0; i < 15; i++) await open(i); // fills all 15 slots; list 0 was added first
+    await open(0);                               // …but is used again
+    await open(15);                              // one more list: something has to go
+    await open(0);
+    expect(parses[url(0)]).toBe(1);              // busy list kept (old rule: thrown out first)
+    await open(1);
+    expect(parses[url(1)]).toBe(2);              // untouched list 1 was the one removed
+  });
+
   test("cache sizes are back to the proven 15 M3U / 25 Xtream lists", async () => {
     const c = await caches();
     expect(c.m3u.split("/")[1]).toBe("15");

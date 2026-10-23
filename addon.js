@@ -403,11 +403,26 @@ const EPG_CACHE_TTL = 3 * 60 * 1000;
 const EPG_CACHE_MAX = 1000;
 const epgCache = new Map();
 
+// Caches are kept in least-recently-used order (a Map keeps insertion order):
+// storing an entry or using it (touch) moves it to the end, so when a cache is
+// full the entry nobody used for the longest goes first — not a busy one that
+// happened to be added early.
 function setCapped(cache, key, value, max) {
+  cache.delete(key);
   cache.set(key, value);
   if (cache.size > max) {
-    cache.delete(cache.keys().next().value); // evict oldest (insertion order)
+    cache.delete(cache.keys().next().value); // least recently used
   }
+}
+
+// A cache read that counts as a use (moves the entry to the end)
+function touch(cache, key) {
+  const entry = cache.get(key);
+  if (entry !== undefined) {
+    cache.delete(key);
+    cache.set(key, entry);
+  }
+  return entry;
 }
 
 // Concurrent cache misses for the same key share one download instead of each
@@ -533,7 +548,7 @@ async function getCachedM3U(config) {
     setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   }));
-  const cached = usableEntry(m3uCache.get(key), M3U_CACHE_TTL, M3U_STALE_MS, load);
+  const cached = usableEntry(touch(m3uCache, key), M3U_CACHE_TTL, M3U_STALE_MS, load);
   return cached ? cached.data : load();
 }
 
@@ -589,7 +604,7 @@ const collectGarbage = (() => {
   }
 })();
 
-// Oldest half of a cache (insertion order = oldest first)
+// Least recently used half of a cache (see setCapped/touch)
 function evictOldestHalf(cache) {
   const keys = [...cache.keys()];
   keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => cache.delete(k));
@@ -1502,7 +1517,7 @@ function configuredManifest(genres, type, config = {}) {
 }
 
 async function getGenres(config, cacheKey) {
-  const cached = genresCache.get(cacheKey);
+  const cached = touch(genresCache, cacheKey);
   if (cached && Date.now() - cached.ts < GENRES_CACHE_TTL) return cached.data;
 
   // Catalog items carry their group in `genres` (already in channel order); dedupe
@@ -2049,7 +2064,7 @@ async function getXtreamCatalog(config, type) {
   const cacheKey = xtreamCacheKey(config, type, categoryIds);
   const load = () => once(`xtream:${cacheKey}`, () =>
     withFailureCache(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey)));
-  const cached = usableEntry(xtreamCache.get(cacheKey), XTREAM_CACHE_TTL, XTREAM_STALE_MS, load);
+  const cached = usableEntry(touch(xtreamCache, cacheKey), XTREAM_CACHE_TTL, XTREAM_STALE_MS, load);
   return cached ? cached.data : load();
 }
 
@@ -2117,7 +2132,7 @@ function providerTimeRange(e) {
 const accountCache = new Map();
 async function getXtreamAccount(config) {
   const key = `${config.server}_${config.username}`;
-  const entry = accountCache.get(key);
+  const entry = touch(accountCache, key);
   const load = () => once(`account:${key}`, async () => {
     const info = await xtream.getAccountInfo(config).catch(() => null);
     setCapped(accountCache, key, { data: info, ts: Date.now() }, XTREAM_CACHE_MAX);
@@ -2140,7 +2155,6 @@ function forceRefresh(config) {
     : m3uCacheKey(config);
   const last = forcedRefreshes.get(key);
   if (!key || (last && Date.now() - last < FORCED_REFRESH_MS)) return false;
-  forcedRefreshes.delete(key); // re-insert: newest last for setCapped
   setCapped(forcedRefreshes, key, Date.now(), 1000);
   if (config.type === "xtream") {
     xtreamCache.delete(key);
@@ -2156,7 +2170,7 @@ function forceRefresh(config) {
 // TV guide listings for one channel (see EPG_CACHE_TTL); failures aren't kept
 async function getCachedEPG(config, streamId) {
   const key = `${trimTrailingSlashes(config.server)}_${streamId}`;
-  const cached = epgCache.get(key);
+  const cached = touch(epgCache, key);
   if (cached && Date.now() - cached.ts < EPG_CACHE_TTL) return cached.data;
   return once(`epg:${key}`, async () => {
     const data = await xtream.getShortEPG(config, streamId);
