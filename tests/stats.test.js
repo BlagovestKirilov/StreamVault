@@ -71,18 +71,6 @@ describe("stats file saving", () => {
   });
   const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
 
-  test("saved app-tracking data is dropped from stats.json, everything else kept", () => {
-    const dir = tmpDir();
-    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
-      installs: 3, users: ["aaaaaaaaaaaaaaaa"], history: {}, reconfigures: 4,
-      linkApps: [["k", "Nuvio"]], userApps: { aaaaaaaaaaaaaaaa: "nuvio" }, installsByApp: { stremio: 1, nuvio: 1, other: 1 },
-    }));
-    run(dir, "require('./addon'); process.emit('SIGTERM');");
-    const json = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8"));
-    expect(json).toMatchObject({ installs: 3, users: ["aaaaaaaaaaaaaaaa"], reconfigures: 4 });
-    for (const key of ["linkApps", "userApps", "installsByApp"]) expect(json[key]).toBeUndefined();
-  });
-
   test("all-time reconfigures / saves: seeded from the daily rows, then counted", () => {
     const dir = tmpDir();
     fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({

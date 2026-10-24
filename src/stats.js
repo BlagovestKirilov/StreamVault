@@ -45,10 +45,6 @@ try {
   // Other modules hold this same object: replace its contents, not the object
   for (const key of Object.keys(stats)) delete stats[key];
   Object.assign(stats, loaded);
-  // App tracking was removed: drop its saved data (everything else is kept)
-  delete stats.linkApps;
-  delete stats.userApps;
-  delete stats.installsByApp;
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
