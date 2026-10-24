@@ -860,7 +860,7 @@ function extractConfig(req, res, next) {
     }
     req.userConfig = config;
     next();
-  } catch (e) {
+  } catch (_) {
     refuse("install link can't be read", "Invalid configuration.");
   }
 }
@@ -1041,6 +1041,7 @@ app.post("/api/encrypt", limitConfig, (req, res) => {
     if (error) return res.status(400).json({ error });
     res.json({ config: "e-" + encryptConfig(sanitized) });
   } catch (e) {
+    console.error("[ENCRYPT] failed:", e.message);
     res.status(500).json({ error: "Encryption failed" });
   }
 });
@@ -1074,6 +1075,7 @@ app.post("/api/link", limitConfig, (req, res) => {
     const id = linkStore.create(encrypted);
     res.json({ config: id || "e-" + encrypted, updated: false });
   } catch (e) {
+    console.error("[LINK] save failed:", e.message);
     res.status(500).json({ error: "Couldn't save your settings" });
   }
 });
@@ -1719,6 +1721,7 @@ const LATIN_EXTRA = { ß: "ss", đ: "d", ł: "l", ø: "o", æ: "ae", œ: "oe", �
 function normalizeForSearch(text) {
   let s = String(text).toLowerCase();
   // Plain ASCII (most names and searches) skips the slow path
+  // eslint-disable-next-line no-control-regex -- \x00-\x7f is the whole ASCII range on purpose
   if (/[^\x00-\x7f]/.test(s)) {
     s = s.normalize("NFKD").replace(/\p{M}/gu, ""); // ê → e, й → и, ё → е
     s = s.replace(/[Ѐ-ӿß-þđıłœ]/g, ch => CYRILLIC_TO_LATIN[ch] ?? LATIN_EXTRA[ch] ?? ch);

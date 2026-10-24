@@ -574,7 +574,7 @@ describe("Prometheus metrics", () => {
     await request(app).get("/health");
     await request(app).get("/catalog/tv/iptv_live.json");
     const text = buildMetricsText();
-    const SAMPLE = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(?:[a-zA-Z_][a-zA-Z0-9_]*="(?:[^"\\]|\\.)*",?)*\})? (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?|NaN|\+Inf)$/;
+    const SAMPLE = /^([a-zA-Z_:][\w:]*)(\{(?:[a-zA-Z_]\w*="(?:[^"\\]|\\.)*",?)*\})? (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?|NaN|\+Inf)$/;
     for (const line of text.trim().split("\n")) {
       if (!line.startsWith("#")) expect(line).toMatch(SAMPLE);
     }
@@ -1170,7 +1170,7 @@ describe("expiry notice", () => {
     info.mockImplementation(async () => account);
     offset = 64 * 60 * 1000;
     await names();
-    expect(info.mock.calls.length).toBe(calls); // within 3 minutes: not asked again
+    expect(info.mock.calls).toHaveLength(calls); // within 3 minutes: not asked again
     offset = 66 * 60 * 1000;
     await names(); // retried in the background
     await settle();
@@ -1338,7 +1338,7 @@ describe("speed", () => {
     const calls = info.mock.calls.length;
     await request(app).post("/api/link").send(settings);
     expect(await names()).toEqual(["New"]);
-    expect(info.mock.calls.length).toBe(calls + 1); // account read again too
+    expect(info.mock.calls).toHaveLength(calls + 1); // account read again too
   });
 
   test("provider connections are kept alive with a short idle timeout", () => {
@@ -1439,7 +1439,7 @@ describe("memory watchdog", () => {
 
     const before = warn.mock.calls.length;
     checkMemory(300); // healthy: nothing happens, nothing logged
-    expect(warn.mock.calls.length).toBe(before);
+    expect(warn.mock.calls).toHaveLength(before);
   });
 
   test("a full cache drops the least recently USED list, not the first one added", async () => {
@@ -2055,7 +2055,7 @@ http://example.com/2.m3u8`));
     // one real provider failure (logged + counted), four answered from memory
     expect(after.catalogErrors - (before.catalogErrors || 0)).toBe(1);
     expect(after.cachedFailures - (before.cachedFailures || 0)).toBe(4);
-    expect(errLog.mock.calls.filter(c => String(c[0]).startsWith("Catalog error")).length).toBe(1);
+    expect(errLog.mock.calls.filter(c => String(c[0]).startsWith("Catalog error"))).toHaveLength(1);
   });
 
   test("https/http mix-up and provider 429 get their own tiles", async () => {
@@ -3027,6 +3027,6 @@ describe("/api/encrypt input validation", () => {
     expect(res.status).toBe(200);
     const encStr = res.body.config.slice(2);
     const decrypted = decryptConfig(encStr);
-    expect(decrypted.m.length).toBe(2048);
+    expect(decrypted.m).toHaveLength(2048);
   });
 });

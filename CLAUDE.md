@@ -11,9 +11,10 @@ Every change that alters behaviour, an endpoint, a stats counter, a file on the 
 ```bash
 npm start        # Start the Express server on port 7000
 npm test         # Run Jest test suite (jest --forceExit --detectOpenHandles)
+npm run lint     # ESLint (eslint.config.js) — must stay at 0 problems; CI fails otherwise
 ```
 
-There are no build or lint steps — this is a plain Node.js project with no transpilation.
+No build step — plain Node.js, no transpilation. Lint = `@eslint/js` recommended + `eslint-plugin-sonarjs` recommended (CLI version of the Sonar rules below; `public/` not linted). Off on purpose: `sonarjs/no-ignored-exceptions` (our `catch (_) { return fallback; // why }` pattern); in `tests/` also hardcoded-IP / http / nested-template / identical-function / regex rules (test data). One-off exceptions use `// eslint-disable-next-line <rule> -- <reason>`, never a blanket disable.
 
 To run a single test file or test by name:
 ```bash
@@ -126,6 +127,6 @@ The codebase was cleaned of all Sonar findings; new code must not bring them bac
 
 - Fly.io (`fly.toml`): 1 shared CPU, 1 GB RAM, AMS region, persistent `/data` volume (`vol_4qloqe1knpzep0nr`) for `stats.json` and `links.json`(+`.bak`). Daily volume snapshots kept **30 days** (`fly volumes snapshots list vol_4qloqe1knpzep0nr`); restoring = new volume from a snapshot, then attach it.
 - If GitHub Actions is down: `fly deploy --remote-only` from the repo (deploys the local folder — commit first). GitHub's `FLY_API_TOKEN` is an app-scoped **deploy** token (`fly tokens list`).
-- GitHub Actions (`.github/workflows/fly-deploy.yml`): tests (Node 24) then deploys on every push to `master` — **pushing is deploying**, no manual `fly deploy` needed.
+- GitHub Actions (`.github/workflows/fly-deploy.yml`): lint + tests (Node 24) then deploys on every push to `master` — **pushing is deploying**, no manual `fly deploy` needed.
 - **Never `git push` unless the owner explicitly says to push in that request.** Commit locally, report what changed, and wait. An earlier "push it" covers only that change.
 - Docker: `node:24-alpine`, `npm ci --omit=dev`. `.dockerignore` keeps tests, `*.md`, `.github`, `.claude`, `grafana`, `.idea` and local data (`stats.json*`, `links.json*`) out of the image — the server must never read any of them.

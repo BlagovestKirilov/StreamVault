@@ -27,6 +27,7 @@ function maskIp(ip) {
 
 // Requests from this machine itself (local dev, tests, health probes) are never
 // limited; production traffic always arrives through Fly's proxy with a client IP.
+// eslint-disable-next-line sonarjs/no-hardcoded-ip -- loopback addresses, not a remote host
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 const MAX_KEYS = 50_000; // a flood of (fake) IPs can't grow memory past this
