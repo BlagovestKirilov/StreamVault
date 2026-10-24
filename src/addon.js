@@ -9,8 +9,7 @@ const express = require("express");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
-// Project root (the code lives in src/): public/ and local stats/links files are there
-const ROOT = path.join(__dirname, "..");
+const { ROOT, safeError, userAgent, parseExtra, maskPath, withinMs } = require("./util");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 const {
@@ -106,14 +105,6 @@ const limitStats = rateLimit("stats", 5, MINUTE);                    // slows gu
 // Stremio requests are cheap (served from cache) but bursty: some apps preload the
 // channel page of every channel in a catalog page. 300/min blocked real users.
 const limitAddon = rateLimit("addon", 1500, MINUTE);
-
-// --- Helper: sanitize error messages (never leak URLs/credentials) ---
-function safeError(e) {
-  const msg = e.message || "Unknown error";
-  if (msg.includes("://")) return "Connection failed";
-  if (msg.length > 100) return msg.slice(0, 100);
-  return msg;
-}
 
 // --- SSRF protection: see urlguard.js (also enforced inside m3u.js / xtream.js) ---
 
@@ -250,11 +241,6 @@ const recentUnconfigured = [];  // requests from installs without settings (+ wh
 const recentPlayRejects = [];   // /play redirects refused, and which check failed
 const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
 const recentTestFailures = [];  // failed Test Connections: error + address shape (private parts hidden)
-
-// Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
-function userAgent(req) {
-  return String(req.get("user-agent") || "none").slice(0, 150);
-}
 
 function noteRecent(list, entry) {
   list.unshift({ at: new Date().toISOString(), ...entry });
@@ -1221,17 +1207,6 @@ function getGenresWithin(config, cacheKey, ms) {
   return withinMs(getGenres(config, cacheKey), ms, []);
 }
 
-// The promise's value, or `fallback` if it fails or takes longer than `ms`
-async function withinMs(promise, ms, fallback) {
-  let timer;
-  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(fallback), ms); });
-  try {
-    return await Promise.race([promise.catch(() => fallback), timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // --- Stats dashboard (protected by STATS_SECRET env var) ---
 app.get("/stats", limitStats, (req, res) => {
   if (STATS_SECRET && req.query.key !== STATS_SECRET) {
@@ -2093,32 +2068,6 @@ function m3uStream(ch) {
 
 // --- Utility ---
 
-/**
- * Parse Stremio extra params string like "skip=100&genre=Action"
- */
-function parseExtra(extraStr) {
-  const cleaned = extraStr.replace(/\.json$/, "");
-  const params = {};
-  cleaned.split("&").forEach((pair) => {
-    const idx = pair.indexOf("=");
-    const key = idx === -1 ? pair : pair.slice(0, idx);
-    const val = idx === -1 ? "" : pair.slice(idx + 1);
-    if (key) params[safeDecode(key)] = safeDecode(val);
-  });
-  return params;
-}
-
-// A "%" that isn't valid URL encoding (e.g. a category named "100% Sport" sent
-// unencoded) made decodeURIComponent throw "URI malformed" and broke the catalog.
-// Keep the raw text instead.
-function safeDecode(s) {
-  try {
-    return decodeURIComponent(s);
-  } catch (_) {
-    return s; // malformed %-encoding: keep the raw text
-  }
-}
-
 // Some apps (Nuvio on webOS) ask every addon for subtitles, although the
 // manifest offers none — with or without settings, sometimes with a mangled
 // tail. Answer "no subtitles" at once instead of a 404; counted as foreignRequests.
@@ -2167,13 +2116,6 @@ app.use((req, res) => {
   noteRecent(recentUnknownPaths, { method: req.method, path: maskPath(req.path), userAgent: userAgent(req) });
   res.status(404).json({ error: "Not found" });
 });
-
-// Path for logs/stats with install links hidden: any segment that is a user's
-// config ("e-<hex>", base64 "ey...") or just very long becomes "<config>"
-function maskPath(p) {
-  return p.split("/").map(seg => (/^(e-|ey|s-)/.test(seg) || seg.length > 40 ? "<config>" : seg))
-    .join("/").slice(0, 150);
-}
 
 // --- Metrics (Prometheus text) for Fly's built-in Grafana ---
 // Same numbers as /stats, as gauges/counters Grafana can graph over time.
