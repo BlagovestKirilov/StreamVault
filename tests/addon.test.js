@@ -474,10 +474,10 @@ describe("configure page API", () => {
     const xt = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: "1,2" });
     const r1 = await request(app).get(`/api/config/${xt.body.config}`);
     expect(r1.headers["cache-control"]).toBe("no-store");
-    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"] });
+    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"], app: null });
 
     const r2 = await request(app).get(`/api/config/${enc({ t: "m3u", m: "http://e.com/x.m3u", g: JSON.stringify(["News"]) })}`);
-    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"] });
+    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"], app: null });
   });
 
   test("GET /api/config rejects an invalid link", async () => {
@@ -1576,6 +1576,38 @@ describe("stats file saving", () => {
     cwd: root, env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
   });
   const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
+
+  test("the app behind a link is remembered across restarts, saved only as one-way keys", () => {
+    const dir = tmpDir();
+    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/app-memory.m3u" })).toString("base64").replace(/=+$/, "");
+    const m3uMock = "const m3u = require('./m3u'); m3u.parseM3U = async () => m3u.parseM3UContent('#EXTM3U\\n#EXTINF:-1,One\\nhttp://example.com/1.m3u8');";
+    // 1st run: the TV's Nuvio (Tizen browser, no "Nuvio" in its User-Agent) loads channels; stop saves stats
+    run(dir, `${m3uMock} const r = require('supertest'); const { app } = require('./addon');
+      r(app).get('/${cfg}/catalog/tv/iptv_live.json').set('User-Agent', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36')
+        .then(() => process.emit('SIGTERM'));`);
+    const saved = fs.readFileSync(path.join(dir, "stats.json"), "utf8");
+    expect(saved).not.toContain(cfg);           // no usable link in the file
+    expect(JSON.parse(saved).linkApps).toEqual([[expect.any(String), "Nuvio"]]);
+    // 2nd run (after a "deploy"): the configure page is told the app right away
+    const r = run(dir, `const r = require('supertest'); const { app } = require('./addon');
+      r(app).get('/api/config/${cfg}').then(x => { console.log(JSON.stringify(x.body)); process.exit(0); });`);
+    expect(JSON.parse(r.stdout.trim().split("\n").pop()).app).toBe("Nuvio");
+  });
+
+  test("all-time reconfigures / saves: seeded from the daily rows, then counted", () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
+      users: [], history: { "2026-10-20": { reconfigures: 14, reinstalls: 9 }, "2026-10-21": { reconfigures: 41, reinstalls: 23 } },
+    }));
+    const r = run(dir, `const r = require('supertest'); const { app } = require('./addon');
+      const settings = { t: 'm3u', m: 'http://example.com/totals.m3u' };
+      r(app).post('/api/link').send(settings)
+        .then(x => r(app).get('/' + x.body.config + '/configure').set('Fly-Client-IP', '198.51.100.5')
+          .then(() => r(app).post('/api/link').send({ ...settings, editing: x.body.config })))
+        .then(() => r(app).get('/stats'))
+        .then(x => { console.log(JSON.stringify({ rc: x.body.reconfiguresTotal, ri: x.body.reinstallsTotal })); process.exit(0); });`);
+    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ rc: 14 + 41 + 1, ri: 9 + 23 + 1 });
+  });
 
   test("shutdown save writes a complete stats.json and leaves no temp files", () => {
     const dir = tmpDir();

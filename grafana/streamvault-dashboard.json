@@ -45,7 +45,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 0,
         "y": 1
       },
@@ -97,8 +97,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 3,
+        "x": 3,
         "y": 1
       },
       "targets": [
@@ -142,7 +142,7 @@
     },
     {
       "type": "stat",
-      "title": "Stable links saved",
+      "title": "Reconfigures (all time)",
       "id": 4,
       "datasource": {
         "type": "prometheus",
@@ -150,8 +150,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 3,
+        "x": 6,
         "y": 1
       },
       "targets": [
@@ -160,7 +160,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_stable_links)",
+          "expr": "sum(streamvault_reconfigures_total)",
           "refId": "A",
           "instant": true
         }
@@ -191,11 +191,11 @@
         },
         "overrides": []
       },
-      "description": "Entries in links.json (stable links + edited old links)"
+      "description": "Configure opened from an installed StreamVault (the app's Configure button)"
     },
     {
       "type": "stat",
-      "title": "Saved changes today",
+      "title": "Saved changes (all time)",
       "id": 5,
       "datasource": {
         "type": "prometheus",
@@ -203,7 +203,60 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
+        "x": 9,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_reinstalls_total)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Save changes pressed on the configure page"
+    },
+    {
+      "type": "stat",
+      "title": "Saved changes today",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
         "x": 12,
         "y": 1
       },
@@ -248,16 +301,69 @@
     },
     {
       "type": "stat",
-      "title": "Empty streams today",
-      "id": 6,
+      "title": "Stable links saved",
+      "id": 7,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 15,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_stable_links)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Entries in links.json (stable links + edited old links)"
+    },
+    {
+      "type": "stat",
+      "title": "Empty streams today",
+      "id": 8,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
         "y": 1
       },
       "targets": [
@@ -302,15 +408,15 @@
     {
       "type": "stat",
       "title": "Cached failures today",
-      "id": 7,
+      "id": 9,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
+        "w": 3,
+        "x": 21,
         "y": 1
       },
       "targets": [
@@ -355,7 +461,7 @@
     {
       "type": "stat",
       "title": "Active users",
-      "id": 8,
+      "id": 10,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -408,7 +514,7 @@
     {
       "type": "stat",
       "title": "New installs",
-      "id": 9,
+      "id": 11,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -460,7 +566,7 @@
     {
       "type": "stat",
       "title": "App launches",
-      "id": 10,
+      "id": 12,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -512,7 +618,7 @@
     {
       "type": "stat",
       "title": "Streams",
-      "id": 11,
+      "id": 13,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -564,7 +670,7 @@
     {
       "type": "stat",
       "title": "Searches",
-      "id": 12,
+      "id": 14,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -616,7 +722,7 @@
     {
       "type": "stat",
       "title": "Provider errors today",
-      "id": 13,
+      "id": 15,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -677,7 +783,7 @@
     {
       "type": "stat",
       "title": "Our error responses today",
-      "id": 14,
+      "id": 16,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -738,7 +844,7 @@
     {
       "type": "stat",
       "title": "RAM (RSS)",
-      "id": 15,
+      "id": 17,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -800,7 +906,7 @@
     {
       "type": "stat",
       "title": "Downloads waiting",
-      "id": 16,
+      "id": 18,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -861,7 +967,7 @@
     {
       "type": "stat",
       "title": "Failed providers (2 min cache)",
-      "id": 17,
+      "id": 19,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -918,7 +1024,7 @@
     {
       "type": "stat",
       "title": "Uptime",
-      "id": 18,
+      "id": 20,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -976,7 +1082,7 @@
     {
       "type": "row",
       "title": "Server health",
-      "id": 19,
+      "id": 21,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -989,7 +1095,7 @@
     {
       "type": "timeseries",
       "title": "Memory",
-      "id": 20,
+      "id": 22,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1074,7 +1180,7 @@
     {
       "type": "timeseries",
       "title": "CPU (share of 1 core)",
-      "id": 21,
+      "id": 23,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1153,7 +1259,7 @@
     {
       "type": "timeseries",
       "title": "Event loop delay",
-      "id": 22,
+      "id": 24,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1202,7 +1308,7 @@
     {
       "type": "row",
       "title": "Requests",
-      "id": 23,
+      "id": 25,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1215,7 +1321,7 @@
     {
       "type": "timeseries",
       "title": "Requests / second by route",
-      "id": 24,
+      "id": 26,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1568,7 +1674,7 @@
     {
       "type": "timeseries",
       "title": "Response time p95 by route",
-      "id": 25,
+      "id": 27,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -1922,7 +2028,7 @@
     {
       "type": "timeseries",
       "title": "Error responses / second by status",
-      "id": 26,
+      "id": 28,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2031,7 +2137,7 @@
     {
       "type": "timeseries",
       "title": "Today's error responses by endpoint",
-      "id": 27,
+      "id": 29,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2109,7 +2215,7 @@
     {
       "type": "row",
       "title": "Usage today (counters reset at 00:00 UTC)",
-      "id": 28,
+      "id": 30,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2122,7 +2228,7 @@
     {
       "type": "timeseries",
       "title": "Launches, streams, searches",
-      "id": 29,
+      "id": 31,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2281,7 +2387,7 @@
     {
       "type": "timeseries",
       "title": "Setup tile and saves",
-      "id": 30,
+      "id": 32,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2356,7 +2462,7 @@
     {
       "type": "timeseries",
       "title": "Installs without settings and foreign requests",
-      "id": 31,
+      "id": 33,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2430,7 +2536,7 @@
     {
       "type": "timeseries",
       "title": "Empty streams and cached failures",
-      "id": 32,
+      "id": 34,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2486,7 +2592,7 @@
     {
       "type": "row",
       "title": "Users' providers (today)",
-      "id": 33,
+      "id": 35,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2499,7 +2605,7 @@
     {
       "type": "timeseries",
       "title": "Provider failures by code",
-      "id": 34,
+      "id": 36,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2547,7 +2653,7 @@
     {
       "type": "timeseries",
       "title": "Provider failures by where",
-      "id": 35,
+      "id": 37,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2594,7 +2700,7 @@
     {
       "type": "row",
       "title": "Caches and downloads",
-      "id": 36,
+      "id": 38,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2607,7 +2713,7 @@
     {
       "type": "timeseries",
       "title": "Cache entries",
-      "id": 37,
+      "id": 39,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2730,7 +2836,7 @@
     {
       "type": "timeseries",
       "title": "Big provider downloads",
-      "id": 38,
+      "id": 40,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2804,7 +2910,7 @@
     {
       "type": "row",
       "title": "Recent events (latest 20 each, since the last restart — same as /stats)",
-      "id": 39,
+      "id": 41,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2817,7 +2923,7 @@
     {
       "type": "table",
       "title": "Provider errors",
-      "id": 40,
+      "id": 42,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2891,7 +2997,7 @@
     {
       "type": "table",
       "title": "Failed Test Connections",
-      "id": 41,
+      "id": 43,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -2965,7 +3071,7 @@
     {
       "type": "table",
       "title": "Refused install links",
-      "id": 42,
+      "id": 44,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3038,7 +3144,7 @@
     {
       "type": "table",
       "title": "Refused plays (/play)",
-      "id": 43,
+      "id": 45,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3113,7 +3219,7 @@
     {
       "type": "table",
       "title": "Empty streams",
-      "id": 44,
+      "id": 46,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3187,7 +3293,7 @@
     {
       "type": "table",
       "title": "Unknown paths (our 404s)",
-      "id": 45,
+      "id": 47,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3260,7 +3366,7 @@
     {
       "type": "table",
       "title": "Installs without settings (which app)",
-      "id": 46,
+      "id": 48,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3332,7 +3438,7 @@
     {
       "type": "row",
       "title": "Fly machine and network (collected by Fly)",
-      "id": 47,
+      "id": 49,
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3345,7 +3451,7 @@
     {
       "type": "timeseries",
       "title": "CPU by mode incl. steal (throttling on the shared CPU)",
-      "id": 48,
+      "id": 50,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3485,7 +3591,7 @@
     {
       "type": "timeseries",
       "title": "Machine memory",
-      "id": 49,
+      "id": 51,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3542,7 +3648,7 @@
     {
       "type": "timeseries",
       "title": "Volume /data used",
-      "id": 50,
+      "id": 52,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3591,7 +3697,7 @@
     {
       "type": "timeseries",
       "title": "Fly edge responses by status",
-      "id": 51,
+      "id": 53,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3701,7 +3807,7 @@
     {
       "type": "timeseries",
       "title": "Bandwidth",
-      "id": 52,
+      "id": 54,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3758,7 +3864,7 @@
     {
       "type": "timeseries",
       "title": "Fly edge response time p95",
-      "id": 53,
+      "id": 55,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -3806,7 +3912,7 @@
     {
       "type": "timeseries",
       "title": "Open connections (concurrency)",
-      "id": 54,
+      "id": 56,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"

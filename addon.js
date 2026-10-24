@@ -161,6 +161,8 @@ const STATS_FILE = path.join(STATS_DIR, "stats.json");
 const PROCESS_START = new Date().toISOString();
 let stats = {
   installs: 0, configures: 0, streams: 0, searches: 0,
+  reconfigures: 0, // Configure opened from an installed StreamVault (all time)
+  reinstalls: 0,   // Save changes pressed there (all time)
   users: new Set(), startedAt: new Date().toISOString(),
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
@@ -183,15 +185,24 @@ function toUserKeys(list) {
   return new Set((list || []).map(v => (USER_KEY_RE.test(v) ? v : userKey(v))));
 }
 
+let savedLinkApps = []; // restored into linkApps once it exists (below)
 try {
   const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
   stats = { ...saved, users: toUserKeys(saved.users) };
+  if (Array.isArray(saved.linkApps)) savedLinkApps = saved.linkApps;
+  delete stats.linkApps;
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.history) stats.history = {};
+  // All-time totals started after the daily counters: seed them from the rows
+  for (const counter of ["reconfigures", "reinstalls"]) {
+    if (typeof stats[counter] !== "number") {
+      stats[counter] = Object.values(stats.history).reduce((sum, row) => sum + (row[counter] || 0), 0);
+    }
+  }
   // Restore the per-day Sets
   for (const daily of [stats.dailyActive, stats.dailyViewers]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
@@ -221,6 +232,7 @@ function saveStatsData() {
   return {
     ...stats, users: [...stats.users],
     dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
+    linkApps: [...linkApps],
   };
 }
 
@@ -877,11 +889,21 @@ const linkApps = new Map();
 
 function appFromUserAgent(ua) {
   if (/nuvio/i.test(ua)) return "Nuvio";
+  // Nuvio TV on Samsung runs in the TV's browser (no "Nuvio" in its User-Agent);
+  // Stremio has no Samsung (Tizen) app, so a Tizen request is Nuvio
+  if (/tizen/i.test(ua)) return "Nuvio";
   if (/stremio/i.test(ua)) return "Stremio";
   return null; // okhttp, browsers, players… — unknown
 }
 
-const linkKey = (link) => (linkStore.isId(link) ? link : crypto.createHash("sha256").update(link).digest("base64"));
+// One-way key per install link: the map is saved in stats.json, which must never
+// hold usable links (a stable link id opens that user's settings)
+const linkKey = (link) => crypto.createHash("sha256").update(link).digest("base64");
+
+// Survives restarts/deploys (saved with the stats); only known values come back
+for (const [key, app] of savedLinkApps.slice(-LINK_APPS_MAX)) {
+  if (typeof key === "string" && ["Nuvio", "Stremio", "both"].includes(app)) linkApps.set(key, app);
+}
 
 function noteAppForLink(req) {
   // Addon requests only: /api/* comes from the configure page, /play from the player
@@ -890,7 +912,6 @@ function noteAppForLink(req) {
   if (!app) return;
   const key = linkKey(req.params.config);
   const known = linkApps.get(key);
-  linkApps.delete(key); // re-insert → most recently used stays, oldest is evicted first
   setCapped(linkApps, key, known && known !== app ? "both" : app, LINK_APPS_MAX);
 }
 
@@ -915,7 +936,10 @@ function serveConfigure(req, res) {
     stats.configures++;
     countToday("configures");
     // Opened from an installed addon's Configure button (/<link>/configure)
-    if (req.params.config) countToday("reconfigures");
+    if (req.params.config) {
+      stats.reconfigures++;
+      countToday("reconfigures");
+    }
     setCapped(lastConfigureAt, ip, now, 10000);
   }
   console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
@@ -1035,7 +1059,10 @@ app.post("/api/link", limitConfig, (req, res) => {
     forceRefresh(config);
     // Not truncated: a cut-off link would fingerprint as a different link
     const editing = typeof req.body.editing === "string" && req.body.editing.length <= 8192 ? req.body.editing : "";
-    if (editing) countToday("reinstalls");
+    if (editing) {
+      stats.reinstalls++;
+      countToday("reinstalls");
+    }
     // app: which app to tell the user to restart (null = say "your app")
     if (linkStore.isId(editing)) {
       if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true, app: appForLink(editing) });
@@ -1075,10 +1102,10 @@ app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
   if (c.type === "xtream") {
     return res.json({
       type: "xtream", server: c.server, username: c.username, password: c.password,
-      categories: (c.country || "").split(",").filter(Boolean),
+      categories: (c.country || "").split(",").filter(Boolean), app: appForLink(req.params.config),
     });
   }
-  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
+  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [], app: appForLink(req.params.config) });
 });
 
 // Why an Xtream account can't be used, or null when it looks fine / is unknown
@@ -1593,6 +1620,8 @@ app.get("/stats", limitStats, (req, res) => {
     installs: stats.installs,
     uniqueUsers: stats.users.size,
     configures: stats.configures,
+    reconfiguresTotal: stats.reconfigures,
+    reinstallsTotal: stats.reinstalls,
     streamsPlayed: stats.streams,
     streamsByType: stats.streamsByType,
     searches: stats.searches,
@@ -2577,6 +2606,8 @@ function buildMetricsText() {
   // All-time usage (from stats.json, survives restarts)
   c("installs_total", "Installs (new users) since the start", stats.installs);
   c("configures_total", "Configure page visits since the start", stats.configures);
+  c("reconfigures_total", "Configure opened from an installed StreamVault (all time)", stats.reconfigures);
+  c("reinstalls_total", "Save changes pressed on the configure page (all time)", stats.reinstalls);
   c("streams_total", "Stream requests since the start", stats.streams);
   c("searches_total", "Searches since the start", stats.searches);
   g("unique_users", "Unique users since the start", stats.users.size);
