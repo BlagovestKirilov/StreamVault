@@ -1638,23 +1638,32 @@ describe("stats file saving", () => {
     expect(row.responseErrors).toEqual({ "unknown path": { "404": 1 } });
   });
 
-  test("installs by app: earlier installs count as other, new ones by the installing app", () => {
+  test("users by app: the last app each user loaded channels with; users not seen yet are other", () => {
     const dir = tmpDir();
-    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({ installs: 5, users: [], history: {} }));
+    // two users from before; an old installsByApp is dropped
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
+      installs: 2, users: ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"], history: {}, installsByApp: { stremio: 0, nuvio: 0, other: 2 },
+    }));
     const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/apps.m3u" })).toString("base64").replace(/=+$/, "");
     const r = run(dir, `
       const r = require('supertest'); const { app } = require('./addon');
       const m3u = require('./m3u'); m3u.parseM3UGroups = async () => [];
-      const install = (ip, ua) => r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', ip).set('User-Agent', ua);
-      install('198.51.100.1', 'Stremio/4.4')
-        .then(() => install('198.51.100.1', 'Stremio/4.4'))    // same user again: not a new install
-        .then(() => install('198.51.100.2', 'NuvioTV/1.0'))
-        .then(() => install('198.51.100.3', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0)'))
-        .then(() => install('198.51.100.4', 'okhttp/4.12'))
+      const load = (ip, ua) => r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', ip).set('User-Agent', ua);
+      load('198.51.100.1', 'Stremio/4.4')
+        .then(() => load('198.51.100.1', 'NuvioTV/1.0'))        // switched app: moves to Nuvio
+        .then(() => load('198.51.100.2', 'Stremio/4.4'))
+        .then(() => load('198.51.100.2', 'okhttp/4.12'))        // unknown app: stays Stremio
+        .then(() => load('198.51.100.3', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0)'))
+        .then(() => load('198.51.100.4', 'okhttp/4.12'))
         .then(() => r(app).get('/stats'))
-        .then(x => { console.log(JSON.stringify(x.body.installsByApp)); process.exit(0); });
+        .then(x => { console.log(JSON.stringify(x.body.usersByApp)); process.emit('SIGTERM'); });
     `);
-    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ stremio: 1, nuvio: 2, other: 5 + 1 });
+    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ stremio: 1, nuvio: 2, other: 2 + 1 });
+    const saved = fs.readFileSync(path.join(dir, "stats.json"), "utf8");
+    expect(saved).not.toContain("198.51.100");
+    const json = JSON.parse(saved);
+    expect(json.installsByApp).toBeUndefined();
+    expect(Object.values(json.userApps).sort((a, b) => a.localeCompare(b))).toEqual(["nuvio", "nuvio", "stremio"]);
   });
 
   test("users are saved as one-way codes, never IPs (old IP entries converted)", () => {

@@ -167,7 +167,7 @@ let stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
-  installsByApp: { stremio: 0, nuvio: 0, other: 0 }, // from the installing app's User-Agent
+  userApps: {},     // { "<user key>": "stremio" | "nuvio" } — the app the user last loaded channels with
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
@@ -195,8 +195,9 @@ try {
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
-  // Installs from before the app was recorded count as "other"
-  if (!stats.installsByApp) stats.installsByApp = { stremio: 0, nuvio: 0, other: stats.installs || 0 };
+  delete stats.installsByApp; // replaced by userApps
+  stats.userApps = Object.fromEntries(Object.entries(saved.userApps || {})
+    .filter(([user, app]) => USER_KEY_RE.test(user) && (app === "stremio" || app === "nuvio")));
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.history) stats.history = {};
@@ -222,6 +223,8 @@ function saveStatsData() {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
+  // Apps only for users still tracked
+  stats.userApps = Object.fromEntries(Object.entries(stats.userApps).filter(([user]) => stats.users.has(user)));
   // Keep 90 days of per-day rows; freeze each day's unique-user counts into its
   // row so they survive after the per-day lists (30 days) are dropped
   const historyCutoff = new Date();
@@ -850,7 +853,7 @@ function extractConfig(req, res, next) {
     const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
     req.configRevision = saved ? saved.revision : 0;
-    noteAppForLink(req);
+    noteApp(req);
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
       return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
@@ -910,12 +913,21 @@ for (const [key, app] of savedLinkApps.slice(-LINK_APPS_MAX)) {
   if (typeof key === "string" && (app === "Nuvio" || app === "Stremio")) linkApps.set(key, app);
 }
 
-function noteAppForLink(req) {
+// Records the app for this link and for this user (the last one wins)
+function noteApp(req) {
   // Addon requests only: /api/* comes from the configure page, /play from the player
   if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
   const app = appFromUserAgent(String(req.get("user-agent") || ""));
-  if (!app) return;
+  if (!app) return; // unknown app: keep what we knew
   setCapped(linkApps, linkKey(req.params.config), app, LINK_APPS_MAX);
+  stats.userApps[userKey(getIp(req))] = app.toLowerCase();
+}
+
+/** Users by the app they last used; users not seen since this was added are "other" */
+function usersByApp() {
+  const counts = { stremio: 0, nuvio: 0, other: 0 };
+  for (const user of stats.users) counts[stats.userApps[user] || "other"]++;
+  return counts;
 }
 
 /** The last app ("Nuvio" / "Stremio") that used this link, else null */
@@ -1492,7 +1504,6 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
     stats.users.add(user);
     stats.installs++;
     countToday("installs");
-    stats.installsByApp[appFromUserAgent(String(req.get("user-agent") || ""))?.toLowerCase() || "other"]++;
   }
   // Track config type and daily active
   const cType = req.userConfig.type;
@@ -1632,7 +1643,7 @@ app.get("/stats", limitStats, (req, res) => {
     searches: stats.searches,
     configType: stats.configType,
     installsByType: stats.installsByType,
-    installsByApp: stats.installsByApp,
+    usersByApp: usersByApp(),
     avgStreamsPerUser,
     dailyActiveUsers: last7,
     // Unique users per day who opened a channel and got something to play
@@ -2618,8 +2629,8 @@ function buildMetricsText() {
   c("streams_total", "Stream requests since the start", stats.streams);
   c("searches_total", "Searches since the start", stats.searches);
   g("unique_users", "Unique users since the start", stats.users.size);
-  for (const [app, n] of Object.entries(stats.installsByApp)) {
-    c("installs_by_app_total", "Installs by app (stremio / nuvio / other = unknown or before it was recorded)", n, { app });
+  for (const [app, n] of Object.entries(usersByApp())) {
+    g("users_by_app", "Users by the app they last loaded channels with (other = not seen since this was added, or unknown app)", n, { app });
   }
   for (const [type, n] of Object.entries(stats.streamsByType || {})) {
     c("streams_by_type_total", "Stream requests by type since the start", n, { type });

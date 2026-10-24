@@ -1081,7 +1081,7 @@
     },
     {
       "type": "stat",
-      "title": "Installs: Stremio (all time)",
+      "title": "Users on Stremio",
       "id": 57,
       "datasource": {
         "type": "prometheus",
@@ -1099,7 +1099,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_installs_by_app_total{app=\"stremio\"}) or vector(0)",
+          "expr": "sum(streamvault_users_by_app{app=\"stremio\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -1111,7 +1111,7 @@
           ]
         },
         "colorMode": "value",
-        "graphMode": "area"
+        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
@@ -1130,11 +1130,11 @@
         },
         "overrides": []
       },
-      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
     },
     {
       "type": "stat",
-      "title": "Installs: Nuvio (all time)",
+      "title": "Users on Nuvio",
       "id": 58,
       "datasource": {
         "type": "prometheus",
@@ -1152,7 +1152,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_installs_by_app_total{app=\"nuvio\"}) or vector(0)",
+          "expr": "sum(streamvault_users_by_app{app=\"nuvio\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -1164,7 +1164,7 @@
           ]
         },
         "colorMode": "value",
-        "graphMode": "area"
+        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
@@ -1183,11 +1183,11 @@
         },
         "overrides": []
       },
-      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
     },
     {
       "type": "stat",
-      "title": "Installs: Other / before tracking (all time)",
+      "title": "Users on Other / not seen yet",
       "id": 59,
       "datasource": {
         "type": "prometheus",
@@ -1205,7 +1205,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_installs_by_app_total{app=\"other\"}) or vector(0)",
+          "expr": "sum(streamvault_users_by_app{app=\"other\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -1217,7 +1217,7 @@
           ]
         },
         "colorMode": "value",
-        "graphMode": "area"
+        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
@@ -1236,7 +1236,7 @@
         },
         "overrides": []
       },
-      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
     },
     {
       "type": "row",
