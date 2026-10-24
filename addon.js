@@ -278,6 +278,8 @@ const recentUnconfigured = [];  // requests from installs without settings (+ wh
 const recentPlayRejects = [];   // /play redirects refused, and which check failed
 const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
 const recentTestFailures = [];  // failed Test Connections: error + address shape (private parts hidden)
+// Addon requests' User-Agents, one entry per distinct UA (to teach appFromUserAgent new apps)
+const recentAgents = new Map();
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
 function userAgent(req) {
@@ -918,6 +920,7 @@ function noteApp(req) {
   // Addon requests only: /api/* comes from the configure page, /play from the player
   if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
   const app = appFromUserAgent(String(req.get("user-agent") || ""));
+  setCapped(recentAgents, userAgent(req), { at: new Date().toISOString(), userAgent: userAgent(req), app, route: req.path.split("/")[2] }, MAX_RECENT_ERRORS);
   if (!app) return; // unknown app: keep what we knew
   setCapped(linkApps, linkKey(req.params.config), app, LINK_APPS_MAX);
   stats.userApps[userKey(getIp(req))] = app.toLowerCase();
@@ -1684,6 +1687,7 @@ app.get("/stats", limitStats, (req, res) => {
     recentPlayRejects,
     recentBadLinks,
     recentTestFailures,
+    recentAgents: [...recentAgents.values()].reverse(),
   });
 });
 

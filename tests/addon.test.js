@@ -1809,6 +1809,17 @@ describe("stable install links", () => {
     expect(await names(old)).toEqual(["News One", "Sport One"]);
   });
 
+  test("/stats lists the addon requests' User-Agents once each, with the app we detected", async () => {
+    const link = (await request(app).post("/api/link").send({ t: "m3u", m: "http://agents.example.com/a.m3u" })).body.config;
+    await request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", "okhttp/4.12.0");
+    await request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", "okhttp/4.12.0");
+    await request(app).get(`/${link}/manifest.json`).set("User-Agent", "Nuvio/1.1.0-beta.7");
+    const agents = (await request(app).get("/stats")).body.recentAgents;
+    expect(agents.filter(a => a.userAgent === "okhttp/4.12.0")).toEqual([expect.objectContaining({ app: null, route: "catalog" })]);
+    expect(agents[0]).toMatchObject({ userAgent: "Nuvio/1.1.0-beta.7", app: "Nuvio", route: "manifest.json" });
+    expect(JSON.stringify(agents)).not.toContain(link);
+  });
+
   test("after a save the page is told which app to restart: the last one that used the link", async () => {
     const make = async (m) => (await request(app).post("/api/link").send({ t: "m3u", m })).body.config;
     const save = async (link) => (await request(app).post("/api/link").send({ t: "m3u", m: "http://apps.example.com/x.m3u", editing: link })).body;
