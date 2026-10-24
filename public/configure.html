@@ -703,12 +703,12 @@
     </div>
 
     <div class="tip-box" style="width: 100%; margin-bottom: 12px; padding: 12px 14px; background: var(--input-bg); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--muted); line-height: 1.5;">
-      <div class="app-tip" id="tipStremio">
+      <div class="app-tip">
         <strong style="color: var(--accent);"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 21.2 12 12 21.2 2.8 12z"/><path d="M10.2 9v6l4.8-3z" fill="currentColor"/></svg>Stremio — live TV needs VLC</strong>
         <span>Settings &rarr; Advanced/Playback &rarr; Default Player &rarr; External &rarr; VLC</span>
         <span>Your channels: Board (home screen) &rarr; “StreamVault Live” row, or Discover &rarr; TV channels.</span>
       </div>
-      <div class="app-tip" id="tipNuvio">
+      <div class="app-tip">
         <strong style="color: var(--accent);"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Nuvio — plays live TV in its own player</strong>
         <span>On Samsung (Tizen) TVs, Nuvio is the only way to use StreamVault.</span>
         <span>After installing, restart Nuvio to see your channels.</span>
@@ -851,7 +851,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
             </svg>
-            Open Stremio
+            Open in app
           </a>
         </div>
         <p class="result-hint" id="installHints">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.<br/>Have another StreamVault that only shows “Set up StreamVault first”? Delete it from your addons.</p>
@@ -1085,15 +1085,12 @@
       const updated = encData.updated === true;
       document.getElementById('resultTitle').textContent = updated ? 'Saved — StreamVault updated' : 'Ready to install';
       document.getElementById('updatedHint').style.display = updated ? 'block' : 'none';
-      document.getElementById('restartHint').textContent = savedHint(encData.app);
+      document.getElementById('restartHint').textContent = savedHint();
       for (const id of ['installHints', 'tvTip']) {
         document.getElementById(id).style.display = updated ? 'none' : '';
       }
-      // Open Stremio = the Stremio app with this link. Saved in Nuvio: there's no
-      // Stremio to open (Copy stays)
-      const link = document.getElementById('stremioLink');
-      link.style.display = updated && encData.app === 'Nuvio' ? 'none' : '';
-      link.href = stremioAppLink(manifestUrl);
+      // Open in app = stremio:// link: Stremio, or Nuvio (phones ask which app to use)
+      document.getElementById('stremioLink').href = stremioAppLink(manifestUrl);
       document.getElementById('installUrl').value = manifestUrl;
       openResult();
       return updated;
@@ -1136,14 +1133,12 @@
 
     // How the app picks up saved changes. Stremio keeps its stored copy until the
     // addon is installed again: the page opens it (same link → "Update", no second
-    // StreamVault). Nuvio reads it again on a full restart. The server knows the
-    // app only if it saw it load this StreamVault.
-    function savedHint(app) {
-      if (app === 'Nuvio') return 'Fully close and reopen Nuvio to see the changes — just switching back to it keeps the old categories.';
+    // StreamVault). Nuvio reads it again on a full restart.
+    function savedHint() {
       const stremio = ON_PHONE
-        ? 'The Stremio phone app has no Upgrade button: tap Open Stremio, press Uninstall and then Install, then fully close and reopen Stremio.'
+        ? 'The Stremio phone app has no Upgrade button: tap Open in app, press Uninstall and then Install, then fully close and reopen Stremio.'
         : 'Stremio opens StreamVault — press Upgrade there to load the changes.';
-      return app === 'Stremio' ? stremio : `${stremio}\nIn Nuvio: fully close and reopen the app.`;
+      return `${stremio}\nIn Nuvio: fully close and reopen the app.`;
     }
 
     // Phones: the Stremio app's dialog for an installed addon has no Upgrade (the
@@ -1153,13 +1148,6 @@
     // The Stremio app's own link for this install link (opens its addon dialog)
     function stremioAppLink(manifestUrl) {
       return manifestUrl.replace(/^https?:\/\//, 'stremio://');
-    }
-
-    // Only the tip for the app this StreamVault is used in — both when unknown
-    // (the server learns the app from its requests; a new install has none yet)
-    function showAppTips(app) {
-      document.getElementById('tipStremio').style.display = app === 'Nuvio' ? 'none' : '';
-      document.getElementById('tipNuvio').style.display = app === 'Stremio' ? 'none' : '';
     }
 
     // Open the new link in the app (Stremio, or whichever app handles stremio://)
@@ -1205,9 +1193,9 @@
         const manifestUrl = `${window.location.origin}/${encData.config}/manifest.json`;
         // Same link, new settings. Stremio on a PC still opens it: only a
         // (re)install replaces the copy it stored (same link → Upgrade, no
-        // duplicate). Not on phones (no Upgrade there) and not for Nuvio.
+        // duplicate). Not on phones (no Upgrade there).
         const updated = showInstallResult(encData, manifestUrl);
-        if (!updated || (encData.app !== 'Nuvio' && !ON_PHONE)) openInApp(manifestUrl);
+        if (!updated || !ON_PHONE) openInApp(manifestUrl);
       } catch (e) {
         showToast('Failed to generate install URL');
       } finally {
@@ -1422,7 +1410,6 @@
           document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
         }
         selectedCategories = new Set((cfg.categories || []).map(String));
-        showAppTips(cfg.app);
         updateButtons();
         // Editing an installed StreamVault: saving updates it in place, nothing to install
         document.getElementById('btnInstallText').textContent = 'Save changes';

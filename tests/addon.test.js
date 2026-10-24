@@ -474,10 +474,10 @@ describe("configure page API", () => {
     const xt = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: "1,2" });
     const r1 = await request(app).get(`/api/config/${xt.body.config}`);
     expect(r1.headers["cache-control"]).toBe("no-store");
-    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"], app: null });
+    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"] });
 
     const r2 = await request(app).get(`/api/config/${enc({ t: "m3u", m: "http://e.com/x.m3u", g: JSON.stringify(["News"]) })}`);
-    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"], app: null });
+    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"] });
   });
 
   test("GET /api/config rejects an invalid link", async () => {
@@ -1577,21 +1577,16 @@ describe("stats file saving", () => {
   });
   const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
 
-  test("the app behind a link is remembered across restarts, saved only as one-way keys", () => {
+  test("saved app-tracking data is dropped from stats.json, everything else kept", () => {
     const dir = tmpDir();
-    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/app-memory.m3u" })).toString("base64").replace(/=+$/, "");
-    const m3uMock = "const m3u = require('./m3u'); m3u.parseM3U = async () => m3u.parseM3UContent('#EXTM3U\\n#EXTINF:-1,One\\nhttp://example.com/1.m3u8');";
-    // 1st run: the TV's Nuvio (Tizen browser, no "Nuvio" in its User-Agent) loads channels; stop saves stats
-    run(dir, `${m3uMock} const r = require('supertest'); const { app } = require('./addon');
-      r(app).get('/${cfg}/catalog/tv/iptv_live.json').set('User-Agent', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36')
-        .then(() => process.emit('SIGTERM'));`);
-    const saved = fs.readFileSync(path.join(dir, "stats.json"), "utf8");
-    expect(saved).not.toContain(cfg);           // no usable link in the file
-    expect(JSON.parse(saved).linkApps).toEqual([[expect.any(String), "Nuvio"]]);
-    // 2nd run (after a "deploy"): the configure page is told the app right away
-    const r = run(dir, `const r = require('supertest'); const { app } = require('./addon');
-      r(app).get('/api/config/${cfg}').then(x => { console.log(JSON.stringify(x.body)); process.exit(0); });`);
-    expect(JSON.parse(r.stdout.trim().split("\n").pop()).app).toBe("Nuvio");
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
+      installs: 3, users: ["aaaaaaaaaaaaaaaa"], history: {}, reconfigures: 4,
+      linkApps: [["k", "Nuvio"]], userApps: { aaaaaaaaaaaaaaaa: "nuvio" }, installsByApp: { stremio: 1, nuvio: 1, other: 1 },
+    }));
+    run(dir, "require('./addon'); process.emit('SIGTERM');");
+    const json = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8"));
+    expect(json).toMatchObject({ installs: 3, users: ["aaaaaaaaaaaaaaaa"], reconfigures: 4 });
+    for (const key of ["linkApps", "userApps", "installsByApp"]) expect(json[key]).toBeUndefined();
   });
 
   test("all-time reconfigures / saves: seeded from the daily rows, then counted", () => {
@@ -1636,34 +1631,6 @@ describe("stats file saving", () => {
     const row = JSON.parse(r.stdout.trim().split("\n").pop());
     expect(row.launches).toBe(4);
     expect(row.responseErrors).toEqual({ "unknown path": { "404": 1 } });
-  });
-
-  test("users by app: the last app each user loaded channels with; users not seen yet are other", () => {
-    const dir = tmpDir();
-    // two users from before; an old installsByApp is dropped
-    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({
-      installs: 2, users: ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"], history: {}, installsByApp: { stremio: 0, nuvio: 0, other: 2 },
-    }));
-    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/apps.m3u" })).toString("base64").replace(/=+$/, "");
-    const r = run(dir, `
-      const r = require('supertest'); const { app } = require('./addon');
-      const m3u = require('./m3u'); m3u.parseM3UGroups = async () => [];
-      const load = (ip, ua) => r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', ip).set('User-Agent', ua);
-      load('198.51.100.1', 'Stremio/4.4')
-        .then(() => load('198.51.100.1', 'NuvioTV/1.0'))        // switched app: moves to Nuvio
-        .then(() => load('198.51.100.2', 'Stremio/4.4'))
-        .then(() => load('198.51.100.2', 'okhttp/4.12'))        // unknown app: stays Stremio
-        .then(() => load('198.51.100.3', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0)'))
-        .then(() => load('198.51.100.4', 'okhttp/4.12'))
-        .then(() => r(app).get('/stats'))
-        .then(x => { console.log(JSON.stringify(x.body.usersByApp)); process.emit('SIGTERM'); });
-    `);
-    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ stremio: 1, nuvio: 2, other: 2 + 1 });
-    const saved = fs.readFileSync(path.join(dir, "stats.json"), "utf8");
-    expect(saved).not.toContain("198.51.100");
-    const json = JSON.parse(saved);
-    expect(json.installsByApp).toBeUndefined();
-    expect(Object.values(json.userApps).sort((a, b) => a.localeCompare(b))).toEqual(["nuvio", "nuvio", "stremio"]);
   });
 
   test("users are saved as one-way codes, never IPs (old IP entries converted)", () => {
@@ -1784,7 +1751,7 @@ describe("stable install links", () => {
     const before = (await stats()).history[0].reinstalls || 0;
     const edit = await request(app).post("/api/link")
       .send({ t: "m3u", m: "http://stable.example.com/b.m3u", g: JSON.stringify(["Sport"]), editing: link });
-    expect(edit.body).toEqual({ config: link, updated: true, app: null });
+    expect(edit.body).toEqual({ config: link, updated: true });
     expect((await stats()).history[0].reinstalls).toBe(before + 1);
 
     expect(await names(link)).toEqual(["Sport One"]);
@@ -1800,56 +1767,13 @@ describe("stable install links", () => {
 
     const res = await request(app).post("/api/link")
       .send({ t: "m3u", m: "http://stable.example.com/c.m3u", g: JSON.stringify(["News"]), editing: old });
-    expect(res.body).toEqual({ config: old, updated: true, app: null });
+    expect(res.body).toEqual({ config: old, updated: true });
     expect(await names(old)).toEqual(["News One"]);
     expect((await request(app).get(`/api/config/${old}`)).body.categories).toEqual(["News"]);
 
     // a second edit updates the same override
     await request(app).post("/api/link").send({ t: "m3u", m: "http://stable.example.com/c.m3u", editing: old });
     expect(await names(old)).toEqual(["News One", "Sport One"]);
-  });
-
-  test("/stats lists the addon requests' User-Agents once each, with the app we detected", async () => {
-    const link = (await request(app).post("/api/link").send({ t: "m3u", m: "http://agents.example.com/a.m3u" })).body.config;
-    await request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", "okhttp/4.12.0");
-    await request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", "okhttp/4.12.0");
-    await request(app).get(`/${link}/manifest.json`).set("User-Agent", "Nuvio/1.1.0-beta.7");
-    const agents = (await request(app).get("/stats")).body.recentAgents;
-    expect(agents.filter(a => a.userAgent === "okhttp/4.12.0")).toEqual([expect.objectContaining({ app: null, route: "catalog" })]);
-    expect(agents[0]).toMatchObject({ userAgent: "Nuvio/1.1.0-beta.7", app: "Nuvio", route: "manifest.json" });
-    expect(JSON.stringify(agents)).not.toContain(link);
-  });
-
-  test("after a save the page is told which app to restart: the last one that used the link", async () => {
-    const make = async (m) => (await request(app).post("/api/link").send({ t: "m3u", m })).body.config;
-    const save = async (link) => (await request(app).post("/api/link").send({ t: "m3u", m: "http://apps.example.com/x.m3u", editing: link })).body;
-    const visit = (link, ua) => request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", ua);
-
-    const nuvio = await make("http://apps.example.com/n.m3u");
-    await visit(nuvio, "Nuvio/1.1.0-beta.7");
-    expect(await save(nuvio)).toMatchObject({ updated: true, app: "Nuvio" });
-
-    const stremio = await make("http://apps.example.com/s.m3u");
-    await visit(stremio, "Mozilla/5.0 Stremio/5.0");
-    expect((await save(stremio)).app).toBe("Stremio");
-
-    const both = await make("http://apps.example.com/b.m3u");
-    await visit(both, "Nuvio/1.0 (webOS)");
-    await visit(both, "Stremio/4.4");
-    expect((await save(both)).app).toBe("Stremio");
-    await visit(both, "Nuvio/1.0 (webOS)");
-    expect((await save(both)).app).toBe("Nuvio");
-
-    // unknown apps, the configure page itself (/api) and the player (/play) teach nothing
-    const unknown = await make("http://apps.example.com/u.m3u");
-    await visit(unknown, "okhttp/5.3.2");
-    await request(app).get(`/api/config/${unknown}`).set("User-Agent", "Nuvio/1.0");
-    expect((await save(unknown)).app).toBeNull();
-
-    // older links too
-    const old = (await request(app).post("/api/encrypt").send({ t: "m3u", m: "http://apps.example.com/o.m3u" })).body.config;
-    await visit(old, "Nuvio/1.1.0");
-    expect(await save(old)).toMatchObject({ config: old, updated: true, app: "Nuvio" });
   });
 
   test("an editing value that isn't a real StreamVault link can't store anything", async () => {

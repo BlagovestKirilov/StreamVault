@@ -167,7 +167,6 @@ let stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
-  userApps: {},     // { "<user key>": "stremio" | "nuvio" } — the app the user last loaded channels with
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
@@ -186,18 +185,16 @@ function toUserKeys(list) {
   return new Set((list || []).map(v => (USER_KEY_RE.test(v) ? v : userKey(v))));
 }
 
-let savedLinkApps = []; // restored into linkApps once it exists (below)
 try {
   const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
   stats = { ...saved, users: toUserKeys(saved.users) };
-  if (Array.isArray(saved.linkApps)) savedLinkApps = saved.linkApps;
+  // App tracking was removed: drop its saved data (everything else is kept)
   delete stats.linkApps;
+  delete stats.userApps;
+  delete stats.installsByApp;
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
-  delete stats.installsByApp; // replaced by userApps
-  stats.userApps = Object.fromEntries(Object.entries(saved.userApps || {})
-    .filter(([user, app]) => USER_KEY_RE.test(user) && (app === "stremio" || app === "nuvio")));
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.history) stats.history = {};
@@ -223,8 +220,6 @@ function saveStatsData() {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
-  // Apps only for users still tracked
-  stats.userApps = Object.fromEntries(Object.entries(stats.userApps).filter(([user]) => stats.users.has(user)));
   // Keep 90 days of per-day rows; freeze each day's unique-user counts into its
   // row so they survive after the per-day lists (30 days) are dropped
   const historyCutoff = new Date();
@@ -238,7 +233,6 @@ function saveStatsData() {
   return {
     ...stats, users: [...stats.users],
     dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
-    linkApps: [...linkApps],
   };
 }
 
@@ -278,8 +272,6 @@ const recentUnconfigured = [];  // requests from installs without settings (+ wh
 const recentPlayRejects = [];   // /play redirects refused, and which check failed
 const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
 const recentTestFailures = [];  // failed Test Connections: error + address shape (private parts hidden)
-// Addon requests' User-Agents, one entry per distinct UA (to teach appFromUserAgent new apps)
-const recentAgents = new Map();
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)
 function userAgent(req) {
@@ -855,7 +847,6 @@ function extractConfig(req, res, next) {
     const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
     req.configRevision = saved ? saved.revision : 0;
-    noteApp(req);
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
       return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
@@ -886,57 +877,6 @@ function brokenLinkAnswer(req) {
   }
   if (route.includes("/stream/")) return { streams: id === "iptv_notice_setup" ? [SETUP_PLAY_STREAM] : [] };
   return null;
-}
-
-// --- Which app uses an install link (for "Restart Nuvio/Stremio" after a save) ---
-// Link fingerprint -> the last app ("Nuvio" | "Stremio") that loaded channels with it.
-// Configure is opened from inside that app, so the last one is the one to talk about.
-// Learned from the app's own catalog/meta/stream requests; the configure page
-// itself opens in a browser that doesn't say which app sent it there.
-const LINK_APPS_MAX = 50_000; // ~100 bytes each → a few MB at most
-const linkApps = new Map();
-
-function appFromUserAgent(ua) {
-  if (/nuvio/i.test(ua)) return "Nuvio";
-  // Nuvio TV on Samsung runs in the TV's browser (no "Nuvio" in its User-Agent);
-  // Stremio has no Samsung (Tizen) app, so a Tizen request is Nuvio
-  if (/tizen/i.test(ua)) return "Nuvio";
-  if (/stremio/i.test(ua)) return "Stremio";
-  return null; // okhttp, browsers, players… — unknown
-}
-
-// One-way key per install link: the map is saved in stats.json, which must never
-// hold usable links (a stable link id opens that user's settings)
-const linkKey = (link) => crypto.createHash("sha256").update(link).digest("base64");
-
-// Survives restarts/deploys (saved with the stats); only known values come back
-// (an old "both" is dropped — the next request records that link's app again)
-for (const [key, app] of savedLinkApps.slice(-LINK_APPS_MAX)) {
-  if (typeof key === "string" && (app === "Nuvio" || app === "Stremio")) linkApps.set(key, app);
-}
-
-// Records the app for this link and for this user (the last one wins)
-function noteApp(req) {
-  // Addon requests only: /api/* comes from the configure page, /play from the player
-  if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
-  const app = appFromUserAgent(String(req.get("user-agent") || ""));
-  const ua = userAgent(req);
-  setCapped(recentAgents, ua, { at: new Date().toISOString(), userAgent: ua, app, route: req.path.split("/")[2] }, MAX_RECENT_ERRORS);
-  if (!app) return; // unknown app: keep what we knew
-  setCapped(linkApps, linkKey(req.params.config), app, LINK_APPS_MAX);
-  stats.userApps[userKey(getIp(req))] = app.toLowerCase();
-}
-
-/** Users by the app they last used; users not seen since this was added are "other" */
-function usersByApp() {
-  const counts = { stremio: 0, nuvio: 0, other: 0 };
-  for (const user of stats.users) counts[stats.userApps[user] || "other"]++;
-  return counts;
-}
-
-/** The last app ("Nuvio" / "Stremio") that used this link, else null */
-function appForLink(link) {
-  return (link && linkApps.get(linkKey(link))) || null;
 }
 
 // --- Serve configuration page for Stremio ---
@@ -1082,11 +1022,10 @@ app.post("/api/link", limitConfig, (req, res) => {
       stats.reinstalls++;
       countToday("reinstalls");
     }
-    // app: which app to tell the user to restart (null = say "your app")
     if (linkStore.isId(editing)) {
-      if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true, app: appForLink(editing) });
+      if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true });
     } else if (editing && isUsableOldLink(editing) && linkStore.setOverride(editing, encrypted)) {
-      return res.json({ config: editing, updated: true, app: appForLink(editing) });
+      return res.json({ config: editing, updated: true });
     }
     const id = linkStore.create(encrypted);
     res.json({ config: id || "e-" + encrypted, updated: false });
@@ -1122,10 +1061,10 @@ app.get("/api/config/:config", limitConfig, extractConfig, (req, res) => {
   if (c.type === "xtream") {
     return res.json({
       type: "xtream", server: c.server, username: c.username, password: c.password,
-      categories: (c.country || "").split(",").filter(Boolean), app: appForLink(req.params.config),
+      categories: (c.country || "").split(",").filter(Boolean),
     });
   }
-  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [], app: appForLink(req.params.config) });
+  res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
 });
 
 // Why an Xtream account can't be used, or null when it looks fine / is unknown
@@ -1647,7 +1586,6 @@ app.get("/stats", limitStats, (req, res) => {
     searches: stats.searches,
     configType: stats.configType,
     installsByType: stats.installsByType,
-    usersByApp: usersByApp(),
     avgStreamsPerUser,
     dailyActiveUsers: last7,
     // Unique users per day who opened a channel and got something to play
@@ -1688,7 +1626,6 @@ app.get("/stats", limitStats, (req, res) => {
     recentPlayRejects,
     recentBadLinks,
     recentTestFailures,
-    recentAgents: [...recentAgents.values()].reverse(),
   });
 });
 
@@ -2618,7 +2555,6 @@ function buildMetricsText() {
   cache("accounts", accountCache.size, XTREAM_CACHE_MAX);
   cache("epg", epgCache.size, EPG_CACHE_MAX);
   cache("genres", genresCache.size, GENRES_CACHE_MAX);
-  cache("link_apps", linkApps.size, LINK_APPS_MAX);
   g("failed_providers", "Providers in the 2-minute failure cache", [...failCache.values()].filter(f => f.until > Date.now()).length);
   g("downloads_running", "Big provider downloads running now", downloadsRunning);
   g("downloads_capacity", "Big provider downloads allowed at once", MAX_PARALLEL_DOWNLOADS);
@@ -2634,9 +2570,6 @@ function buildMetricsText() {
   c("streams_total", "Stream requests since the start", stats.streams);
   c("searches_total", "Searches since the start", stats.searches);
   g("unique_users", "Unique users since the start", stats.users.size);
-  for (const [app, n] of Object.entries(usersByApp())) {
-    g("users_by_app", "Users by the app they last loaded channels with (other = not seen since this was added, or unknown app)", n, { app });
-  }
   for (const [type, n] of Object.entries(stats.streamsByType || {})) {
     c("streams_by_type_total", "Stream requests by type since the start", n, { type });
   }

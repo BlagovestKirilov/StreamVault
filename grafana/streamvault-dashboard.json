@@ -1080,165 +1080,6 @@
       "description": "Orange for 10 minutes after a restart/deploy"
     },
     {
-      "type": "stat",
-      "title": "Users on Stremio",
-      "id": 57,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_users_by_app{app=\"stremio\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
-    },
-    {
-      "type": "stat",
-      "title": "Users on Nuvio",
-      "id": 58,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_users_by_app{app=\"nuvio\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
-    },
-    {
-      "type": "stat",
-      "title": "Users on Other / not seen yet",
-      "id": 59,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_users_by_app{app=\"other\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Users by the app they last loaded channels or played with (updated on every request, a switch moves the user). \"Other\" = not seen since this was added, or an unknown app."
-    },
-    {
       "type": "row",
       "title": "Server health",
       "id": 21,
@@ -1247,7 +1088,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 13
       },
       "panels": []
     },
@@ -1263,7 +1104,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 14
       },
       "targets": [
         {
@@ -1348,7 +1189,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 14
       },
       "targets": [
         {
@@ -1427,7 +1268,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 14
       },
       "targets": [
         {
@@ -1473,7 +1314,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 22
       },
       "panels": []
     },
@@ -1489,7 +1330,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 23
       },
       "targets": [
         {
@@ -1842,7 +1683,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 23
       },
       "targets": [
         {
@@ -2196,7 +2037,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 31
       },
       "targets": [
         {
@@ -2305,7 +2146,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 31
       },
       "targets": [
         {
@@ -2380,7 +2221,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 39
       },
       "panels": []
     },
@@ -2396,7 +2237,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 40
       },
       "targets": [
         {
@@ -2555,7 +2396,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 40
       },
       "targets": [
         {
@@ -2630,7 +2471,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 48
       },
       "targets": [
         {
@@ -2704,7 +2545,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 48
       },
       "targets": [
         {
@@ -2757,7 +2598,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 56
       },
       "panels": []
     },
@@ -2773,7 +2614,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 57
       },
       "targets": [
         {
@@ -2821,7 +2662,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 57
       },
       "targets": [
         {
@@ -2865,7 +2706,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 65
       },
       "panels": []
     },
@@ -2881,7 +2722,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 66
       },
       "targets": [
         {
@@ -3004,7 +2845,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 66
       },
       "targets": [
         {
@@ -3075,7 +2916,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 74
       },
       "panels": []
     },
@@ -3091,7 +2932,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 75
       },
       "targets": [
         {
@@ -3165,7 +3006,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 75
       },
       "targets": [
         {
@@ -3239,7 +3080,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 83
       },
       "targets": [
         {
@@ -3312,7 +3153,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 83
       },
       "targets": [
         {
@@ -3387,7 +3228,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 91
       },
       "targets": [
         {
@@ -3461,7 +3302,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 91
       },
       "targets": [
         {
@@ -3534,7 +3375,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 99
       },
       "targets": [
         {
@@ -3603,7 +3444,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 111
+        "y": 107
       },
       "panels": []
     },
@@ -3619,7 +3460,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 112
+        "y": 108
       },
       "targets": [
         {
@@ -3759,7 +3600,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 112
+        "y": 108
       },
       "targets": [
         {
@@ -3816,7 +3657,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 120
+        "y": 116
       },
       "targets": [
         {
@@ -3865,7 +3706,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 120
+        "y": 116
       },
       "targets": [
         {
@@ -3975,7 +3816,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 120
+        "y": 116
       },
       "targets": [
         {
@@ -4032,7 +3873,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 128
+        "y": 124
       },
       "targets": [
         {
@@ -4080,7 +3921,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 128
+        "y": 124
       },
       "targets": [
         {
