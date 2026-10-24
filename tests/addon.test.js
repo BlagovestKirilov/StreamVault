@@ -1501,13 +1501,13 @@ describe("per-day error codes", () => {
 
   test("StreamVault's own error responses are counted by status (400, 404, 429)", async () => {
     const before = await row();
-    await request(app).get("/garbage/manifest.json");                 // 400 invalid config
+    await request(app).get("/api/config/garbage");                    // 400 invalid config
     await request(app).get("/api/nope");                              // 404
     const ip = "203.0.113.40";
     for (let i = 0; i < 11; i++) await request(app).post("/api/test").set("Fly-Client-IP", ip).send({ type: "m3u" }); // 10×400 + 429
     const after = await row();
     const diff = (where, code) => n(after.responseErrors, where, code) - n(before.responseErrors, where, code);
-    expect(diff("GET /:config/manifest.json", "400")).toBe(1);
+    expect(diff("GET /api/config/:config", "400")).toBe(1);
     expect(diff("POST /api/test", "400")).toBe(10);
     expect(diff("POST /api/test", "429")).toBe(1);
     expect(diff("unknown path", "404")).toBe(1);
@@ -1748,12 +1748,13 @@ describe("stable install links", () => {
     expect(res.body.config).toMatch(/^s-/); // a normal new link instead
   });
 
-  test("a stable link that doesn't exist is refused clearly", async () => {
+  test("a stable link that doesn't exist: the app gets the setup tile, the configure page a clear error", async () => {
     const res = await request(app).get("/s-zzzzzzzzzzzz/catalog/tv/iptv_live.json");
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/no longer exists/);
+    expect(res.status).toBe(200);
+    expect(res.body.metas).toEqual([expect.objectContaining({ id: "iptv_notice_setup" })]);
     const prefill = await request(app).get("/api/config/s-zzzzzzzzzzzz");
     expect(prefill.status).toBe(400);
+    expect(prefill.body.error).toMatch(/no longer exists/);
   });
 
   test("opening Configure from an installed StreamVault counts as a reconfigure", async () => {
@@ -2625,13 +2626,29 @@ describe("API endpoints", () => {
     expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
   });
 
-  test("GET /:config/manifest.json rejects invalid config", async () => {
+  test("a broken install link in an app is answered like an install without settings (setup tile)", async () => {
     const config = { t: "xtream", s: "", u: "", p: "", c: "" };
     const encoded = Buffer.from(JSON.stringify(config)).toString("base64")
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const res = await request(app).get(`/${encoded}/manifest.json`);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBeDefined();
+    const bad = `/${encoded}`;
+
+    const man = await request(app).get(`${bad}/manifest.json`);
+    expect(man.status).toBe(200);
+    expect(man.body.behaviorHints.configurationRequired).toBe(true); // the bare "Not connected yet" manifest
+    const cat = await request(app).get(`${bad}/catalog/tv/iptv_live.json`);
+    expect(cat.body.metas).toEqual([expect.objectContaining({ id: "iptv_notice_setup" })]);
+    expect((await request(app).get(`${bad}/catalog/tv/iptv_live/skip=100.json`)).body.metas).toEqual([]);
+    expect((await request(app).get(`${bad}/meta/tv/iptv_notice_setup.json`)).body.meta.id).toBe("iptv_notice_setup");
+    expect((await request(app).get(`${bad}/meta/movie/tt0111161.json`)).body.meta.name).toBe("Unknown"); // not ours
+    const play = (await request(app).get(`${bad}/stream/tv/iptv_notice_setup.json`)).body.streams;
+    expect(play[0].externalUrl).toMatch(/\/setup\?via=play$/);
+    expect((await request(app).get(`${bad}/stream/tv/iptv_tv_1.json`)).body.streams).toEqual([]);
+
+    // the configure page and /play still get errors; the bad link is still listed in /stats
+    expect((await request(app).get(`/api/config${bad}`)).status).toBe(400);
+    expect((await request(app).get(`/play${bad}/live/1/ts/x`)).status).toBe(400);
+    const recent = (await request(app).get("/stats")).body.recentBadLinks;
+    expect(recent[0]).toMatchObject({ reason: "install link has no Xtream server/login" });
   });
 
   test("GET /configure serves HTML", async () => {

@@ -821,6 +821,8 @@ function extractConfig(req, res, next) {
     if (!req.path.startsWith("/play/")) {
       noteRecent(recentBadLinks, { route: req.route ? req.route.path : maskPath(req.path), reason, userAgent: userAgent(req) });
     }
+    const setupAnswer = brokenLinkAnswer(req);
+    if (setupAnswer) return res.json(setupAnswer);
     res.status(400).json({ error });
   };
   try {
@@ -846,6 +848,24 @@ function extractConfig(req, res, next) {
   } catch (e) {
     refuse("install link can't be read", "Invalid configuration.");
   }
+}
+
+// A broken install link opened by an app (manifest/catalog/meta/stream): answered
+// like an install without settings — the "Set up StreamVault first" tile says what
+// to do, instead of an error the app retries silently (one Nuvio retried hourly).
+// The configure page (/api/config) and /play keep their error responses.
+function brokenLinkAnswer(req) {
+  const route = req.route?.path || "";
+  const { type, id } = req.params;
+  if (route.endsWith("/manifest.json")) return BASE_MANIFEST;
+  if (route.includes("/catalog/")) {
+    return { metas: /(^|&)skip=[1-9]/.test(req.params.extra || "") ? [] : [noticeMeta("setup", type)] };
+  }
+  if (route.includes("/meta/")) {
+    return isBareForeign(type, id) ? { meta: { id, type, name: "Unknown" } } : { meta: noticeMeta("setup", type) };
+  }
+  if (route.includes("/stream/")) return { streams: id === "iptv_notice_setup" ? [SETUP_PLAY_STREAM] : [] };
+  return null;
 }
 
 // --- Which app uses an install link (for "Restart Nuvio/Stremio" after a save) ---
@@ -1645,11 +1665,7 @@ app.get("/meta/:type/:id.json", limitAddon, (req, res) => {
 });
 app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
   if (isBareForeign(req.params.type, req.params.id)) return answerForeign(res, { streams: [] });
-  // Play on the setup tile opens the setup page in the browser — on a phone
-  // the QR can't be scanned, so this is the way through
-  const streams = req.params.id === "iptv_notice_setup"
-    ? [{ name: "StreamVault", title: "Open setup page", externalUrl: `${SETUP_URL}?via=play` }]
-    : [];
+  const streams = req.params.id === "iptv_notice_setup" ? [SETUP_PLAY_STREAM] : [];
   serveUnconfigured(req, res, { streams });
 });
 
@@ -1835,6 +1851,9 @@ function classifyError(e) {
 }
 
 const SETUP_URL = "https://streamvault.fly.dev/setup";
+// Play on the setup tile opens the setup page in the browser — on a phone the QR
+// can't be scanned, so this is the way through
+const SETUP_PLAY_STREAM = { name: "StreamVault", title: "Open setup page", externalUrl: `${SETUP_URL}?via=play` };
 // ?v= changes when the picture does (/public is cached for 7 days)
 const SETUP_QR_URL = "https://streamvault.fly.dev/public/img/setup-qr.png?v=2";
 // Wide detail-page background: QR on the right, left kept dark for the app's
