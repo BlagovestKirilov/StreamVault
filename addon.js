@@ -167,6 +167,7 @@ let stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
+  installsByApp: { stremio: 0, nuvio: 0, other: 0 }, // from the installing app's User-Agent
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
@@ -194,6 +195,8 @@ try {
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
+  // Installs from before the app was recorded count as "other"
+  if (!stats.installsByApp) stats.installsByApp = { stremio: 0, nuvio: 0, other: stats.installs || 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.history) stats.history = {};
@@ -1487,6 +1490,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
     stats.users.add(user);
     stats.installs++;
     countToday("installs");
+    stats.installsByApp[appFromUserAgent(String(req.get("user-agent") || ""))?.toLowerCase() || "other"]++;
   }
   // Track config type and daily active
   const cType = req.userConfig.type;
@@ -1626,6 +1630,7 @@ app.get("/stats", limitStats, (req, res) => {
     searches: stats.searches,
     configType: stats.configType,
     installsByType: stats.installsByType,
+    installsByApp: stats.installsByApp,
     avgStreamsPerUser,
     dailyActiveUsers: last7,
     // Unique users per day who opened a channel and got something to play
@@ -2610,6 +2615,9 @@ function buildMetricsText() {
   c("streams_total", "Stream requests since the start", stats.streams);
   c("searches_total", "Searches since the start", stats.searches);
   g("unique_users", "Unique users since the start", stats.users.size);
+  for (const [app, n] of Object.entries(stats.installsByApp)) {
+    c("installs_by_app_total", "Installs by app (stremio / nuvio / other = unknown or before it was recorded)", n, { app });
+  }
   for (const [type, n] of Object.entries(stats.streamsByType || {})) {
     c("streams_by_type_total", "Stream requests by type since the start", n, { type });
   }

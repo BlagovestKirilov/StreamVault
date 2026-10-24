@@ -1638,6 +1638,25 @@ describe("stats file saving", () => {
     expect(row.responseErrors).toEqual({ "unknown path": { "404": 1 } });
   });
 
+  test("installs by app: earlier installs count as other, new ones by the installing app", () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({ installs: 5, users: [], history: {} }));
+    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/apps.m3u" })).toString("base64").replace(/=+$/, "");
+    const r = run(dir, `
+      const r = require('supertest'); const { app } = require('./addon');
+      const m3u = require('./m3u'); m3u.parseM3UGroups = async () => [];
+      const install = (ip, ua) => r(app).get('/${cfg}/manifest.json').set('Fly-Client-IP', ip).set('User-Agent', ua);
+      install('198.51.100.1', 'Stremio/4.4')
+        .then(() => install('198.51.100.1', 'Stremio/4.4'))    // same user again: not a new install
+        .then(() => install('198.51.100.2', 'NuvioTV/1.0'))
+        .then(() => install('198.51.100.3', 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0)'))
+        .then(() => install('198.51.100.4', 'okhttp/4.12'))
+        .then(() => r(app).get('/stats'))
+        .then(x => { console.log(JSON.stringify(x.body.installsByApp)); process.exit(0); });
+    `);
+    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ stremio: 1, nuvio: 2, other: 5 + 1 });
+  });
+
   test("users are saved as one-way codes, never IPs (old IP entries converted)", () => {
     const dir = tmpDir();
     const today = new Date().toISOString().slice(0, 10);

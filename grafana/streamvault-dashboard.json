@@ -1080,6 +1080,165 @@
       "description": "Orange for 10 minutes after a restart/deploy"
     },
     {
+      "type": "stat",
+      "title": "Installs: Stremio (all time)",
+      "id": 57,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_installs_by_app_total{app=\"stremio\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+    },
+    {
+      "type": "stat",
+      "title": "Installs: Nuvio (all time)",
+      "id": 58,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_installs_by_app_total{app=\"nuvio\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+    },
+    {
+      "type": "stat",
+      "title": "Installs: Other / before tracking (all time)",
+      "id": 59,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_installs_by_app_total{app=\"other\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "New installs by the app that installed StreamVault (its User-Agent). \"Other\" = unknown app or installed before the app was recorded."
+    },
+    {
       "type": "row",
       "title": "Server health",
       "id": 21,
@@ -1088,7 +1247,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 17
       },
       "panels": []
     },
@@ -1104,7 +1263,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1189,7 +1348,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1268,7 +1427,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1314,7 +1473,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 26
       },
       "panels": []
     },
@@ -1330,7 +1489,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 23
+        "y": 27
       },
       "targets": [
         {
@@ -1683,7 +1842,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 23
+        "y": 27
       },
       "targets": [
         {
@@ -2037,7 +2196,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 35
       },
       "targets": [
         {
@@ -2146,7 +2305,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 35
       },
       "targets": [
         {
@@ -2221,7 +2380,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 43
       },
       "panels": []
     },
@@ -2237,7 +2396,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {
@@ -2396,7 +2555,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {
@@ -2471,7 +2630,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 52
       },
       "targets": [
         {
@@ -2545,7 +2704,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 52
       },
       "targets": [
         {
@@ -2598,7 +2757,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 60
       },
       "panels": []
     },
@@ -2614,7 +2773,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 61
       },
       "targets": [
         {
@@ -2662,7 +2821,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 61
       },
       "targets": [
         {
@@ -2706,7 +2865,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 69
       },
       "panels": []
     },
@@ -2722,7 +2881,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 70
       },
       "targets": [
         {
@@ -2845,7 +3004,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 66
+        "y": 70
       },
       "targets": [
         {
@@ -2916,7 +3075,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 78
       },
       "panels": []
     },
@@ -2932,7 +3091,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -3006,7 +3165,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -3080,7 +3239,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -3153,7 +3312,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -3228,7 +3387,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -3302,7 +3461,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -3375,7 +3534,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 103
       },
       "targets": [
         {
@@ -3444,7 +3603,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 107
+        "y": 111
       },
       "panels": []
     },
@@ -3460,7 +3619,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -3600,7 +3759,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -3657,7 +3816,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3706,7 +3865,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3816,7 +3975,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3873,7 +4032,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 124
+        "y": 128
       },
       "targets": [
         {
@@ -3921,7 +4080,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 124
+        "y": 128
       },
       "targets": [
         {
