@@ -10,35 +10,39 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { ROOT, safeError, userAgent, parseExtra, maskPath, withinMs } = require("./util");
 const {
-  encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
-  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin,
+  encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted, settingsFromBase64,
+  configFromQueryString, isPlaylistLink, normalizeXtreamLogin,
 } = require("./configlink");
 const {
   STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, todayKey, countToday, countCode,
-  providerErrorKey, noteRecent, saveStats, saveStatsSync,
-  recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured, recentPlayRejects,
-  recentBadLinks, recentTestFailures,
+  providerErrorKey, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
+  recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
-  m3uCache, M3U_CACHE_MAX, xtreamCache, XTREAM_CACHE_TTL, XTREAM_CACHE_MAX, ACCOUNT_CACHE_TTL,
-  ACCOUNT_RETRY_MS, XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache,
-  accountCache, setCapped, touch, inflight, once, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow,
-  downloadQueue, withDownloadSlot, failCache, withFailureCache, handleProviderError, usableEntry,
-  m3uCacheKey, getCachedM3U, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory,
+  m3uCache, M3U_CACHE_MAX, xtreamCache, XTREAM_CACHE_MAX, EPG_CACHE_MAX, epgCache, accountCache,
+  setCapped, touch, inflight, once, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow, downloadQueue,
+  withDownloadSlot, failCache, handleProviderError, HEAP_WARN_MB, HEAP_CRIT_MB, memStats,
+  checkMemory,
 } = require("./cache");
 const {
   NOTICES, classifyError, SETUP_PLAY_STREAM, noticeMeta, ACCOUNT_WAIT_MS, accountNotice,
   accountProblem,
 } = require("./notices");
+const {
+  xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, forceRefresh, getXtreamMeta,
+  getXtreamStreams,
+} = require("./xtream-addon");
+const { getM3UCatalog, getM3UMeta, getM3UStreams } = require("./m3u-addon");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 const {
-  makePosterUrl, channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels,
-  catalogMeta, normalizeForSearch,
+  makePosterUrl, cleanName, catalogView, catalogMeta, normalizeForSearch,
 } = require("./catalog");
 const STATS_SECRET = process.env.STATS_SECRET || "";
 
-const { isPrivateIp, validateExternalUrl, isExternalUrlSyntax, trimTrailingSlashes } = require("./urlguard");
+const {
+  isPrivateIp, validateExternalUrl, isExternalUrlSyntax, trimTrailingSlashes,
+} = require("./urlguard");
 
 const compression = require("compression");
 
@@ -114,7 +118,9 @@ app.get("/health", (_req, res) => {
 });
 
 // --- Client IP + per-IP limits (see ratelimit.js) ---
-const { getIp, maskIp, rateLimit } = require("./ratelimit");
+const {
+  getIp, maskIp, rateLimit,
+} = require("./ratelimit");
 const MINUTE = 60 * 1000;
 const limitProviderChecks = rateLimit("provider-check", 10, MINUTE); // each downloads from the provider
 const limitConfig = rateLimit("config", 30, MINUTE);
@@ -1108,388 +1114,7 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
   res.redirect(302, url);
 });
 
-// --- Xtream Codes handlers ---
-
-function xtreamCacheKey(config, type, categoryIds) {
-  return `${config.server}_${config.username}_${type}_${categoryIds.join(",")}`;
-}
-
-function xtreamCategoryIds(config) {
-  return (config.country || "").split(",").filter(Boolean);
-}
-
-async function getXtreamCatalog(config, type) {
-  // Only live TV channels are supported
-  if (type !== "tv") return [];
-
-  const categoryIds = xtreamCategoryIds(config);
-  const cacheKey = xtreamCacheKey(config, type, categoryIds);
-  const load = () => once(`xtream:${cacheKey}`, () =>
-    withFailureCache(`xtream:${cacheKey}`, () => loadXtreamCatalog(config, type, categoryIds, cacheKey)));
-  const cached = usableEntry(touch(xtreamCache, cacheKey), XTREAM_CACHE_TTL, XTREAM_STALE_MS, load);
-  return cached ? cached.data : load();
-}
-
-async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
-  // Category names (for the genre filter) are fetched alongside; failure just means no genres
-  const categoriesPromise = xtream.getLiveCategories(config).catch(() => []);
-  // One download slot per catalog load (a user's selected categories together)
-  let items = await withDownloadSlot(async () => {
-    if (categoryIds.length === 0) return xtream.getLiveStreams(config);
-    const results = await Promise.all(categoryIds.map(catId => xtream.getLiveStreams(config, catId)));
-    return results.filter(Array.isArray).flat();
-  });
-  const categories = await categoriesPromise;
-
-  // Guard: API may return an object/error instead of an array
-  if (!Array.isArray(items)) items = [];
-
-  const categoryNames = new Map(
-    (Array.isArray(categories) ? categories : []).map(c => [String(c.category_id), c.category_name])
-  );
-
-  const result = items.map((item) => {
-    const name = item.name || item.title || "Unknown";
-    const logo = item.stream_icon || item.cover || "";
-    const category = categoryNames.get(String(item.category_id));
-    // Cached as the raw logo; the (much longer) poster link is built only for the
-    // channels actually sent — see catalogMeta() — so the cache stays small
-    const meta = {
-      id: `iptv_${type}_${item.stream_id}`,
-      type: type,
-      name: name,
-      logo,
-    };
-    if (category) meta.genres = [category];
-    return meta;
-  });
-  sortChannels(result, categoryIds.map(id => categoryNames.get(id)).filter(Boolean));
-
-  setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
-  return result;
-}
-
-// "HH:MM - HH:MM" in the viewer's timezone (captured by the configure page).
-// Older installs have no timezone → fall back to the provider's local strings.
-function epgTimeRange(e, timezone) {
-  const startTs = Number(e.start_timestamp);
-  const endTs = Number(e.stop_timestamp || e.end_timestamp);
-  if (!timezone || !startTs || !endTs) return providerTimeRange(e);
-  try {
-    const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone });
-    return `${fmt.format(startTs * 1000)} - ${fmt.format(endTs * 1000)}`;
-  } catch (_) {
-    return providerTimeRange(e); // invalid timezone: use the provider's own times
-  }
-}
-
-// "HH:MM - HH:MM" as the provider wrote it (its local time)
-function providerTimeRange(e) {
-  const start = e.start || "";
-  const end = e.end || "";
-  return start && end ? `${start.slice(11, 16)} - ${end.slice(11, 16)}` : "";
-}
-
-// Account info (expiry) for channel pages and the expiry notice — tiny request
-async function getXtreamAccount(config) {
-  const key = `${config.server}_${config.username}`;
-  const entry = touch(accountCache, key);
-  const load = () => once(`account:${key}`, async () => {
-    const info = await xtream.getAccountInfo(config).catch(() => null);
-    setCapped(accountCache, key, { data: info, ts: Date.now() }, XTREAM_CACHE_MAX);
-    return info;
-  });
-  const ttl = entry?.data ? ACCOUNT_CACHE_TTL : ACCOUNT_RETRY_MS;
-  const cached = usableEntry(entry, ttl, ACCOUNT_STALE_MS, load);
-  return cached ? cached.data : load();
-}
-
-// "Save changes" on the configure page: forget this setup's cached channel list
-// (and Xtream account, and a remembered provider failure) so the next request
-// downloads them fresh — new channels show at once instead of after the TTL.
-// At most once per FORCED_REFRESH_MS per setup: each reload is a full download.
-const FORCED_REFRESH_MS = 2 * 60 * 1000;
-const forcedRefreshes = new Map(); // cache key -> last forced refresh (ms)
-function forceRefresh(config) {
-  const key = config.type === "xtream"
-    ? xtreamCacheKey(config, "tv", xtreamCategoryIds(config))
-    : m3uCacheKey(config);
-  const last = forcedRefreshes.get(key);
-  if (!key || (last && Date.now() - last < FORCED_REFRESH_MS)) return false;
-  setCapped(forcedRefreshes, key, Date.now(), 1000);
-  if (config.type === "xtream") {
-    xtreamCache.delete(key);
-    failCache.delete(`xtream:${key}`);
-    accountCache.delete(`${config.server}_${config.username}`);
-  } else {
-    m3uCache.delete(key);
-    failCache.delete(`m3u:${key}`);
-  }
-  return true;
-}
-
-// TV guide listings for one channel (see EPG_CACHE_TTL); failures aren't kept
-async function getCachedEPG(config, streamId) {
-  const key = `${trimTrailingSlashes(config.server)}_${streamId}`;
-  const cached = touch(epgCache, key);
-  if (cached && Date.now() - cached.ts < EPG_CACHE_TTL) return cached.data;
-  return once(`epg:${key}`, async () => {
-    const data = await xtream.getShortEPG(config, streamId);
-    setCapped(epgCache, key, { data, ts: Date.now() }, EPG_CACHE_MAX);
-    return data;
-  });
-}
-
-// "🗓 Subscription expires 2026-12-01" for the channel page, or "" when unknown
-function subscriptionLine(info) {
-  if (!info || typeof info !== "object") return "";
-  const status = String(info.status || "").trim().toLowerCase();
-  if (status !== "" && status !== "active") return `⚠️ Your IPTV account is ${status.slice(0, 20)}`;
-  const exp = Number(info.exp_date);
-  if (!Number.isFinite(exp) || exp <= 0) return ""; // missing/invalid date → nothing to show
-  const date = new Date(exp * 1000).toISOString().slice(0, 10);
-  return exp * 1000 < Date.now() ? `⚠️ Subscription expired on ${date}` : `🗓 Subscription expires ${date}`;
-}
-
-// The programme on now and the one after it, by the provider's timestamps (some
-// panels start the list at the next show, some include ended ones). Without
-// usable timestamps: the first two entries as sent.
-function nowAndNext(listings, nowSec) {
-  const start = (e) => Number(e.start_timestamp);
-  const end = (e) => Number(e.stop_timestamp || e.end_timestamp);
-  const timed = listings.filter(e => start(e) > 0 && end(e) > 0).toSorted((a, b) => start(a) - start(b));
-  if (timed.length === 0) return { now: listings[0], next: listings[1] };
-  const now = timed.find(e => start(e) <= nowSec && nowSec < end(e));
-  const next = timed.find(e => start(e) >= (now ? end(now) : nowSec));
-  return { now, next };
-}
-
-// Channel page guide: "▶ Now 20:00 - 21:00 News" and "Next 21:00 - 22:00 Film"
-// (titles only, times in the viewer's zone); "" when there's nothing to show
-function guideLines(listings, timezone) {
-  if (!listings?.length) return "";
-  const { now, next } = nowAndNext(listings, Date.now() / 1000);
-  const line = (e) => {
-    const time = epgTimeRange(e, timezone);
-    const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
-    return `${time ? time + " " : ""}${title}`;
-  };
-  return [now && `▶ Now ${line(now)}`, next && `Next ${line(next)}`].filter(Boolean).join("\n");
-}
-
-async function getXtreamMeta(config, type, id) {
-  // Only live TV channels are supported
-  if (type !== "tv") return null;
-
-  const streamId = id.replace(`iptv_${type}_`, "");
-
-  // Look up actual channel name from cached catalog
-  const catalog = await getXtreamCatalog(config, type);
-  const item = catalog.find(m => m.id === id);
-
-  const name = item ? cleanName(channelTitle(catalog, item)) : `Stream ${streamId}`;
-  const poster = item ? channelPoster(item.logo, name) : makePosterUrl(name);
-  let description = "📺 Live Channel — StreamVault IPTV";
-
-  // Subscription expiry (cached; fetched alongside the EPG)
-  const accountPromise = getXtreamAccount(config);
-
-  // Fetch EPG for live channels
-  try {
-    const guide = guideLines(await getCachedEPG(config, streamId), config.timezone);
-    if (guide) description = "📺 TV Guide:\n" + guide;
-  } catch (_) {
-    // No TV guide from the provider: the channel page just shows no guide
-  }
-
-  const subscription = subscriptionLine(await accountPromise);
-  if (subscription) description += `\n\n${subscription}`;
-
-  // Not in the (just loaded) catalog → the provider doesn't list it in the
-  // user's categories; refetching the full stream list would only spike memory
-  const meta = { id, type, name, poster, posterShape: "square", description };
-  if (item?.genres) meta.genres = item.genres;
-  return meta;
-}
-
-// play: { baseUrl, configPath } for /play links
-async function getXtreamStreams(config, type, id, play = {}) {
-  // Only live TV channels are supported
-  if (type !== "tv") return [];
-
-  let catalog = [];
-  try {
-    catalog = await getXtreamCatalog(config, type);
-  } catch (_) {
-    // Catalog unavailable: the stream still plays, titled "Channel <id>"
-  }
-  // All versions of the channel (UHD/FHD/HD/…), best quality first — also when
-  // an older saved id of a lower version is opened
-  const item = catalog.find(m => m.id === id);
-  const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
-  return versions.flatMap(channel => xtreamStreamPair(config, channel, play));
-}
-
-// TS + HLS for one Xtream channel
-function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}) {
-  // id format: iptv_tv_<streamId>
-  const streamId = channel.id.replace("iptv_tv_", "");
-  const server = trimTrailingSlashes(config.server);
-
-  // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
-  const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
-  const safeName = encodeURIComponent(tvName.toWellFormed());
-  // Route through /play redirect so VLC shows channel name (last path segment)
-  const useRedirect = baseUrl && configPath;
-  const tsUrl = useRedirect
-    ? `${baseUrl}/play/${configPath}/live/${streamId}/ts/${safeName}`
-    : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
-  const hlsUrl = useRedirect
-    ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
-    : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
-
-  return [
-    {
-      name: "StreamVault\nTS",
-      title: `${tvName}\nMPEG-TS`,
-      url: tsUrl,
-      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-    },
-    {
-      name: "StreamVault\nHLS",
-      title: `${tvName}\nHLS / m3u8`,
-      url: hlsUrl,
-      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-    },
-  ];
-}
-
-// --- M3U handlers ---
-
-// Sorted catalog per cached playlist: built once, dropped with the cache entry
-const m3uCatalogs = new WeakMap();
-async function getM3UCatalog(config, type) {
-  // Only live TV channels are supported
-  if (type !== "tv") return [];
-
-  const data = await getCachedM3U(config);
-  let catalog = m3uCatalogs.get(data);
-  if (!catalog) {
-    // Raw logo here; catalogMeta() builds the poster for the page that's sent
-    catalog = sortChannels(data.channels.filter((ch) => ch.type === "tv").map((ch) => ({
-      id: `iptv_tv_${ch.id}`,
-      type: "tv",
-      name: ch.name,
-      logo: ch.logo,
-      genres: [ch.group],
-    })), config.groups || []);
-    m3uCatalogs.set(data, catalog);
-  }
-  return catalog;
-}
-
-// Channels without a tvg-id get "m3u_<name>_<position in playlist>". When the
-// provider adds/removes a channel above it, the position shifts and saved channels
-// / "continue watching" pointed at an id that no longer existed. If the exact id
-// is gone, fall back to the same name at the nearest position.
-function findM3UChannel(channels, channelId) {
-  const exact = channels.find((ch) => ch.id === channelId && ch.type === "tv");
-  if (exact) return exact;
-  // "<tvg-id>_v2/_v3" = a duplicate entry numbered by playlist order; when the
-  // provider adds/removes copies the number moves. Fall back to the channel itself.
-  const variant = /^(.+)_v\d+$/.exec(channelId);
-  if (variant) {
-    const base = channels.find((ch) => ch.id === variant[1] && ch.type === "tv");
-    if (base) return base;
-  }
-  const m = /^(m3u_.*_)(\d+)$/.exec(channelId);
-  if (!m) return null;
-  const [, prefix, oldPos] = m;
-  let best = null, bestDist = Infinity;
-  for (const ch of channels) {
-    if (ch.type !== "tv" || !ch.id.startsWith(prefix)) continue;
-    const pos = ch.id.slice(prefix.length);
-    if (!/^\d+$/.test(pos)) continue;
-    const dist = Math.abs(Number(pos) - Number(oldPos));
-    if (dist < bestDist) { best = ch; bestDist = dist; }
-  }
-  return best;
-}
-
-async function getM3UMeta(config, type, id) {
-  // Only live TV channels are supported
-  if (type !== "tv") return null;
-
-  const { channels } = await getCachedM3U(config);
-  const channelId = id.replace(`iptv_${type}_`, "");
-  const channel = findM3UChannel(channels, channelId);
-
-  if (!channel) return null;
-
-  const catalog = await getM3UCatalog(config, type);
-  const item = catalog.find(m => m.id === id);
-  const name = cleanName(item ? channelTitle(catalog, item) : channel.name);
-  return {
-    id,
-    type,
-    name,
-    poster: channelPoster(channel.logo, name),
-    posterShape: "square",
-    genres: [channel.group],
-    description: `Group: ${channel.group}`,
-  };
-}
-
-async function getM3UStreams(config, id) {
-  const { channels } = await getCachedM3U(config);
-
-  // Extract channel id from the full id (iptv_tv_<channelId>)
-  const parts = /^iptv_tv_(.+)$/.exec(id);
-  const channelId = parts ? parts[1] : id;
-
-  const channel = findM3UChannel(channels, channelId);
-
-  if (!channel) return [];
-
-  // The same channel's other versions: same name apart from a quality tag (the
-  // merged tile, best first), then entries sharing its tvg-id. A tvg-id shared
-  // by many entries is junk (e.g. "0"), so those are skipped then.
-  const catalog = await getM3UCatalog(config, "tv");
-  const sameName = (catalogView(catalog).versionsById.get(id) || [])
-    .map(v => channels.find(ch => `iptv_tv_${ch.id}` === v.id && ch.type === "tv"));
-  let sameTvgId = [];
-  if (channel.tvgId) {
-    sameTvgId = channels.filter((ch) => ch.tvgId === channel.tvgId && ch.type === "tv");
-    if (sameTvgId.length > MAX_M3U_VARIANTS + 1) sameTvgId = [];
-  }
-  const versions = [...new Set([channel, ...sameName, ...sameTvgId].filter(Boolean))];
-  // Best quality first (stable: equal quality keeps the order above)
-  const quality = (ch) => nameKey(ch.name).quality;
-  return versions.toSorted((a, b) => quality(b) - quality(a)).map(m3uStream);
-}
-
-const MAX_M3U_VARIANTS = 5;
-
-function streamFormat(url) {
-  const path = url.split("?")[0].toLowerCase();
-  if (path.endsWith(".m3u8")) return "HLS";
-  if (path.endsWith(".ts")) return "TS";
-  return "Live";
-}
-
-function m3uStream(ch) {
-  const behaviorHints = { notWebReady: true, bingeGroup: "streamvault-live" };
-  // Playlist-provided User-Agent/Referer — some providers reject requests without them
-  if (ch.headers) behaviorHints.proxyHeaders = { request: ch.headers };
-  return {
-    name: `StreamVault\n${streamFormat(ch.url)}`,
-    title: ch.group ? `${cleanName(ch.name)}\n${ch.group}` : cleanName(ch.name),
-    url: ch.url,
-    behaviorHints,
-  };
-}
-
-// --- Utility ---
+// --- Channel lists, pages and streams: xtream-addon.js / m3u-addon.js ---
 
 // Some apps (Nuvio on webOS) ask every addon for subtitles, although the
 // manifest offers none — with or without settings, sometimes with a mangled
