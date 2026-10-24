@@ -1781,7 +1781,7 @@ describe("stable install links", () => {
     expect(await names(old)).toEqual(["News One", "Sport One"]);
   });
 
-  test("after a save the page is told which app to restart, when the server is sure", async () => {
+  test("after a save the page is told which app to restart: the last one that used the link", async () => {
     const make = async (m) => (await request(app).post("/api/link").send({ t: "m3u", m })).body.config;
     const save = async (link) => (await request(app).post("/api/link").send({ t: "m3u", m: "http://apps.example.com/x.m3u", editing: link })).body;
     const visit = (link, ua) => request(app).get(`/${link}/catalog/tv/iptv_live.json`).set("User-Agent", ua);
@@ -1797,7 +1797,9 @@ describe("stable install links", () => {
     const both = await make("http://apps.example.com/b.m3u");
     await visit(both, "Nuvio/1.0 (webOS)");
     await visit(both, "Stremio/4.4");
-    expect((await save(both)).app).toBeNull();
+    expect((await save(both)).app).toBe("Stremio");
+    await visit(both, "Nuvio/1.0 (webOS)");
+    expect((await save(both)).app).toBe("Nuvio");
 
     // unknown apps, the configure page itself (/api) and the player (/play) teach nothing
     const unknown = await make("http://apps.example.com/u.m3u");

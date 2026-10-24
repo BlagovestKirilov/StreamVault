@@ -881,7 +881,8 @@ function brokenLinkAnswer(req) {
 }
 
 // --- Which app uses an install link (for "Restart Nuvio/Stremio" after a save) ---
-// In memory only, never saved: link fingerprint -> "Nuvio" | "Stremio" | "both".
+// Link fingerprint -> the last app ("Nuvio" | "Stremio") that loaded channels with it.
+// Configure is opened from inside that app, so the last one is the one to talk about.
 // Learned from the app's own catalog/meta/stream requests; the configure page
 // itself opens in a browser that doesn't say which app sent it there.
 const LINK_APPS_MAX = 50_000; // ~100 bytes each → a few MB at most
@@ -901,8 +902,9 @@ function appFromUserAgent(ua) {
 const linkKey = (link) => crypto.createHash("sha256").update(link).digest("base64");
 
 // Survives restarts/deploys (saved with the stats); only known values come back
+// (an old "both" is dropped — the next request records that link's app again)
 for (const [key, app] of savedLinkApps.slice(-LINK_APPS_MAX)) {
-  if (typeof key === "string" && ["Nuvio", "Stremio", "both"].includes(app)) linkApps.set(key, app);
+  if (typeof key === "string" && (app === "Nuvio" || app === "Stremio")) linkApps.set(key, app);
 }
 
 function noteAppForLink(req) {
@@ -910,15 +912,12 @@ function noteAppForLink(req) {
   if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
   const app = appFromUserAgent(String(req.get("user-agent") || ""));
   if (!app) return;
-  const key = linkKey(req.params.config);
-  const known = linkApps.get(key);
-  setCapped(linkApps, key, known && known !== app ? "both" : app, LINK_APPS_MAX);
+  setCapped(linkApps, linkKey(req.params.config), app, LINK_APPS_MAX);
 }
 
-/** "Nuvio" / "Stremio" when we're sure which app uses this link, else null */
+/** The last app ("Nuvio" / "Stremio") that used this link, else null */
 function appForLink(link) {
-  const app = link ? linkApps.get(linkKey(link)) : null;
-  return app === "Nuvio" || app === "Stremio" ? app : null;
+  return (link && linkApps.get(linkKey(link))) || null;
 }
 
 // --- Serve configuration page for Stremio ---
