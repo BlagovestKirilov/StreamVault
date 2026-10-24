@@ -7,15 +7,20 @@
 
 const express = require("express");
 const path = require("node:path");
-const fs = require("node:fs");
 const crypto = require("node:crypto");
 const { ROOT, safeError, userAgent, parseExtra, maskPath, withinMs } = require("./util");
-const xtream = require("./xtream");
-const m3u = require("./m3u");
 const {
-  CONFIG_SECRET, encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
+  encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
   settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin,
 } = require("./configlink");
+const {
+  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, todayKey, dayRow, countToday, countCode,
+  providerErrorKey, recordError, noteRecent, saveStats, saveStatsSync,
+  recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured, recentPlayRejects,
+  recentBadLinks, recentTestFailures,
+} = require("./stats");
+const xtream = require("./xtream");
+const m3u = require("./m3u");
 const {
   makePosterUrl, channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels, catalogMeta, normalizeForSearch,
 } = require("./catalog");
@@ -121,226 +126,11 @@ app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
 });
 
-// --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
-// STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
-const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : ROOT);
+// --- Analytics: stats.js (saved in STATS_DIR — the /data volume on Fly.io) ---
 // Stable install links ("s-<id>"): settings saved next to the stats, edited in place
 const linkStore = require("./links").createStore(STATS_DIR);
-const STATS_FILE = path.join(STATS_DIR, "stats.json");
 const PROCESS_START = new Date().toISOString();
-let stats = {
-  installs: 0, configures: 0, streams: 0, searches: 0,
-  reconfigures: 0, // Configure opened from an installed StreamVault (all time)
-  reinstalls: 0,   // Save changes pressed there (all time)
-  users: new Set(), startedAt: new Date().toISOString(),
-  streamsByType: { tv: 0, movie: 0, series: 0 },
-  configType: { xtream: 0, m3u: 0 },
-  installsByType: { xtream: 0, m3u: 0 },
-  dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
-  dailyViewers: {}, // same, but users who opened a channel and got something to play
-  history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
-};
 
-// Unique users are counted by a one-way code of the IP, never the IP itself, so
-// stats.json holds no personal data. Keyed with a secret derived from
-// CONFIG_SECRET: without it the codes can't be reversed by trying every IPv4.
-const userKeySecret = crypto.createHash("sha256").update(`stats-users|${CONFIG_SECRET}`).digest();
-const USER_KEY_RE = /^[0-9a-f]{16}$/;
-function userKey(ip) {
-  return crypto.createHmac("sha256", userKeySecret).update(String(ip)).digest("hex").slice(0, 16);
-}
-// Entries saved before this change are plain IPs — convert them on load
-function toUserKeys(list) {
-  return new Set((list || []).map(v => (USER_KEY_RE.test(v) ? v : userKey(v))));
-}
-
-try {
-  const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
-  stats = { ...saved, users: toUserKeys(saved.users) };
-  // App tracking was removed: drop its saved data (everything else is kept)
-  delete stats.linkApps;
-  delete stats.userApps;
-  delete stats.installsByApp;
-  if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
-  if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
-  if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
-  if (!stats.dailyActive) stats.dailyActive = {};
-  if (!stats.dailyViewers) stats.dailyViewers = {};
-  if (!stats.history) stats.history = {};
-  // All-time totals started after the daily counters: seed them from the rows
-  for (const counter of ["reconfigures", "reinstalls"]) {
-    if (typeof stats[counter] !== "number") {
-      stats[counter] = Object.values(stats.history).reduce((sum, row) => sum + (row[counter] || 0), 0);
-    }
-  }
-  // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers]) {
-    for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
-  }
-} catch (_) {
-  // No stats.json yet (first start) or unreadable: start counting from zero
-}
-
-const MAX_TRACKED_USERS = 10000;
-
-function saveStatsData() {
-  // Cap users Set to prevent unbounded growth
-  if (stats.users.size > MAX_TRACKED_USERS) {
-    const arr = [...stats.users];
-    stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
-  }
-  // Keep 90 days of per-day rows; freeze each day's unique-user counts into its
-  // row so they survive after the per-day lists (30 days) are dropped
-  const historyCutoff = new Date();
-  historyCutoff.setDate(historyCutoff.getDate() - HISTORY_DAYS);
-  const history = {};
-  for (const [day, row] of Object.entries(stats.history)) {
-    if (new Date(day) < historyCutoff) continue;
-    history[day] = { ...row, ...uniqueCounts(day) };
-  }
-  stats.history = history;
-  return {
-    ...stats, users: [...stats.users],
-    dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
-  };
-}
-
-// Only the last `days` days of a { day: Set } map, as arrays (for stats.json)
-function lastDays(daily, days) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const kept = {};
-  for (const [day, keys] of Object.entries(daily)) {
-    if (new Date(day) >= cutoff) kept[day] = [...keys];
-  }
-  return kept;
-}
-
-// { dau, viewers } for a day still in the per-day lists (older days: {})
-function uniqueCounts(day) {
-  const counts = {};
-  if (stats.dailyActive[day]) counts.dau = stats.dailyActive[day].size;
-  if (stats.dailyViewers[day]) counts.viewers = stats.dailyViewers[day].size;
-  return counts;
-}
-
-function addDailyUser(daily, user) {
-  const today = todayKey();
-  if (!daily[today]) daily[today] = new Set();
-  daily[today].add(user);
-}
-
-// --- Per-day history (trends) + failures (provider problems) ---
-const HISTORY_DAYS = 90;
-const MAX_RECENT_ERRORS = 20;
-// In memory only (reset on restart), newest first, never URLs/credentials:
-const recentErrors = [];        // provider failures
-const recentUnknownPaths = [];  // requests StreamVault answered 404 (paths masked)
-const recentEmptyStreams = [];  // stream requests that returned nothing, and why
-const recentUnconfigured = [];  // requests from installs without settings (+ which app)
-const recentPlayRejects = [];   // /play redirects refused, and which check failed
-const recentBadLinks = [];      // install links refused (manifest/catalog/meta/stream), and why
-const recentTestFailures = [];  // failed Test Connections: error + address shape (private parts hidden)
-
-function noteRecent(list, entry) {
-  list.unshift({ at: new Date().toISOString(), ...entry });
-  if (list.length > MAX_RECENT_ERRORS) list.pop();
-}
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function dayRow() {
-  const day = todayKey();
-  if (!stats.history[day]) {
-    stats.history[day] = {
-      launches: 0, installs: 0, configures: 0, searches: 0, streams: 0,
-      catalogErrors: 0, metaErrors: 0, streamErrors: 0, emptyStreams: 0,
-      // what users' providers returned, by where it happened: { catalog: { "503": 2 } }
-      providerErrors: {},
-      // what StreamVault answered with status >= 400, by endpoint: { "POST /api/test": { "429": 3 } }
-      responseErrors: {},
-    };
-  }
-  return stats.history[day];
-}
-
-
-function countToday(field) {
-  const row = dayRow();
-  row[field] = (row[field] || 0) + 1;
-}
-
-// Per-day count by where + code: row[mapName][where][code]. Each level only takes
-// so many distinct keys, so random status codes can't bloat stats.json — extras
-// go to "other".
-const MAX_KEYS_PER_LEVEL = 30;
-function boundedKey(obj, key) {
-  return obj[key] !== undefined || Object.keys(obj).length < MAX_KEYS_PER_LEVEL ? key : "other";
-}
-function countCode(mapName, where, code) {
-  const row = dayRow();
-  const map = row[mapName] || (row[mapName] = {}); // rows from before error tracking have none
-  const w = boundedKey(map, where);
-  const codes = map[w] || (map[w] = {});
-  const c = boundedKey(codes, code);
-  codes[c] = (codes[c] || 0) + 1;
-}
-
-// Provider failure → HTTP status ("503") or, without one, what went wrong
-function providerErrorKey(e) {
-  const msg = String(e?.message || "");
-  const status = (/status code (\d{3})/.exec(msg) || [])[1];
-  if (status) return status;
-  // https:// address on a server that only speaks plain http on that port
-  if (/EPROTO|wrong version number|SSL routines/i.test(msg)) return "https_mismatch";
-  if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
-  if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "timeout";
-  return "other";
-}
-
-// where = "catalog" | "meta" | "stream"
-function recordError(where, config, e) {
-  countToday(`${where}Errors`);
-  countCode("providerErrors", `${where} (${config?.type || "unknown"})`, providerErrorKey(e));
-  noteRecent(recentErrors, { where, source: config?.type, error: safeError(e) });
-}
-
-// Saves write a temp file and rename it over stats.json. A rename is all-or-nothing,
-// so a crash/deploy mid-save leaves the previous stats.json intact instead of a
-// half-written file (which would fail to load and reset all stats to zero).
-let saving = false;
-
-function saveStats() {
-  if (saving) return; // previous save still running — the next interval saves again
-  let data;
-  try {
-    data = JSON.stringify(saveStatsData(), null, 2);
-  } catch (_) {
-    return; // nothing started, so the flag is never left stuck on
-  }
-  saving = true;
-  const tmp = `${STATS_FILE}.tmp`;
-  fs.promises.writeFile(tmp, data)
-    .then(() => fs.promises.rename(tmp, STATS_FILE))
-    .catch(() => { /* disk error: the old stats.json stays; the next interval tries again */ })
-    .finally(() => { saving = false; });
-}
-
-// On shutdown: sync (the process exits right after) and its own temp file, since an
-// async save may be writing stats.json.tmp at this very moment
-function saveStatsSync() {
-  try {
-    const tmp = `${STATS_FILE}.exit.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(saveStatsData(), null, 2));
-    fs.renameSync(tmp, STATS_FILE);
-  } catch (_) {
-    // Shutting down anyway; at worst the last minute of stats is lost
-  }
-}
-
-setInterval(saveStats, 60000);
 process.on("SIGTERM", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
 process.on("SIGINT", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
 process.on("unhandledRejection", (err) => {
