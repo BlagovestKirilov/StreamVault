@@ -9,6 +9,8 @@ const express = require("express");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
+// Project root (the code lives in src/): public/ and local stats/links files are there
+const ROOT = path.join(__dirname, "..");
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 
@@ -141,12 +143,12 @@ function safeError(e) {
 
 // --- Serve static files (logo, images) ---
 // Cached by browsers/Stremio for a week so repeat visits don't re-download images
-app.use("/public", express.static(path.join(__dirname, "public"), { maxAge: "7d" }));
+app.use("/public", express.static(path.join(ROOT, "public"), { maxAge: "7d" }));
 
 // Browsers ask for these icons on their own. Without them the "unknown page →
 // /configure" fallback sent them the configure page, so every visit downloaded
 // (and counted) the page twice.
-const ICON_FILE = path.join(__dirname, "public", "img", "logo.png");
+const ICON_FILE = path.join(ROOT, "public", "img", "logo.png");
 // (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png)
 app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
@@ -154,7 +156,7 @@ app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
 
 // --- Analytics (use /data volume on Fly.io for persistence across deploys) ---
 // STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
-const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : __dirname);
+const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : ROOT);
 // Stable install links ("s-<id>"): settings saved next to the stats, edited in place
 const linkStore = require("./links").createStore(STATS_DIR);
 const STATS_FILE = path.join(STATS_DIR, "stats.json");
@@ -901,7 +903,7 @@ function serveConfigure(req, res) {
     setCapped(lastConfigureAt, ip, now, 10000);
   }
   console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
-  res.sendFile(path.join(__dirname, "public", "configure.html"));
+  res.sendFile(path.join(ROOT, "public", "configure.html"));
 }
 // Crawlers may index the configure page (people find the addon) but nothing
 // else — install links carry users' (encrypted) settings

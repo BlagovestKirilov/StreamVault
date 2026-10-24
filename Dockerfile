@@ -4,4 +4,4 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY . .
 EXPOSE 7000
-CMD ["node", "addon.js"]
+CMD ["node", "src/addon.js"]

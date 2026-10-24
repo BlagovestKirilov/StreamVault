@@ -2,8 +2,8 @@
 process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
-const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange } = require("../addon");
-const { parseM3UContent } = require("../m3u");
+const { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange } = require("../src/addon");
+const { parseM3UContent } = require("../src/m3u");
 
 // ─── parseConfigPath ───
 
@@ -224,7 +224,7 @@ http://example.com/a.m3u8`;
 // ─── M3U streams (variants + labels + headers) ───
 
 describe("M3U stream handler", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const playlist = `#EXTM3U
 #EXTINF:-1 tvg-id="btv.bg" group-title="BG",bTV HD
 http://example.com/btv_hd.m3u8
@@ -261,8 +261,8 @@ http://example.com/btv_fhd.ts`;
 // ─── Category (genre) filter ───
 
 describe("category filter", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
@@ -330,8 +330,8 @@ http://example.com/1.m3u8`));
 // ─── Memory safety: shared downloads, no fallback refetch, telemetry ───
 
 describe("memory safety", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString("base64")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
@@ -374,7 +374,7 @@ describe("memory safety", () => {
     const { spawnSync } = require("child_process");
     const env = { ...process.env, FLY_APP_NAME: "test" };
     delete env.CONFIG_SECRET;
-    const r = spawnSync(process.execPath, ["-e", "require('./addon')"], { cwd: require("path").join(__dirname, ".."), env, encoding: "utf8", timeout: 10000 });
+    const r = spawnSync(process.execPath, ["-e", "require('./addon')"], { cwd: require("path").join(__dirname, "..", "src"), env, encoding: "utf8", timeout: 10000 });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("CONFIG_SECRET is not set");
   });
@@ -383,7 +383,7 @@ describe("memory safety", () => {
 // ─── M3U group selection ───
 
 describe("M3U group selection", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const playlist = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="Sports",A
 http://example.com/a.m3u8
@@ -441,8 +441,8 @@ http://example.com/c.m3u8`;
 // ─── Configure page: one-step check + edit installed setup ───
 
 describe("configure page API", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -527,7 +527,7 @@ describe("configure page API", () => {
 describe("connect-time address check (DNS rebinding)", () => {
   const dns = require("dns");
   const http = require("http");
-  const { guardedLookup } = require("../urlguard");
+  const { guardedLookup } = require("../src/urlguard");
   afterEach(() => jest.restoreAllMocks());
 
   const lookupWith = (addresses) =>
@@ -554,10 +554,10 @@ describe("connect-time address check (DNS rebinding)", () => {
       jest.spyOn(dns.promises, "lookup").mockResolvedValue([{ address: "93.184.215.14", family: 4 }]);
       // ...the connection's own lookup gets 127.0.0.1 (rebinding)
       lookupWith([{ address: "127.0.0.1", family: 4 }]);
-      const xtream = require("../xtream");
+      const xtream = require("../src/xtream");
       await expect(xtream.getLiveCategories({ server: `http://rebind.example:${port}`, username: "u", password: "p" }))
         .rejects.toThrow("Invalid or blocked URL");
-      await expect(require("../m3u").parseM3UGroups(`http://rebind.example:${port}/list.m3u`))
+      await expect(require("../src/m3u").parseM3UGroups(`http://rebind.example:${port}/list.m3u`))
         .rejects.toThrow("Invalid or blocked URL");
       expect(hits).toBe(0);
     } finally {
@@ -567,8 +567,8 @@ describe("connect-time address check (DNS rebinding)", () => {
 });
 
 describe("Prometheus metrics", () => {
-  const { buildMetricsText } = require("../addon");
-  const metrics = require("../metrics");
+  const { buildMetricsText } = require("../src/addon");
+  const metrics = require("../src/metrics");
 
   test("valid text format with memory, caches, today's counters and per-route requests", async () => {
     await request(app).get("/health");
@@ -613,7 +613,7 @@ describe("Prometheus metrics", () => {
 
 describe("Sonar fixes", () => {
   test("trailing slashes are trimmed in linear time (no regex backtracking)", () => {
-    const { trimTrailingSlashes } = require("../urlguard");
+    const { trimTrailingSlashes } = require("../src/urlguard");
     expect(trimTrailingSlashes("http://a:8080///")).toBe("http://a:8080");
     expect(trimTrailingSlashes("http://a")).toBe("http://a");
     const start = Date.now();
@@ -633,7 +633,7 @@ describe("provider User-Agent", () => {
 
   test("playlist downloads send a VLC User-Agent (axios's default gets 403 from many panels)", async () => {
     const get = jest.spyOn(axios, "get").mockRejectedValue(new Error("stop"));
-    await expect(require("../m3u").parseM3UGroups("http://93.184.215.14/ua.m3u")).rejects.toThrow("stop");
+    await expect(require("../src/m3u").parseM3UGroups("http://93.184.215.14/ua.m3u")).rejects.toThrow("stop");
     expect(get.mock.calls[0][1].headers["User-Agent"]).toMatch(/^VLC\//);
   });
 });
@@ -641,8 +641,8 @@ describe("provider User-Agent", () => {
 // ─── Ids that aren't this install's channels ───
 
 describe("foreign ids", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -676,7 +676,7 @@ describe("foreign ids", () => {
 // ─── Xtream account validation + subscription expiry ───
 
 describe("Xtream account checks", () => {
-  const xtream = require("../xtream");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const test_ = (account, cats = [{ category_id: 1, category_name: "Sport" }]) => {
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
@@ -730,8 +730,8 @@ describe("Xtream account checks", () => {
 // ─── Error tiles instead of an empty catalog ───
 
 describe("catalog error tiles", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -782,8 +782,8 @@ describe("catalog error tiles", () => {
 // ─── Channel order: categories A–Z, channels A–Z inside ───
 
 describe("channel order", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -835,7 +835,7 @@ http://example.com/7.m3u8`));
 });
 
 test("quality versions of a channel are one tile; trailing TV doesn't move a channel", async () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const names = ["[BG] BULGARIA 24", "[BG] BTV ACTION", "[BG] BTV UHD", "[BG] BTV", "[BG] BTV (FHD)", "[BG] BTV HD",
     "[BG] NOVA SPORT UHD", "[BG] NOVA TV UHD", "[BG] NOVA", "[BG] NOVA SPORT"];
@@ -854,8 +854,8 @@ test("quality versions of a channel are one tile; trailing TV doesn't move a cha
 });
 
 describe("home rows, merged versions, clean names", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const CATEGORIES = [
     { category_id: "1", category_name: "[BU] BULGARIA" },
@@ -1028,7 +1028,7 @@ http://example.com/fhd.m3u8`));
 });
 
 test("hidden characters and Cyrillic look-alikes in names don't move a channel", async () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   // leading spaces, a non-breaking space, Cyrillic А/Т typed in a Latin name, lower-case tag
   const names = ["  [BG] TVN", "[BG] BTV ACTION", "[BG]\u00a0BOX TV", "[BG] \u0422V1", "[BG] btv uhd", "[BG] \u0410CTION"];
@@ -1043,7 +1043,7 @@ test("hidden characters and Cyrillic look-alikes in names don't move a channel",
 });
 
 test("M3U: picked groups in pick order, channels A–Z inside", async () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   jest.spyOn(m3u, "parseM3U").mockImplementation(async (_url, groups) => m3u.parseM3UContent(`#EXTM3U
 #EXTINF:-1 group-title="Bulgaria",Nova
@@ -1066,7 +1066,7 @@ http://example.com/4.m3u8`, groups));
 // ─── Subscription expiry notice ───
 
 describe("expiry notice", () => {
-  const xtream = require("../xtream");
+  const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const DAY = 24 * 60 * 60;
   const inDays = (d) => String(Math.floor(Date.now() / 1000 + d * DAY));
@@ -1181,9 +1181,9 @@ describe("expiry notice", () => {
 // ─── Speed: stale-while-refresh, TV guide cache, kept-alive connections ───
 
 describe("speed", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
-  const urlguard = require("../urlguard");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
+  const urlguard = require("../src/urlguard");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const settle = () => new Promise(resolve => setImmediate(resolve));
   const playlist = (name) => m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1,${name}\nhttp://example.com/1.m3u8`);
@@ -1404,9 +1404,9 @@ describe("speed", () => {
 // ─── Memory watchdog ───
 
 describe("memory watchdog", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
-  const { checkMemory } = require("../addon");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
+  const { checkMemory } = require("../src/addon");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const caches = async () => (await request(app).get("/stats")).body.caches;
   const used = (value) => Number(value.split("/")[0]);
@@ -1469,7 +1469,7 @@ describe("memory watchdog", () => {
 // ─── Rate limiting ───
 
 describe("rate limiting", () => {
-  const { getIp } = require("../ratelimit");
+  const { getIp } = require("../src/ratelimit");
   const testBody = { type: "m3u" }; // fails validation fast (400), no network
 
   test("11th provider check from one IP in a minute gets 429; other groups unaffected", async () => {
@@ -1513,7 +1513,7 @@ describe("rate limiting", () => {
 // ─── Error codes per day ───
 
 describe("per-day error codes", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const today = () => new Date().toISOString().slice(0, 10);
   const row = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today()) || {};
@@ -1568,7 +1568,7 @@ describe("stats file saving", () => {
   const os = require("os");
   const path = require("path");
   const { spawnSync } = require("child_process");
-  const root = path.join(__dirname, "..");
+  const root = path.join(__dirname, "..", "src"); // child scripts require('./addon') from here
   // Runs a snippet in a fresh Node process whose stats live in a throwaway folder.
   // FORCE_COLOR=0: IDE test runners set FORCE_COLOR, and console.log(42) would
   // then print colour codes around the number.
@@ -1717,7 +1717,7 @@ describe("stats file saving", () => {
 // ─── Stable install links ("s-<id>") ───
 
 describe("stable install links", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const fs = require("fs");
   const os = require("os");
   const path = require("path");
@@ -1807,7 +1807,7 @@ describe("stable install links", () => {
   test("links survive a restart; a corrupt file falls back to the backup", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sv-links-"));
     const run = (code) => spawnSync(process.execPath, ["-e", code], {
-      cwd: path.join(__dirname, ".."), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
+      cwd: path.join(__dirname, "..", "src"), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
     });
     const last = (r) => r.stdout.trim().split("\n").pop();
     // 1st run: create, edit (2 saves → a .bak exists), shut down
@@ -1835,7 +1835,7 @@ describe("stable install links", () => {
   test("without links.json an edited older link falls back to the settings inside it", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sv-links-"));
     const run = (code) => spawnSync(process.execPath, ["-e", code], {
-      cwd: path.join(__dirname, ".."), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
+      cwd: path.join(__dirname, "..", "src"), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000,
     });
     const last = (r) => r.stdout.trim().split("\n").pop();
     const old = encryptConfig({ t: "m3u", m: "http://fallback.example.com/original.m3u" });
@@ -1856,7 +1856,7 @@ describe("stable install links", () => {
 // ─── Channel posters ───
 
 describe("channel posters", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -1886,7 +1886,7 @@ http://example.com/b.m3u8`));
   });
 
   test("Xtream: same posters for Stremio, raw logo only kept internally", async () => {
-    const xtream = require("../xtream");
+    const xtream = require("../src/xtream");
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: 1, category_name: "Sport" }]);
     jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
       { stream_id: 7, name: "Diema Sport", stream_icon: "http://cdn.example.com/diema.png", category_id: 1 },
@@ -1913,7 +1913,7 @@ http://example.com/b.m3u8`));
 // ─── Global download limit ───
 
 describe("parallel download limit", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -1955,7 +1955,7 @@ describe("parallel download limit", () => {
 // ─── Fixes from live stats (2026-10-14) ───
 
 describe("live-stats fixes", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const stats = async () => (await request(app).get("/stats")).body;
   afterEach(() => jest.restoreAllMocks());
@@ -2060,7 +2060,7 @@ http://example.com/2.m3u8`));
 // ─── Fixes from live stats (2026-10-15, evening) ───
 
 describe("live-stats fixes 2", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   afterEach(() => jest.restoreAllMocks());
 
@@ -2106,9 +2106,9 @@ http://example.com/fox.m3u8`));
 // ─── Privacy + setup help (2026-10-16) ───
 
 describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
-  const { maskIp } = require("../ratelimit");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
+  const { maskIp } = require("../src/ratelimit");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const stats = async () => (await request(app).get("/stats")).body;
   afterEach(() => jest.restoreAllMocks());
@@ -2149,7 +2149,7 @@ describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () =
     const shapeOf = (content) => {
       const { Readable } = require("stream");
       const axios = require("axios");
-      const urlguard = require("../urlguard");
+      const urlguard = require("../src/urlguard");
       jest.spyOn(urlguard, "assertExternalUrl").mockResolvedValue();
       jest.spyOn(axios, "get").mockResolvedValue({ data: Readable.from([content]) });
       return m3u.parseM3UGroups("http://example.com/x.m3u").then(g => { jest.restoreAllMocks(); return g.shape; });
@@ -2192,8 +2192,8 @@ describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () =
 // ─── Failed Test Connection: address shape ───
 
 describe("failed tests record the address shape (private parts hidden)", () => {
-  const m3u = require("../m3u");
-  const xtream = require("../xtream");
+  const m3u = require("../src/m3u");
+  const xtream = require("../src/xtream");
   const lastFailure = async () => (await request(app).get("/stats")).body.recentTestFailures[0];
   afterEach(() => jest.restoreAllMocks());
 
@@ -2342,7 +2342,7 @@ describe("installs without settings (bare manifest)", () => {
   });
 
   test("an Xtream test with a playlist link says to use the M3U tab", async () => {
-    const xtream = require("../xtream");
+    const xtream = require("../src/xtream");
     const cats = jest.spyOn(xtream, "getLiveCategories");
     for (const server of ["https://provider.example/abc/index.m3u", "http://gfdg.m3u", "http://p.example/list.m3u8?token=x"]) {
       const res = await request(app).post("/api/test").send({ type: "xtream", server, username: "u", password: "p" });
@@ -2365,7 +2365,7 @@ describe("installs without settings (bare manifest)", () => {
   });
 
   test("an address with a guide's placeholder left in gets a replace-it hint, no download", async () => {
-    const parse = jest.spyOn(require("../m3u"), "parseM3UGroups");
+    const parse = jest.spyOn(require("../src/m3u"), "parseM3UGroups");
     for (const m3uUrl of ["https://host.example/a/b/%3CFILENAME%3E.m3u", "https://host.example/<FILENAME>.m3u"]) {
       const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl });
       expect(res.status).toBe(400);
@@ -2450,7 +2450,7 @@ describe("unknown pages", () => {
 // ─── Stats history + failure tracking ───
 
 describe("stats history and failures", () => {
-  const m3u = require("../m3u");
+  const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const today = () => new Date().toISOString().slice(0, 10);
   const todayRow = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today());
@@ -2609,8 +2609,8 @@ describe("timezone config key", () => {
 // ─── SSRF guard on fetch paths ───
 
 describe("outbound fetch SSRF guard", () => {
-  const m3uReal = jest.requireActual("../m3u");
-  const xtream = require("../xtream");
+  const m3uReal = jest.requireActual("../src/m3u");
+  const xtream = require("../src/xtream");
 
   test("parseM3U refuses a private playlist URL", async () => {
     await expect(m3uReal.parseM3U("http://169.254.169.254/latest")).rejects.toThrow("Invalid or blocked URL");
@@ -2646,7 +2646,7 @@ describe("API endpoints", () => {
 
   test("GET /:config/manifest.json returns configured manifest", async () => {
     // Provider down → manifest still served, just without the genre filter
-    const xtream = require("../xtream");
+    const xtream = require("../src/xtream");
     jest.spyOn(xtream, "getLiveStreams").mockRejectedValue(new Error("down"));
     const config = { t: "xtream", s: "http://example.com", u: "user", p: "pass", c: "" };
     const encoded = Buffer.from(JSON.stringify(config)).toString("base64")
