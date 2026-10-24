@@ -16,7 +16,7 @@ A Stremio addon that brings all your live IPTV channels into one place. Connect 
 - **Pick Only What You Want** — choose categories (Xtream) or playlist groups (M3U) at setup to keep your library clean
 - **TV Guide (EPG)** — see what's playing now and next on Xtream channels, shown in your local time
 - **Search** — find any live channel by name directly in Stremio
-- **Quality Options** — HD / FHD / UHD versions of the same channel are offered together; Xtream channels come as both TS (best for VLC) and HLS
+- **Quality Options** — HD / FHD / UHD versions of the same channel are offered together; Xtream channels come as both TS and HLS (try HLS if TS doesn't play)
 - **Test Your Connection** — verify your credentials before installing; Xtream shows account status, expiry date and connections
 - **Works with Picky Providers** — custom User-Agent / Referer from your playlist (`#EXTVLCOPT`, `#EXTHTTP`, `url|User-Agent=…`) is passed to the player
 - **Handles Large Playlists** — playlists are streamed and parsed, so even huge M3U files load without errors

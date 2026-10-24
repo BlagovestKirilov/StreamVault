@@ -1395,7 +1395,7 @@ function catalogView(list) {
   const versionsById = new Map(); // channel id -> its channel's versions, best first
   const titles = new Map();       // merged tile id -> its name
   for (const members of byKey.values()) {
-    const ordered = members.sort((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS);
+    const ordered = members.toSorted((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS);
     const versions = ordered.map(m => m.meta);
     if (versions.length === 1) {
       display.push(versions[0]);
@@ -1627,7 +1627,7 @@ app.get("/stats", limitStats, (req, res) => {
       failedProviders: [...failCache.values()].filter(f => f.until > Date.now()).length,
     },
     // Newest first; dau/viewers are live for recent days, frozen in the row for older ones
-    history: Object.keys(stats.history).sort((a, b) => b.localeCompare(a)).map(date => (
+    history: Object.keys(stats.history).toSorted((a, b) => b.localeCompare(a)).map(date => (
       { date, dau: 0, ...stats.history[date], ...uniqueCounts(date) }
     )),
     // Since last restart (newest first, max 20 each; no URLs or credentials)
@@ -1991,7 +1991,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
 
     if (config.type === "xtream") {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
-      streams = await getXtreamStreams(config, type, id, baseUrl, req.params.config);
+      streams = await getXtreamStreams(config, type, id, { baseUrl, configPath: req.params.config });
     } else if (config.type === "m3u") {
       streams = await getM3UStreams(config, id);
     }
@@ -2209,6 +2209,32 @@ function subscriptionLine(info) {
   return exp * 1000 < Date.now() ? `⚠️ Subscription expired on ${date}` : `🗓 Subscription expires ${date}`;
 }
 
+// The programme on now and the one after it, by the provider's timestamps (some
+// panels start the list at the next show, some include ended ones). Without
+// usable timestamps: the first two entries as sent.
+function nowAndNext(listings, nowSec) {
+  const start = (e) => Number(e.start_timestamp);
+  const end = (e) => Number(e.stop_timestamp || e.end_timestamp);
+  const timed = listings.filter(e => start(e) > 0 && end(e) > 0).toSorted((a, b) => start(a) - start(b));
+  if (timed.length === 0) return { now: listings[0], next: listings[1] };
+  const now = timed.find(e => start(e) <= nowSec && nowSec < end(e));
+  const next = timed.find(e => start(e) >= (now ? end(now) : nowSec));
+  return { now, next };
+}
+
+// Channel page guide: "▶ Now 20:00 - 21:00 News" and "Next 21:00 - 22:00 Film"
+// (titles only, times in the viewer's zone); "" when there's nothing to show
+function guideLines(listings, timezone) {
+  if (!listings?.length) return "";
+  const { now, next } = nowAndNext(listings, Date.now() / 1000);
+  const line = (e) => {
+    const time = epgTimeRange(e, timezone);
+    const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
+    return `${time ? time + " " : ""}${title}`;
+  };
+  return [now && `▶ Now ${line(now)}`, next && `Next ${line(next)}`].filter(Boolean).join("\n");
+}
+
 async function getXtreamMeta(config, type, id) {
   // Only live TV channels are supported
   if (type !== "tv") return null;
@@ -2228,16 +2254,8 @@ async function getXtreamMeta(config, type, id) {
 
   // Fetch EPG for live channels
   try {
-    const epg = await getCachedEPG(config, streamId);
-    if (epg?.length > 0) {
-      const lines = epg.map(e => {
-        const title = e.title ? Buffer.from(e.title, "base64").toString("utf-8") : "";
-        const desc = e.description ? Buffer.from(e.description, "base64").toString("utf-8") : "";
-        const time = epgTimeRange(e, config.timezone);
-        return `${time ? time + " " : ""}${title}${desc ? "\n  " + desc : ""}`;
-      });
-      description = "📺 TV Guide:\n" + lines.join("\n");
-    }
+    const guide = guideLines(await getCachedEPG(config, streamId), config.timezone);
+    if (guide) description = "📺 TV Guide:\n" + guide;
   } catch (_) {
     // No TV guide from the provider: the channel page just shows no guide
   }
@@ -2252,7 +2270,8 @@ async function getXtreamMeta(config, type, id) {
   return meta;
 }
 
-async function getXtreamStreams(config, type, id, baseUrl, configPath) {
+// play: { baseUrl, configPath } for /play links
+async function getXtreamStreams(config, type, id, play = {}) {
   // Only live TV channels are supported
   if (type !== "tv") return [];
 
@@ -2262,15 +2281,15 @@ async function getXtreamStreams(config, type, id, baseUrl, configPath) {
   } catch (_) {
     // Catalog unavailable: the stream still plays, titled "Channel <id>"
   }
-  // The picked channel first, then its other versions (HD/FHD/UHD), best first
+  // All versions of the channel (UHD/FHD/HD/…), best quality first — also when
+  // an older saved id of a lower version is opened
   const item = catalog.find(m => m.id === id);
-  const others = (catalogView(catalog).versionsById.get(id) || []).filter(v => v.id !== id);
-  return [{ id, name: item?.name }, ...others]
-    .flatMap(channel => xtreamStreamPair(config, channel, baseUrl, configPath));
+  const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
+  return versions.flatMap(channel => xtreamStreamPair(config, channel, play));
 }
 
 // TS + HLS for one Xtream channel
-function xtreamStreamPair(config, channel, baseUrl, configPath) {
+function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}) {
   // id format: iptv_tv_<streamId>
   const streamId = channel.id.replace("iptv_tv_", "");
   const server = trimTrailingSlashes(config.server);
@@ -2290,13 +2309,13 @@ function xtreamStreamPair(config, channel, baseUrl, configPath) {
   return [
     {
       name: "StreamVault\nTS",
-      title: `${tvName}\nMPEG-TS (best for VLC)`,
+      title: `${tvName}\nMPEG-TS`,
       url: tsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
     {
       name: "StreamVault\nHLS",
-      title: `${tvName}\nHLS / m3u8 (fallback)`,
+      title: `${tvName}\nHLS / m3u8`,
       url: hlsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
@@ -2402,7 +2421,9 @@ async function getM3UStreams(config, id) {
     if (sameTvgId.length > MAX_M3U_VARIANTS + 1) sameTvgId = [];
   }
   const versions = [...new Set([channel, ...sameName, ...sameTvgId].filter(Boolean))];
-  return versions.map(m3uStream);
+  // Best quality first (stable: equal quality keeps the order above)
+  const quality = (ch) => nameKey(ch.name).quality;
+  return versions.toSorted((a, b) => quality(b) - quality(a)).map(m3uStream);
 }
 
 const MAX_M3U_VARIANTS = 5;

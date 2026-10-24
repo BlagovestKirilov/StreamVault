@@ -239,7 +239,7 @@ http://example.com/btv_fhd.ts`;
   });
   afterEach(() => jest.restoreAllMocks());
 
-  test("returns the picked channel first, then its quality variants, labelled", async () => {
+  test("returns the channel's quality versions, best first, labelled", async () => {
     const res = await request(app).get(`/${configPath()}/stream/tv/iptv_tv_btv.bg_v2.json`);
     expect(res.status).toBe(200);
     const { streams } = res.body;
@@ -253,7 +253,8 @@ http://example.com/btv_fhd.ts`;
 
   test("a saved duplicate id (_v3) that no longer exists falls back to the channel", async () => {
     const res = await request(app).get(`/${configPath()}/stream/tv/iptv_tv_btv.bg_v3.json`);
-    expect(res.body.streams[0].url).toBe("http://example.com/btv_hd.m3u8");
+    // falls back to bTV (HD) and offers its versions, best first
+    expect(res.body.streams.map(s => s.url)).toEqual(["http://example.com/btv_fhd.ts", "http://example.com/btv_hd.m3u8"]);
   });
 });
 
@@ -946,7 +947,7 @@ describe("home rows, merged versions, clean names", () => {
     expect(await names(`/${cfg}/catalog/tv/${catalogs[1].id}.json`)).toEqual(["BBC News"]);
   });
 
-  test("a merged tile plays every version, best first; an old version id still plays itself first", async () => {
+  test("a merged tile plays every version, best first — also from an old saved id of a lower version", async () => {
     const cfg = xtreamSetup("1");
     expect(await names(`/${cfg}/catalog/tv/iptv_live.json`)).toEqual(["BTV", "NOVA"]);
     const titles = async (id) => (await request(app).get(`/${cfg}/stream/tv/${id}.json`)).body.streams
@@ -954,7 +955,7 @@ describe("home rows, merged versions, clean names", () => {
     expect(await titles("iptv_tv_12")).toEqual([
       "TS BTV UHD", "HLS BTV UHD", "TS BTV HD", "HLS BTV HD", "TS BTV", "HLS BTV",
     ]);
-    expect((await titles("iptv_tv_11")).slice(0, 2)).toEqual(["TS BTV", "HLS BTV"]);
+    expect(await titles("iptv_tv_11")).toEqual(await titles("iptv_tv_12")); // plain BTV's old id: same list, UHD first
     expect(await titles("iptv_tv_14")).toEqual(["TS NOVA", "HLS NOVA"]); // single version unchanged
     const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta;
     expect(meta.name).toBe("BTV");
@@ -990,6 +991,13 @@ http://example.com/b.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://symbol-names.example.com/list.m3u" });
     const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
     expect(metas.map(m => m.name).sort()).toEqual(["⚽", "📺"].sort());
+  });
+
+  test("streams say what they are (MPEG-TS / HLS), no hints", async () => {
+    const cfg = xtreamSetup("1");
+    const { streams } = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_14.json`)).body;
+    expect(streams.map(st => st.title)).toEqual(["NOVA\nMPEG-TS", "NOVA\nHLS / m3u8"]);
+    expect(streams.map(st => st.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS"]);
   });
 
   test("M3U: a merged tile offers each version's stream", async () => {
@@ -1249,6 +1257,35 @@ describe("speed", () => {
     offset = 3.5 * 60 * 1000;
     await open();
     expect(epg).toHaveBeenCalledTimes(2);
+  });
+
+  test("the guide shows only the programme on now and the next one, picked by time", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 9, name: "Nine" }, { stream_id: 10, name: "Ten" }, { stream_id: 11, name: "Eleven" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const b64 = (s) => Buffer.from(s).toString("base64");
+    const now = Math.floor(Date.now() / 1000);
+    const show = (title, from, to) => ({ title: b64(title), start_timestamp: String(now + from * 60), stop_timestamp: String(now + to * 60) });
+    const guide = async (id, listings) => {
+      xtream.getShortEPG.mockResolvedValue(listings);
+      const cfg = enc({ t: "xtream", s: `http://guide-${id}.example.com`, u: "g", p: "p", z: "UTC" });
+      return (await request(app).get(`/${cfg}/meta/tv/iptv_tv_${id}.json`)).body.meta.description.split("\n\n")[0];
+    };
+    jest.spyOn(xtream, "getShortEPG");
+
+    // shuffled, with one that already ended and two later ones
+    const lines = (await guide(9, [show("Later", 60, 90), show("Ended", -90, -30), show("Next one", 30, 60), show("On now", -30, 30)])).split("\n");
+    expect(lines[0]).toBe("📺 TV Guide:");
+    expect(lines[1]).toMatch(/^▶ Now \d\d:\d\d - \d\d:\d\d On now$/);
+    expect(lines[2]).toMatch(/^Next \d\d:\d\d - \d\d:\d\d Next one$/);
+    expect(lines).toHaveLength(3);
+
+    // nothing on now (gap): only the next one
+    expect((await guide(10, [show("Tonight", 45, 90)])).split("\n").slice(1)).toEqual([expect.stringMatching(/^Next .* Tonight$/)]);
+
+    // no timestamps: the first two as sent
+    const plain = await guide(11, [{ title: b64("A") }, { title: b64("B") }, { title: b64("C") }]);
+    expect(plain.split("\n").slice(1)).toEqual(["▶ Now A", "Next B"]);
   });
 
   test("a TV guide failure isn't kept", async () => {
