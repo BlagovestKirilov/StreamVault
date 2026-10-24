@@ -920,7 +920,8 @@ function noteApp(req) {
   // Addon requests only: /api/* comes from the configure page, /play from the player
   if (req.path.startsWith("/api/") || req.path.startsWith("/play/")) return;
   const app = appFromUserAgent(String(req.get("user-agent") || ""));
-  setCapped(recentAgents, userAgent(req), { at: new Date().toISOString(), userAgent: userAgent(req), app, route: req.path.split("/")[2] }, MAX_RECENT_ERRORS);
+  const ua = userAgent(req);
+  setCapped(recentAgents, ua, { at: new Date().toISOString(), userAgent: ua, app, route: req.path.split("/")[2] }, MAX_RECENT_ERRORS);
   if (!app) return; // unknown app: keep what we knew
   setCapped(linkApps, linkKey(req.params.config), app, LINK_APPS_MAX);
   stats.userApps[userKey(getIp(req))] = app.toLowerCase();
