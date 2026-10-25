@@ -58,10 +58,19 @@ errors, with install links hidden. All of this disappears when the server restar
 
 The configure page uses no cookies. It remembers only your light/dark choice, in your browser.
 
+## Tips through Ko-fi
+
+Tips are optional and go through [Ko-fi](https://ko-fi.com/streamvaultaddon) and PayPal, under their own
+privacy policies — StreamVault itself never sees your payment details.
+
+If you tip, I receive your **name, email address, message and the amount** from Ko-fi / PayPal. They're used
+only to thank you or reply to you, never shared, and deleted when you ask. A tip and its message can appear on
+the Ko-fi page with your name, unless you choose **Private** when tipping.
+
 ## Your choices
 
 - Don't want your settings stored? Delete StreamVault from your app and stop using the link.
-- Want saved settings deleted, or have a question? Open an
+- Want saved settings or your tip details deleted, or have a question? Open an
   [issue on GitHub](https://github.com/BlagovestKirilov/StreamVault/issues/new/choose) — **without** your
   install link or login. You'll get a private way to send what's needed.
 

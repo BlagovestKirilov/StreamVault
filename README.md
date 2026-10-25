@@ -84,6 +84,11 @@ Your settings are saved **encrypted**, your IP address is never stored (only a o
 users), and the video goes straight from your provider to your player. Full details:
 [PRIVACY.md](PRIVACY.md).
 
+## Support
+
+StreamVault is free and open source. If it's useful to you, you can support the hosting on
+[Ko-fi](https://ko-fi.com/streamvaultaddon).
+
 ---
 
 ## License
