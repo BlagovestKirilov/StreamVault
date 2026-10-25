@@ -254,7 +254,7 @@ function allowedFormats(info) {
 }
 
 // TS + HLS for one Xtream channel (only the formats the account allows)
-function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}, formats = { ts: true, hls: true }) {
+function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
   // id format: iptv_tv_<streamId>
   const streamId = channel.id.replace("iptv_tv_", "");
   const server = trimTrailingSlashes(config.server);
