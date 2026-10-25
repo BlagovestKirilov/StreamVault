@@ -86,21 +86,6 @@ users), and the video goes straight from your provider to your player. Full deta
 
 ---
 
-## For developers
-
-Node.js 24 + Express, hosted on Fly.io. Server code is in [`src/`](src/) (one module per job — see
-[CLAUDE.md](CLAUDE.md) for the full map), the configure page in [`public/`](public/), tests in [`tests/`](tests/).
-
-```bash
-npm install
-npm start                             # http://localhost:7000/configure
-npm test                              # all tests (Jest)
-npm test -- tests/catalog.test.js     # one file
-npm run lint                          # ESLint + Sonar rules
-```
-
-Pushing to `master` runs lint and tests in GitHub Actions, then deploys to Fly.io.
-
 ## License
 
 [MIT](LICENSE)
