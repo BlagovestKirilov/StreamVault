@@ -38,7 +38,9 @@ function createWriter() {
 }
 
 // --- HTTP requests: count + duration histogram per route pattern and status ---
-const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
+// Up to 60 s: a provider download can take up to 30 s (M3U timeout) plus waiting for
+// a download slot — with 30 as the top bucket those all showed as "30 s" in Grafana
+const BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60];
 const MAX_SERIES = 500; // route × status combinations; extra ones go to "other"
 const requests = new Map(); // `${route}\u0001${status}` -> count
 const durations = new Map(); // route -> { buckets: number[], sum, count }
