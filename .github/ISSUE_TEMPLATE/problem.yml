@@ -1,0 +1,58 @@
+name: Something doesn't work
+description: StreamVault doesn't install, show channels or play
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste your install link, server address, username, password or playlist link here.**
+        This page is public, and those contain your login. Describe the problem instead — "my Xtream server" is enough.
+
+        StreamVault doesn't provide channels. If your provider is down, refusing access or your subscription expired,
+        the channels won't load in any app — please check with your provider first.
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which app?
+      options:
+        - Stremio
+        - Nuvio
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Which device?
+      placeholder: e.g. Android phone, Windows PC, Samsung TV, iPhone
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Xtream Codes or M3U playlist?
+      options:
+        - Xtream Codes
+        - M3U playlist
+        - Don't know
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you saw instead. The exact text of any error or tile helps a lot.
+      placeholder: e.g. After Save changes the new categories don't show in Nuvio, even after restarting it.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you send
+      options:
+        - label: I didn't include my install link, server address, login or playlist link.
+          required: true

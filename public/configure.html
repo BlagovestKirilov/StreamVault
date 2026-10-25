@@ -453,6 +453,20 @@
       color: var(--muted);
     }
 
+    /* Disclaimer, report a problem, privacy — quiet, under the card */
+    .page-foot {
+      margin-top: 24px;
+      padding: 0 8px;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .page-foot p + p { margin-top: 6px; }
+    .quiet-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    .quiet-link:hover { color: var(--text); }
+    .quiet-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
     /* Button */
     .btn-install {
       width: 100%;
@@ -820,9 +834,15 @@
         <span id="btnInstallText">Install</span>
       </button>
       <p class="install-hint" id="installHint"></p>
+      <!-- Shown after a failed Test Connection (the error itself is in the toast) -->
+      <p class="install-hint" id="reportHint" hidden>Still stuck? <a class="quiet-link" href="https://github.com/BlagovestKirilov/StreamVault/issues/new/choose" target="_blank" rel="noopener">Report it on GitHub</a> — leave out your install link and login.</p>
 
     </div>
-    <div style="height: 30px;"></div>
+    <footer class="page-foot">
+      <p>StreamVault provides no channels or content. Use it only with playlists and subscriptions you have the right to watch.</p>
+      <p>Something not working? <a class="quiet-link" href="https://github.com/BlagovestKirilov/StreamVault/issues/new/choose" target="_blank" rel="noopener">Report it on GitHub</a> — leave out your install link and login, they contain your password.</p>
+      <p><a class="quiet-link" href="https://github.com/BlagovestKirilov/StreamVault/blob/master/PRIVACY.md" target="_blank" rel="noopener">Privacy: what StreamVault stores and why</a></p>
+    </footer>
   </div>
 
   <!-- Result: a dialog centred on the screen (phones and PCs) -->
@@ -1360,6 +1380,7 @@
 
         // Also fills the category list, so "Load Categories" isn't needed after a test
         const data = await runCheck(body);
+        document.getElementById('reportHint').hidden = data.ok;
         if (data.ok) {
           // The button swaps to "Install" (updateButtons in finally)
           showToast(data.account ? `${data.message} ${data.account}` : data.message, true);
@@ -1369,6 +1390,7 @@
           showToast(data.error || 'Connection failed');
         }
       } catch (e) {
+        document.getElementById('reportHint').hidden = false;
         btn.classList.add('error');
         btnText.textContent = 'Connection failed';
         showToast('Connection failed: ' + e.message);

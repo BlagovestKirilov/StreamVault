@@ -1,54 +1,105 @@
 # StreamVault IPTV
 
-**Stream live TV via Xtream Codes or M3U playlist.**
+**Your live TV from Xtream Codes or an M3U playlist, inside Stremio and Nuvio.**
 
-A Stremio addon that brings all your live IPTV channels into one place. Connect your existing IPTV subscription and watch live TV directly inside Stremio.
+StreamVault is a free addon that brings the live channels of your own IPTV subscription or playlist into
+[Stremio](https://www.stremio.com) and Nuvio. Set it up once on the configure page,
+then browse, search and play your channels like any other content.
 
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
+![Nuvio](https://img.shields.io/badge/Nuvio-Addon-purple?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
----
-
-## What You Can Do
-
-- **Watch Live TV** — all your live channels right inside Stremio
-- **Browse by Category** — your provider's own categories / playlist groups appear in Stremio's genre dropdown
-- **Pick Only What You Want** — choose categories (Xtream) or playlist groups (M3U) at setup to keep your library clean
-- **TV Guide (EPG)** — see what's playing now and next on Xtream channels, shown in your local time
-- **Search** — find any live channel by name directly in Stremio
-- **Quality Options** — HD / FHD / UHD versions of the same channel are offered together; Xtream channels come as both TS and HLS (try HLS if TS doesn't play)
-- **Test Your Connection** — verify your credentials before installing; Xtream shows account status, expiry date and connections
-- **Works with Picky Providers** — custom User-Agent / Referer from your playlist (`#EXTVLCOPT`, `#EXTHTTP`, `url|User-Agent=…`) is passed to the player
-- **Handles Large Playlists** — playlists are streamed and parsed, so even huge M3U files load without errors
-- **Private by Design** — your credentials are encrypted inside your install link
-- **Works Everywhere** — PC, Android, iOS, and TV — same addon, all devices
+> StreamVault provides **no channels or content**. Use it only with playlists and subscriptions you have the
+> right to watch.
 
 ---
 
-## How to Install
+## What you can do
+
+- **Watch live TV** — all your live channels inside Stremio or Nuvio
+- **Your categories, your order** — pick the categories (Xtream) or playlist groups (M3U) you want; they show in
+  the order you picked them, and with 2 or more picked each gets its own home-screen row (up to 8)
+- **Search** — by channel name; ignores accents and works in Latin or Cyrillic (`bnt` finds `БНТ`)
+- **One tile per channel** — "BTV", "BTV HD" and "BTV UHD" are one tile; its play list offers every version,
+  best quality first
+- **TV guide** — what's on now and next for Xtream channels, in your own time zone
+- **Change settings anytime** — open Configure in your app, change categories, press **Save changes**: same link,
+  nothing to reinstall
+- **Know what's wrong** — instead of an empty screen you get a tile that explains it: provider down, login
+  refused, subscription expired or ending soon, `https://` that should be `http://`
+- **Test before installing** — Test Connection checks your login or playlist and shows the account's status and
+  expiry date
+- **Works with picky providers** — a custom User-Agent / Referer from your playlist (`#EXTVLCOPT`, `#EXTHTTP`,
+  `url|User-Agent=…`) is passed to the player
+- **Handles huge playlists** — playlists are read as a stream, so very large M3U files load fine
+- **Every device** — PC, Android, iPhone, Android TV, and Samsung TVs through Nuvio
+
+---
+
+## How to install
 
 1. Open the StreamVault configure page
-2. Choose your source: **Xtream Codes** or **M3U Playlist**
-3. Enter your IPTV credentials or playlist URL
-4. Optionally test your connection and click **Load Categories** to pick only the categories / groups you want
-5. Click **Install to Stremio** — done!
+2. Choose **Xtream Codes** or **M3U Playlist** and enter your login or playlist link
+3. Press **Test Connection** — your categories / groups appear; pick the ones you want (none = all)
+4. Press **Install** — your app opens and adds StreamVault
 
-Your channels will appear in Stremio's catalog. Browse by category, search, and play. Search ignores accents and works in Latin or Cyrillic (`bnt` finds `БНТ`).
+Didn't open? Copy the link from the result and add it by hand: **Stremio** → Addons → Install from URL, or
+**Nuvio** → Add addon.
 
-> ⚠️ **VLC external player is required for live TV.** Live streams don't play in Stremio's built-in player.
+### Good to know
 
-> 💡 Already installed an older version? Reinstall from the configure page to get local TV-guide times and group selection.
+- **Live TV only** — films and series aren't supported.
+- **Stremio needs VLC for live TV:** Settings → Advanced/Playback → Default Player → External → VLC.
+  Nuvio plays live TV in its own player.
+- **Nuvio:** fully close and reopen the app after installing or saving changes to see your channels.
+- **Xtream channels come as TS and HLS / m3u8** — if one doesn't play, try the other. Accounts that allow only one
+  format see only that one.
+- **Watching on a TV?** Install on your phone or PC while logged in to the same Stremio account, then on the TV:
+  Addons → Sync addons. On Samsung (Tizen) TVs, Nuvio is the only way to use StreamVault.
+- **Got a tile saying "Set up StreamVault first"?** That StreamVault was added without settings. Tap Play on it (or
+  scan its code), set it up, and delete the empty one.
 
 ---
 
-## Supported Sources
+## Supported sources
 
-| Source | Live TV | Category filter | Pick at setup | TV Guide |
-|--------|:---:|:---:|:---:|:---:|
-| **Xtream Codes** | ✅ | ✅ | ✅ categories | ✅ |
-| **M3U Playlist** | ✅ | ✅ | ✅ groups | — |
+| Source | Live TV | Pick categories | TV guide | Formats |
+|--------|:---:|:---:|:---:|---|
+| **Xtream Codes** | ✅ | ✅ categories | ✅ | TS + HLS (what the account allows) |
+| **M3U playlist** | ✅ | ✅ groups | — | as in the playlist |
 
 ---
+
+## Something not working?
+
+[Report it on GitHub](https://github.com/BlagovestKirilov/StreamVault/issues/new/choose). **Never post your
+install link, server address, login or playlist link** — issues are public, and those contain your password.
+
+If channels don't load at all, check with your provider first: StreamVault only shows what your provider sends.
+
+## Privacy
+
+Your settings are saved **encrypted**, your IP address is never stored (only a one-way code for counting
+users), and the video goes straight from your provider to your player. Full details:
+[PRIVACY.md](PRIVACY.md).
+
+---
+
+## For developers
+
+Node.js 24 + Express, hosted on Fly.io. Server code is in [`src/`](src/) (one module per job — see
+[CLAUDE.md](CLAUDE.md) for the full map), the configure page in [`public/`](public/), tests in [`tests/`](tests/).
+
+```bash
+npm install
+npm start                             # http://localhost:7000/configure
+npm test                              # all tests (Jest)
+npm test -- tests/catalog.test.js     # one file
+npm run lint                          # ESLint + Sonar rules
+```
+
+Pushing to `master` runs lint and tests in GitHub Actions, then deploys to Fly.io.
 
 ## License
 
