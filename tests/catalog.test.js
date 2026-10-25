@@ -139,7 +139,7 @@ test("quality versions of a channel are one tile; trailing TV doesn't move a cha
   const names = ["[BG] ALPINE 24", "[BG] ALPHA ACTION", "[BG] ALPHA UHD", "[BG] ALPHA", "[BG] ALPHA (FHD)", "[BG] ALPHA HD",
     "[BG] NORTH SPORT UHD", "[BG] NORTH TV UHD", "[BG] NORTH", "[BG] NORTH SPORT"];
   jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent("#EXTM3U\n"
-    + names.map((n, i) => `#EXTINF:-1 group-title="[BU] BULGARIA",${n}\nhttp://example.com/${i}.m3u8`).join("\n")));
+    + names.map((n, i) => `#EXTINF:-1 group-title="[BU] NORTHLAND",${n}\nhttp://example.com/${i}.m3u8`).join("\n")));
   const cfg = enc({ t: "m3u", m: "http://quality-order.example.com/list.m3u" });
   const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
   expect(metas.map(m => m.name)).toEqual([
@@ -157,7 +157,7 @@ describe("home rows, merged versions, clean names", () => {
   const xtream = require("../src/xtream");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const CATEGORIES = [
-    { category_id: "1", category_name: "[BU] BULGARIA" },
+    { category_id: "1", category_name: "[BU] NORTHLAND" },
     { category_id: "2", category_name: "UK| NEWS" },
     { category_id: "3", category_name: "KIDS" },
   ];
@@ -182,7 +182,7 @@ describe("home rows, merged versions, clean names", () => {
     const cfg = xtreamSetup("2,1");
     const { catalogs, version } = (await request(app).get(`/${cfg}/manifest.json`)).body;
     expect(version).toBe("1.2.0");
-    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "BULGARIA"]); // tags hidden
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "NORTHLAND"]); // tags hidden
     expect(catalogs[1].id).toMatch(/^iptv_cat_[0-9a-f]{12}$/);
     expect(catalogs[1].extra).toEqual([{ name: "skip" }]);
     expect(await names(`/${cfg}/catalog/tv/${catalogs[1].id}.json`)).toEqual(["Beacon News"]);
@@ -219,8 +219,8 @@ describe("home rows, merged versions, clean names", () => {
     const cfg = xtreamSetup("2,1");
     xtream.getLiveStreams.mockRejectedValue(new Error("timeout of 15000ms exceeded")); // list not available
     const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
-    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] BULGARIA"]);
-    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "BULGARIA"]);
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND"]);
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "NORTHLAND"]);
 
     jest.spyOn(m3u, "parseM3U").mockRejectedValue(new Error("timeout of 30000ms exceeded"));
     const m3uCfg = enc({ t: "m3u", m: "http://not-ready.example.com/list.m3u", g: JSON.stringify(["Sport", "News"]) });
@@ -315,13 +315,13 @@ http://example.com/fhd.m3u8`));
   test("provider tags are hidden in tiles, rows, channel pages and streams", async () => {
     const cfg = xtreamSetup("2,1");
     const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
-    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "BULGARIA"]);
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "NORTHLAND"]);
     expect(await names(`/${cfg}/catalog/tv/iptv_live.json`)).toEqual(["Beacon News", "ALPHA", "NORTH"]);
     expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta.name).toBe("ALPHA");
     const { streams } = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_21.json`)).body;
     expect(streams[0].title.split("\n")[0]).toBe("Beacon News");
     expect(streams[0].url).toMatch(/\/Beacon%20News$/);
     // the genre dropdown keeps the real names (it filters by them)
-    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] BULGARIA"]);
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND"]);
   });
 });

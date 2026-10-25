@@ -75,20 +75,20 @@ test("M3U: picked groups in pick order, channels A–Z inside", async () => {
   const m3u = require("../src/m3u");
   const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   jest.spyOn(m3u, "parseM3U").mockImplementation(async (_url, groups) => m3u.parseM3UContent(`#EXTM3U
-#EXTINF:-1 group-title="Bulgaria",North
+#EXTINF:-1 group-title="Northland",North
 http://example.com/1.m3u8
-#EXTINF:-1 group-title="Serbia",Riva 1
+#EXTINF:-1 group-title="Southland",Riva 1
 http://example.com/2.m3u8
-#EXTINF:-1 group-title="Bulgaria",Alpha
+#EXTINF:-1 group-title="Northland",Alpha
 http://example.com/3.m3u8
-#EXTINF:-1 group-title="Serbia",Pine
+#EXTINF:-1 group-title="Southland",Pine
 http://example.com/4.m3u8`, groups));
   const names = async (g) => {
     const cfg = enc({ t: "m3u", m: "http://pick-order.example.com/list.m3u", g: JSON.stringify(g) });
     return (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name);
   };
-  expect(await names(["Serbia", "Bulgaria"])).toEqual(["Pine", "Riva 1", "Alpha", "North"]);
-  expect(await names(["Bulgaria", "Serbia"])).toEqual(["Alpha", "North", "Pine", "Riva 1"]);
+  expect(await names(["Southland", "Northland"])).toEqual(["Pine", "Riva 1", "Alpha", "North"]);
+  expect(await names(["Northland", "Southland"])).toEqual(["Alpha", "North", "Pine", "Riva 1"]);
   jest.restoreAllMocks();
 });
 

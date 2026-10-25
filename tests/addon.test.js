@@ -17,7 +17,7 @@ describe("category filter", () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
 #EXTINF:-1 group-title="Sports & News",Delta Sport
 http://example.com/1.m3u8
-#EXTINF:-1 group-title="Bulgaria",Alpha
+#EXTINF:-1 group-title="Northland",Alpha
 http://example.com/2.m3u8
 #EXTINF:-1 group-title="Sports & News",Ridge
 http://example.com/3.m3u8`));
@@ -25,7 +25,7 @@ http://example.com/3.m3u8`));
 
     const man = await request(app).get(`/${cfg}/manifest.json`);
     const genre = man.body.catalogs[0].extra.find(e => e.name === "genre");
-    expect(genre.options).toEqual(["Bulgaria", "Sports & News"]); // A–Z
+    expect(genre.options).toEqual(["Northland", "Sports & News"]); // A–Z
 
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("Sports & News")}.json`);
     expect(cat.body.metas.map(m => m.name)).toEqual(["Delta Sport", "Ridge"]);
