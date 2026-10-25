@@ -647,3 +647,34 @@ describe("/play redirect", () => {
     expect((await request(app).get(`/play/${m3uCfg}/live/1/ts/x`)).status).toBe(400);
   });
 });
+
+// ─── Ko-fi link clicks ───
+
+describe("Ko-fi link clicks", () => {
+  const stats = async () => (await request(app).get("/stats")).body;
+  const today = (s) => s.history.find(r => r.date === new Date().toISOString().slice(0, 10)) || {};
+
+  test("every click counts (all time + per day, by where), then the browser goes to Ko-fi", async () => {
+    const before = await stats();
+    for (const from of ["dialog", "dialog", "footer", "somewhere"]) {
+      const res = await request(app).get(`/go/kofi?from=${from}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("https://ko-fi.com/streamvaultaddon");
+    }
+    await request(app).head("/go/kofi?from=dialog"); // link preview: not a click
+    const after = await stats();
+    expect(after.kofiClicksTotal).toEqual({
+      dialog: before.kofiClicksTotal.dialog + 2,
+      footer: before.kofiClicksTotal.footer + 1,
+      other: before.kofiClicksTotal.other + 1,
+    });
+    const day = (key) => (today(after)[key] || 0) - (today(before)[key] || 0);
+    expect([day("kofiClicksDialog"), day("kofiClicksFooter"), day("kofiClicksOther")]).toEqual([2, 1, 1]);
+  });
+
+  test("the configure page's Ko-fi links go through the counter", async () => {
+    const html = (await request(app).get("/configure")).text;
+    expect(html).toContain('href="/go/kofi?from=dialog"');
+    expect(html).toContain('href="/go/kofi?from=footer"');
+  });
+});

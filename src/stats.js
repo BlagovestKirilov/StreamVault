@@ -21,6 +21,7 @@ const stats = {
   streamsByType: { tv: 0, movie: 0, series: 0 },
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
+  kofiClicks: { dialog: 0, footer: 0, other: 0 }, // clicks on the Ko-fi link (all time, every click)
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
   dailyBare: {},    // same, users whose app loads StreamVault without settings (never set up)
@@ -50,6 +51,7 @@ try {
   if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
   if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
+  if (!stats.kofiClicks) stats.kofiClicks = { dialog: 0, footer: 0, other: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
   if (!stats.dailyBare) stats.dailyBare = {};

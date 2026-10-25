@@ -340,6 +340,19 @@ app.get("/setup", (req, res) => {
 });
 app.get("/:config/configure", serveConfigure);
 
+// The configure page's Ko-fi links go through here: every click is counted (all
+// time + per day, by where it was: the result dialog or the footer), then the
+// browser goes on to Ko-fi. Only numbers — nothing about who clicked.
+const KOFI_URL = "https://ko-fi.com/streamvaultaddon";
+app.get("/go/kofi", (req, res) => {
+  if (req.method === "GET") { // not link previews (HEAD)
+    const from = ["dialog", "footer"].includes(req.query.from) ? req.query.from : "other";
+    stats.kofiClicks[from] = (stats.kofiClicks[from] || 0) + 1;
+    countToday(`kofiClicks${from[0].toUpperCase()}${from.slice(1)}`);
+  }
+  res.redirect(302, KOFI_URL);
+});
+
 // --- Configure page API: api.js ---
 registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, limitProviderChecks, limitConfig });
 
@@ -490,6 +503,7 @@ app.get("/stats", limitStats, (req, res) => {
     configures: stats.configures,
     reconfiguresTotal: stats.reconfigures,
     reinstallsTotal: stats.reinstalls,
+    kofiClicksTotal: stats.kofiClicks,
     streamsPlayed: stats.streams,
     streamsByType: stats.streamsByType,
     searches: stats.searches,

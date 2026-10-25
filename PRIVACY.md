@@ -34,6 +34,9 @@ itself is never saved**, and the code can't be turned back into it. These codes 
 (per-day lists), and the newest 10,000 are kept to tell new installs from returning ones. Daily totals are
 kept for 90 days.
 
+Clicks on the configure page's Ko-fi links are counted the same way — just a number per day and in
+total, nothing about who clicked.
+
 ## Server logs
 
 The server logs events such as "new install", "configure page opened" or "provider returned an error",

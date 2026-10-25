@@ -1080,6 +1080,112 @@
       "description": "Orange for 10 minutes after a restart/deploy"
     },
     {
+      "type": "stat",
+      "title": "Ko-fi clicks (all time)",
+      "id": 57,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_kofi_clicks_total) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Every click on the configure page Ko-fi links (result dialog + footer), not unique people. Tips themselves are on Ko-fi."
+    },
+    {
+      "type": "stat",
+      "title": "Ko-fi clicks today",
+      "id": 58,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=~\"kofiClicks.*\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Ko-fi link clicks today (UTC): result dialog + footer, every click counted."
+    },
+    {
       "type": "row",
       "title": "Server health",
       "id": 21,
@@ -1088,7 +1194,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 17
       },
       "panels": []
     },
@@ -1104,7 +1210,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1189,7 +1295,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1268,7 +1374,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 14
+        "y": 18
       },
       "targets": [
         {
@@ -1314,7 +1420,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 26
       },
       "panels": []
     },
@@ -1330,7 +1436,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 23
+        "y": 27
       },
       "targets": [
         {
@@ -1683,7 +1789,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 23
+        "y": 27
       },
       "targets": [
         {
@@ -2037,7 +2143,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 35
       },
       "targets": [
         {
@@ -2146,7 +2252,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 35
       },
       "targets": [
         {
@@ -2221,7 +2327,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 43
       },
       "panels": []
     },
@@ -2237,7 +2343,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {
@@ -2396,7 +2502,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 44
       },
       "targets": [
         {
@@ -2452,6 +2558,24 @@
           "expr": "sum(streamvault_today{counter=\"bareConverted\"}) or vector(0)",
           "legendFormat": "bareConverted",
           "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"kofiClicksDialog\"}) or vector(0)",
+          "legendFormat": "kofiClicksDialog",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"kofiClicksFooter\"}) or vector(0)",
+          "legendFormat": "kofiClicksFooter",
+          "refId": "H"
         }
       ],
       "fieldConfig": {
@@ -2494,6 +2618,36 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^kofiClicksDialog$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^kofiClicksFooter$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "super-light-purple"
+                }
+              }
+            ]
           }
         ]
       },
@@ -2506,7 +2660,7 @@
           "mode": "multi"
         }
       },
-      "description": "Setup tile: QR scans and taps. bareUsers = people whose app loads StreamVault without settings (never set up), per day; bareConverted = of those, how many installed a configured StreamVault (finished setup)."
+      "description": "Setup tile: QR scans and taps. bareUsers = people whose app loads StreamVault without settings (never set up), per day; bareConverted = of those, how many installed a configured StreamVault (finished setup). kofiClicksDialog / kofiClicksFooter = clicks on the Ko-fi links today (every click)."
     },
     {
       "type": "timeseries",
@@ -2520,7 +2674,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 52
       },
       "targets": [
         {
@@ -2594,7 +2748,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 52
       },
       "targets": [
         {
@@ -2647,7 +2801,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 60
       },
       "panels": []
     },
@@ -2663,7 +2817,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 61
       },
       "targets": [
         {
@@ -2711,7 +2865,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 61
       },
       "targets": [
         {
@@ -2755,7 +2909,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 69
       },
       "panels": []
     },
@@ -2771,7 +2925,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 66
+        "y": 70
       },
       "targets": [
         {
@@ -2879,7 +3033,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 66
+        "y": 70
       },
       "targets": [
         {
@@ -2950,7 +3104,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 78
       },
       "panels": []
     },
@@ -2966,7 +3120,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -3040,7 +3194,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 75
+        "y": 79
       },
       "targets": [
         {
@@ -3114,7 +3268,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -3187,7 +3341,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 87
       },
       "targets": [
         {
@@ -3262,7 +3416,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -3336,7 +3490,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 91
+        "y": 95
       },
       "targets": [
         {
@@ -3409,7 +3563,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 103
       },
       "targets": [
         {
@@ -3478,7 +3632,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 107
+        "y": 111
       },
       "panels": []
     },
@@ -3494,7 +3648,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -3634,7 +3788,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 108
+        "y": 112
       },
       "targets": [
         {
@@ -3691,7 +3845,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3740,7 +3894,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3850,7 +4004,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 116
+        "y": 120
       },
       "targets": [
         {
@@ -3907,7 +4061,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 124
+        "y": 128
       },
       "targets": [
         {
@@ -3955,7 +4109,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 124
+        "y": 128
       },
       "targets": [
         {

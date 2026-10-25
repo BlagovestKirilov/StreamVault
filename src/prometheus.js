@@ -63,6 +63,9 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
   c("configures_total", "Configure page visits since the start", stats.configures);
   c("reconfigures_total", "Configure opened from an installed StreamVault (all time)", stats.reconfigures);
   c("reinstalls_total", "Save changes pressed on the configure page (all time)", stats.reinstalls);
+  for (const [from, n] of Object.entries(stats.kofiClicks)) {
+    c("kofi_clicks_total", "Clicks on the Ko-fi link (all time, every click), by where", n, { from });
+  }
   c("streams_total", "Stream requests since the start", stats.streams);
   c("searches_total", "Searches since the start", stats.searches);
   g("unique_users", "Unique users since the start", stats.users.size);
