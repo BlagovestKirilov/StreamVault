@@ -619,6 +619,12 @@
       text-align: center;
       line-height: 1.5;
     }
+    /* Last line of the result (install and every save): set apart from the setup steps */
+    .result-support {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
 
     /* Error toast */
     .toast {
@@ -877,6 +883,7 @@
         </div>
         <p class="result-hint" id="installHints">Your app didn't open? Copy the link and paste it in<br/>Stremio &rarr; Addons &rarr; Install from URL, or Nuvio &rarr; Add addon.<br/>Nuvio: restart the app if the channels don't show up.<br/>Have another StreamVault that only shows “Set up StreamVault first”? Delete it from your addons.</p>
         <p class="tv-tip" id="tvTip"><svg class="tip-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 3l-4 4-4-4"/></svg><b>Watching on a TV?</b> Install here (phone or PC) while logged in to the same Stremio account, then on the TV open Addons &rarr; Sync addons.</p>
+        <p class="result-hint result-support">StreamVault is free. If it helps you, you can <a class="quiet-link" href="https://ko-fi.com/streamvaultaddon" target="_blank" rel="noopener">support the hosting on Ko-fi</a>.</p>
       </div>
   </dialog>
 
