@@ -14,9 +14,9 @@ const {
   configFromQueryString, normalizeXtreamLogin,
 } = require("./configlink");
 const {
-  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, countToday, countCode, noteRecent,
-  saveStats, saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams,
-  recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
+  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
+  countCode, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
+  recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
   m3uCache, M3U_CACHE_MAX, xtreamCache, XTREAM_CACHE_MAX, EPG_CACHE_MAX, epgCache, accountCache,
@@ -366,6 +366,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
     stats.users.add(user);
     stats.installs++;
     countToday("installs");
+    noteSetupDone(user);
   }
   // Track config type and daily active
   const cType = req.userConfig.type;
@@ -498,6 +499,8 @@ app.get("/stats", limitStats, (req, res) => {
     dailyActiveUsers: last7,
     // Unique users per day who opened a channel and got something to play
     dailyViewers: viewers7,
+    // Seen without settings ("Set up StreamVault first") and not set up since
+    bareUsersWaiting: stats.bareUsers.size,
     uptime: d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`,
     lastRestarted: PROCESS_START,
     startedAt: stats.startedAt,
@@ -544,6 +547,7 @@ app.get("/stats", limitStats, (req, res) => {
 // Logged with the User-Agent to learn which apps do this.
 function serveUnconfigured(req, res, body) {
   countToday("unconfigured");
+  noteBareUser(userKey(getIp(req)));
   noteRecent(recentUnconfigured, { path: maskPath(req.path), userAgent: userAgent(req) });
   res.json(body);
 }

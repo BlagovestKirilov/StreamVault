@@ -2434,6 +2434,24 @@
           "expr": "sum(streamvault_today{counter=\"reinstalls\"})",
           "legendFormat": "reinstalls",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"bareUsers\"})",
+          "legendFormat": "bareUsers",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"bareConverted\"}) or vector(0)",
+          "legendFormat": "bareConverted",
+          "refId": "F"
         }
       ],
       "fieldConfig": {
@@ -2446,7 +2464,38 @@
             }
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^bareUsers$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^bareConverted$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-green"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -2457,7 +2506,7 @@
           "mode": "multi"
         }
       },
-      "description": "setupScans = QR scanned, setupTaps = Play/link tapped on a phone, reconfigures = Configure opened from an installed StreamVault, reinstalls = Save changes pressed"
+      "description": "Setup tile: QR scans and taps. bareUsers = people whose app loads StreamVault without settings (never set up), per day; bareConverted = of those, how many installed a configured StreamVault (finished setup)."
     },
     {
       "type": "timeseries",

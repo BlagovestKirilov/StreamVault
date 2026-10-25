@@ -404,6 +404,36 @@ describe("installs without settings (bare manifest)", () => {
     expect(s.recentUnconfigured[0]).toMatchObject({ path: "/catalog/tv/iptv_live.json", userAgent: "StremioTV/1.0 (old build)" });
   });
 
+  test("setting up after the tile is measured: bare users per day, then bareConverted once", async () => {
+    const m3u = require("../src/m3u");
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1,One
+http://example.com/1.m3u8`));
+    const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const cfg = enc({ t: "m3u", m: "http://example.com/bare-setup.m3u" });
+    const as = (ip, path) => request(app).get(path).set("Fly-Client-IP", ip);
+    const before = await stats();
+    const today = (s, key) => s.history[0][key] || 0;
+
+    // A: only an empty install so far (twice: still one user)
+    await as("198.51.100.61", "/catalog/tv/iptv_live.json");
+    await as("198.51.100.61", "/catalog/tv/iptv_live.json");
+    // B: already set up, plus an old empty install — not someone stuck at setup
+    await as("198.51.100.62", `/${cfg}/manifest.json`);
+    await as("198.51.100.62", "/catalog/tv/iptv_live.json");
+    let s = await stats();
+    expect(today(s, "bareUsers")).toBe(today(before, "bareUsers") + 1);
+    expect(s.bareUsersWaiting).toBe(before.bareUsersWaiting + 1);
+
+    // A sets up: counted once, however often the configured StreamVault loads
+    await as("198.51.100.61", `/${cfg}/manifest.json`);
+    await as("198.51.100.61", `/${cfg}/manifest.json`);
+    s = await stats();
+    expect(today(s, "bareConverted")).toBe(today(before, "bareConverted") + 1);
+    expect(s.bareUsersWaiting).toBe(before.bareUsersWaiting);
+    jest.restoreAllMocks();
+  });
+
   test("film/series requests to an empty install count as foreign, not unconfigured", async () => {
     const before = (await stats()).history[0];
     for (const path of ["/stream/series/tt40385667:1:1.json", "/stream/anime/tt40385667:1:1.json", "/meta/movie/tt1.json"]) {

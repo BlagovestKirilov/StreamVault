@@ -23,6 +23,8 @@ const stats = {
   installsByType: { xtream: 0, m3u: 0 },
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
+  dailyBare: {},    // same, users whose app loads StreamVault without settings (never set up)
+  bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
 
@@ -50,6 +52,8 @@ try {
   if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
+  if (!stats.dailyBare) stats.dailyBare = {};
+  stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
   // All-time totals started after the daily counters: seed them from the rows
   for (const counter of ["reconfigures", "reinstalls"]) {
@@ -58,7 +62,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyBare]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -73,6 +77,9 @@ function saveStatsData() {
     const arr = [...stats.users];
     stats.users = new Set(arr.slice(arr.length - MAX_TRACKED_USERS));
   }
+  if (stats.bareUsers.size > MAX_TRACKED_USERS) {
+    stats.bareUsers = new Set([...stats.bareUsers].slice(-MAX_TRACKED_USERS));
+  }
   // Keep 90 days of per-day rows; freeze each day's unique-user counts into its
   // row so they survive after the per-day lists (30 days) are dropped
   const historyCutoff = new Date();
@@ -84,8 +91,9 @@ function saveStatsData() {
   }
   stats.history = history;
   return {
-    ...stats, users: [...stats.users],
+    ...stats, users: [...stats.users], bareUsers: [...stats.bareUsers],
     dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
+    dailyBare: lastDays(stats.dailyBare, 30),
   };
 }
 
@@ -100,11 +108,12 @@ function lastDays(daily, days) {
   return kept;
 }
 
-// { dau, viewers } for a day still in the per-day lists (older days: {})
+// { dau, viewers, bareUsers } for a day still in the per-day lists (older days: {})
 function uniqueCounts(day) {
   const counts = {};
   if (stats.dailyActive[day]) counts.dau = stats.dailyActive[day].size;
   if (stats.dailyViewers[day]) counts.viewers = stats.dailyViewers[day].size;
+  if (stats.dailyBare[day]) counts.bareUsers = stats.dailyBare[day].size;
   return counts;
 }
 
@@ -112,6 +121,20 @@ function addDailyUser(daily, user) {
   const today = todayKey();
   if (!daily[today]) daily[today] = new Set();
   daily[today].add(user);
+}
+
+// Does setting up after the "Set up StreamVault first" tile work? A user whose app
+// loads StreamVault without settings, and who never loaded a configured one, is
+// counted per day (bareUsers); if they later install a configured StreamVault,
+// that's one bareConverted. By IP code like dau, so a new IP looks like a new user.
+function noteBareUser(user) {
+  if (stats.users.has(user)) return; // has a configured StreamVault (an extra empty one)
+  stats.bareUsers.add(user);
+  addDailyUser(stats.dailyBare, user);
+}
+
+function noteSetupDone(user) {
+  if (stats.bareUsers.delete(user)) countToday("bareConverted");
 }
 
 // --- Per-day history (trends) + failures (provider problems) ---
@@ -227,8 +250,8 @@ function saveStatsSync() {
 setInterval(saveStats, 60000);
 
 module.exports = {
-  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, todayKey, dayRow, countToday, countCode,
-  providerErrorKey, recordError, noteRecent, saveStats, saveStatsSync,
-  recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured, recentPlayRejects,
-  recentBadLinks, recentTestFailures,
+  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
+  dayRow, countToday, countCode, providerErrorKey, recordError, noteRecent, saveStats,
+  saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
+  recentPlayRejects, recentBadLinks, recentTestFailures,
 };
