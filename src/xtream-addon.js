@@ -5,6 +5,8 @@
 
 const xtream = require("./xtream");
 const { trimTrailingSlashes } = require("./urlguard");
+const { withinMs } = require("./util");
+const { ACCOUNT_WAIT_MS } = require("./notices");
 const {
   m3uCache, xtreamCache, XTREAM_CACHE_TTL, XTREAM_CACHE_MAX, ACCOUNT_CACHE_TTL, ACCOUNT_RETRY_MS,
   XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache, accountCache,
@@ -233,11 +235,26 @@ async function getXtreamStreams(config, type, id, play = {}) {
   // an older saved id of a lower version is opened
   const item = catalog.find(m => m.id === id);
   const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
-  return versions.flatMap(channel => xtreamStreamPair(config, channel, play));
+  // Usually cached already (catalog / expiry tile); a slow provider gets both formats
+  const formats = allowedFormats(await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null));
+  return versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
 }
 
-// TS + HLS for one Xtream channel
-function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}) {
+// The formats this account may play, from its "allowed_output_formats" — e.g.
+// ["m3u8", "ts"], or only ["ts"] on some panels. Names compared ignoring case and
+// spaces ("TS", "HLS"; a "ts,m3u8" string too). Nothing usable listed (missing,
+// empty, only "rtmp"): both, as before — never hide a format on a guess.
+function allowedFormats(info) {
+  const raw = info?.allowed_output_formats;
+  const list = typeof raw === "string" ? raw.split(",") : raw;
+  const names = new Set((Array.isArray(list) ? list : []).map(f => String(f).trim().toLowerCase()));
+  const ts = names.has("ts") || names.has("mpegts");
+  const hls = names.has("m3u8") || names.has("hls");
+  return ts || hls ? { ts, hls } : { ts: true, hls: true };
+}
+
+// TS + HLS for one Xtream channel (only the formats the account allows)
+function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}, formats = { ts: true, hls: true }) {
   // id format: iptv_tv_<streamId>
   const streamId = channel.id.replace("iptv_tv_", "");
   const server = trimTrailingSlashes(config.server);
@@ -255,19 +272,19 @@ function xtreamStreamPair(config, channel, { baseUrl, configPath } = {}) {
     : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
 
   return [
-    {
+    formats.ts && {
       name: "StreamVault\nTS",
       title: `${tvName}\nMPEG-TS`,
       url: tsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
-    {
+    formats.hls && {
       name: "StreamVault\nHLS",
       title: `${tvName}\nHLS / m3u8`,
       url: hlsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
-  ];
+  ].filter(Boolean);
 }
 
 module.exports = {

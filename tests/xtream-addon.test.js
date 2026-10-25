@@ -69,3 +69,39 @@ describe("epgTimeRange", () => {
     expect(epgTimeRange({ ...entry, start: "2026-10-12 09:00:00", end: "2026-10-12 10:00:00" }, "Not/AZone")).toBe("09:00 - 10:00");
   });
 });
+
+// ─── Stream formats the account allows (allowed_output_formats) ───
+
+describe("stream formats the account allows", () => {
+  const xtream = require("../src/xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  let users = 0;
+  // Stream buttons for channel 7 (account cache is per login: a new user each time)
+  const formatsFor = async (account) => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 7, name: "Nova" }]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    if (account instanceof Error) jest.spyOn(xtream, "getAccountInfo").mockRejectedValue(account);
+    else jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(account);
+    const cfg = enc({ t: "xtream", s: "http://example.com", u: `formats-${users++}`, p: "p" });
+    const { streams } = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_7.json`)).body;
+    return streams.map(s => s.name.split("\n")[1]);
+  };
+  const allowing = (formats) => ({ auth: 1, status: "Active", allowed_output_formats: formats });
+  afterEach(() => jest.restoreAllMocks());
+
+  test.each([
+    ["both allowed", allowing(["m3u8", "ts"]), ["TS", "HLS"]],
+    ["only TS", allowing(["ts"]), ["TS"]],
+    ["only HLS, in upper case", allowing(["M3U8"]), ["HLS"]],
+    ["mixed case with spaces", allowing([" Ts "]), ["TS"]],
+    ["the names HLS / MPEGTS", allowing(["Hls"]), ["HLS"]],
+    ["a comma-separated string", allowing("TS, m3u8"), ["TS", "HLS"]],
+    ["only a format we don't offer (rtmp): both", allowing(["rtmp"]), ["TS", "HLS"]],
+    ["an empty list: both", allowing([]), ["TS", "HLS"]],
+    ["not reported: both", { auth: 1, status: "Active" }, ["TS", "HLS"]],
+    ["no account info: both", null, ["TS", "HLS"]],
+    ["account lookup failed: both", new Error("timeout of 15000ms exceeded"), ["TS", "HLS"]],
+  ])("%s", async (_, account, expected) => {
+    expect(await formatsFor(account)).toEqual(expected);
+  });
+});
