@@ -15,11 +15,11 @@ describe("category filter", () => {
 
   test("M3U: manifest lists playlist groups, catalog filters by genre", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
-#EXTINF:-1 group-title="Sports & News",Diema Sport
+#EXTINF:-1 group-title="Sports & News",Delta Sport
 http://example.com/1.m3u8
-#EXTINF:-1 group-title="Bulgaria",bTV
+#EXTINF:-1 group-title="Bulgaria",Alpha
 http://example.com/2.m3u8
-#EXTINF:-1 group-title="Sports & News",Ring
+#EXTINF:-1 group-title="Sports & News",Ridge
 http://example.com/3.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://genre-test.example.com/list.m3u" });
 
@@ -28,7 +28,7 @@ http://example.com/3.m3u8`));
     expect(genre.options).toEqual(["Bulgaria", "Sports & News"]); // A–Z
 
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("Sports & News")}.json`);
-    expect(cat.body.metas.map(m => m.name)).toEqual(["Diema Sport", "Ring"]);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["Delta Sport", "Ridge"]);
   });
 
   test("Xtream: category names become genre options", async () => {
@@ -37,8 +37,8 @@ http://example.com/3.m3u8`));
       { category_id: "2", category_name: "BG | Kids" },
     ]);
     jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
-      { stream_id: 10, name: "Diema Sport", category_id: "1" },
-      { stream_id: 11, name: "Nickelodeon", category_id: 2 },
+      { stream_id: 10, name: "Delta Sport", category_id: "1" },
+      { stream_id: 11, name: "Kiddo", category_id: 2 },
     ]);
     jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
     const cfg = enc({ t: "xtream", s: "http://genre-xtream.example.com", u: "u", p: "p", c: "" });
@@ -48,7 +48,7 @@ http://example.com/3.m3u8`));
     expect(genre.options).toEqual(["BG | Kids", "BG | Sport"]); // A–Z
 
     const cat = await request(app).get(`/${cfg}/catalog/tv/iptv_live/genre=${encodeURIComponent("BG | Kids")}.json`);
-    expect(cat.body.metas.map(m => m.name)).toEqual(["Nickelodeon"]);
+    expect(cat.body.metas.map(m => m.name)).toEqual(["Kiddo"]);
   });
 
   test("empty and set-up installs are told apart by their description", async () => {
@@ -84,7 +84,7 @@ describe("foreign ids", () => {
   test("an Xtream install offers no (unplayable) streams for an M3U-style id", async () => {
     const streams = jest.spyOn(xtream, "getLiveStreams");
     const cfg = enc({ t: "xtream", s: "http://foreign-xt.example.com", u: "u", p: "p", c: "" });
-    for (const id of ["mzansimagic.za", "Moja.Love.HD.za (src05)"]) {
+    for (const id of ["examplemagic.za", "Sample.Love.HD.za (src05)"]) {
       const res = await request(app).get(`/${cfg}/stream/tv/iptv_tv_${encodeURIComponent(id)}.json`);
       expect(res.body).toEqual({ streams: [] });
     }
@@ -237,7 +237,7 @@ describe("live-stats fixes 2", () => {
   afterEach(() => jest.restoreAllMocks());
 
   test("a channel without tvg-id is still found after the playlist order changed", async () => {
-    // saved when "Fox News Now" was the 3rd entry (…_2); now a channel was added above it
+    // saved when "Fennec News Now" was the 3rd entry (…_2); now a channel was added above it
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
 #EXTINF:-1,New Channel
 http://example.com/new.m3u8
@@ -245,13 +245,13 @@ http://example.com/new.m3u8
 http://example.com/a.m3u8
 #EXTINF:-1,Beta
 http://example.com/b.m3u8
-#EXTINF:-1,Fox News Now
-http://example.com/fox.m3u8`));
+#EXTINF:-1,Fennec News Now
+http://example.com/fennec.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/reordered.m3u" });
-    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_fox_news_now_2.json`)).body.streams;
-    expect(streams.map(s => s.url)).toEqual(["http://example.com/fox.m3u8"]);
-    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_m3u_fox_news_now_2.json`)).body.meta;
-    expect(meta.name).toBe("Fox News Now");
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_fennec_news_now_2.json`)).body.streams;
+    expect(streams.map(s => s.url)).toEqual(["http://example.com/fennec.m3u8"]);
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_m3u_fennec_news_now_2.json`)).body.meta;
+    expect(meta.name).toBe("Fennec News Now");
     // a name that isn't in the playlist anymore still returns nothing
     expect((await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_gone_channel_5.json`)).body.streams).toEqual([]);
   });
@@ -612,7 +612,7 @@ describe("/play redirect", () => {
   const xt = enc({ t: "xtream", s: "http://example.com:8080", u: "user", p: "pass" });
 
   test("redirects a valid live stream to the provider", async () => {
-    const res = await request(app).get(`/play/${xt}/live/123/ts/Diema%20Sport`);
+    const res = await request(app).get(`/play/${xt}/live/123/ts/Delta%20Sport`);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("http://example.com:8080/live/user/pass/123.ts");
   });

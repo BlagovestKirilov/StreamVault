@@ -4,7 +4,7 @@
  */
 
 // --- Search matching ---
-// "La Vie Rêve" = "la vie reve", "БНТ 1" = "bnt 1", "Nova-Sport" = "nova sport".
+// "La Vie Rêve" = "la vie reve", "Канал 1" = "kanal 1", "Nord-Sport" = "nord sport".
 // Cyrillic (Bulgarian/Serbian/Macedonian/Russian/Ukrainian) is written in Latin
 // letters so either alphabet finds the channel.
 const CYRILLIC_TO_LATIN = {
@@ -92,7 +92,7 @@ function compareCategories(a, b, rank) {
 // Names are compared as search sees them (normalizeForSearch: case, accents,
 // punctuation and odd/leading spaces ignored, Cyrillic transliterated by sound),
 // so a provider's hidden characters don't move a channel. Quality tags don't count
-// either: "BTV", "BTV HD", "BTV UHD" stay together (before "BTV ACTION"); same
+// either: "ALPHA", "ALPHA HD", "ALPHA UHD" stay together (before "ALPHA ACTION"); same
 // base name → lower quality first. Tags match any case, also inside () or [].
 const QUALITY_TAGS = new Map([
   ["sd", 1], ["lq", 1], ["hq", 2], ["hd", 2], ["720p", 2], ["fhd", 3], ["1080p", 3], ["1080i", 3],
@@ -100,7 +100,7 @@ const QUALITY_TAGS = new Map([
   ["hevc", 0], ["h265", 0], ["h264", 0], ["50fps", 0], ["60fps", 0],
 ]);
 
-// "[BG] BTV (UHD)" → { base: "bg btv", quality: 4 }
+// "[BG] ALPHA (UHD)" → { base: "bg alpha", quality: 4 }
 function nameKey(name) {
   const normalized = normalizeForSearch(name || "");
   const kept = [];
@@ -111,14 +111,14 @@ function nameKey(name) {
     else quality = Math.max(quality, tag);
   }
   const mergeBase = mergeWords(normalized.split(" "));
-  // A trailing "TV" doesn't count either: "NOVA TV" sorts with "NOVA", not after
-  // "NOVA SPORT" ("BTV", "TVN", "TV 1000" keep theirs)
+  // A trailing "TV" doesn't count either: "NORTH TV" sorts with "NORTH", not after
+  // "NORTH SPORT" ("ALPHATV", "TVX", "TV 9000" keep theirs)
   if (kept.length > 1 && kept.at(-1) === "tv") kept.pop();
   return { base: kept.join(" ") || normalized, mergeBase, quality };
 }
 
 // Versions of one channel differ only by quality tags and a "TV" at the END of
-// the name ("BTV", "BTV HD", "BOX TV" + "BOX UHD", "BALKANIKA MUSIC TV UHD") —
+// the name ("ALPHA", "ALPHA HD", "BRIX TV" + "BRIX UHD", "BAY MUSIC TV UHD") —
 // merged into one tile. A tag inside a name ("Sport HD Premium") is part of it.
 function mergeWords(words) {
   let end = words.length;
@@ -131,7 +131,7 @@ function mergeWords(words) {
   return words.slice(0, end).join(" ");
 }
 
-// "[BG] BTV (UHD)" → "[BG] BTV" (display name of a merged tile): trailing tags only
+// "[BG] ALPHA (UHD)" → "[BG] ALPHA" (display name of a merged tile): trailing tags only
 function stripQualityTags(name) {
   const words = String(name || "").trim().split(" ");
   let end = words.length;
@@ -160,7 +160,7 @@ function cleanName(name) {
 }
 
 // One tile per channel: versions of a channel in the same category that differ
-// only by quality ("BTV", "BTV HD", "BTV UHD") share a tile, named without the
+// only by quality ("ALPHA", "ALPHA HD", "ALPHA UHD") share a tile, named without the
 // tag, with the best version's id; its streams offer every version, best first.
 // Built once per cached list (WeakMap: dropped with it).
 const MAX_VERSIONS = 6;
@@ -186,7 +186,7 @@ function catalogView(list) {
       display.push(versions[0]);
       continue;
     }
-    // Named like the plain version as the provider wrote it ("BOX TV", not "BOX")
+    // Named like the plain version as the provider wrote it ("BRIX TV", not "BRIX")
     const title = stripQualityTags((ordered.find(m => m.quality === 0) || ordered[0]).meta.name);
     display.push({ ...versions[0], name: title });
     titles.set(versions[0].id, title);

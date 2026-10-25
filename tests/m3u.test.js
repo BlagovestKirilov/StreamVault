@@ -60,15 +60,15 @@ http://example.com/show.m3u8`;
 
   test("gives entries sharing a tvg-id unique ids, first keeps the bare id", () => {
     const content = `#EXTM3U
-#EXTINF:-1 tvg-id="btv.bg",bTV HD
+#EXTINF:-1 tvg-id="alpha.bg",Alpha HD
 http://example.com/btv_hd.m3u8
-#EXTINF:-1 tvg-id="btv.bg",bTV FHD
+#EXTINF:-1 tvg-id="alpha.bg",Alpha FHD
 http://example.com/btv_fhd.m3u8
-#EXTINF:-1 tvg-id="btv.bg",bTV UHD
+#EXTINF:-1 tvg-id="alpha.bg",Alpha UHD
 http://example.com/btv_uhd.m3u8`;
     const { channels } = parseM3UContent(content);
-    expect(channels.map(c => c.id)).toEqual(["btv.bg", "btv.bg_v2", "btv.bg_v3"]);
-    expect(channels.every(c => c.tvgId === "btv.bg")).toBe(true);
+    expect(channels.map(c => c.id)).toEqual(["alpha.bg", "alpha.bg_v2", "alpha.bg_v3"]);
+    expect(channels.every(c => c.tvgId === "alpha.bg")).toBe(true);
   });
 
   test("captures #EXTVLCOPT headers for the next entry only", () => {

@@ -708,7 +708,7 @@ async function noticeMetaForAccount(config, id, type) {
 // user's whole playlist to find nothing. Counted per day as foreignRequests.
 // Also foreign: other addons' ids that merely start with "iptv_" (e.g.
 // "iptv_a02ed40f856b05bd"), and — on an Xtream install — ids that can't be an
-// Xtream stream id ("iptv_tv_mzansimagic.za" from the same user's M3U install).
+// Xtream stream id ("iptv_tv_examplemagic.za" from the same user's M3U install).
 // Answering those with play buttons gave links /play refuses: pressing play
 // did nothing.
 const XTREAM_STREAM_ID = /^[A-Za-z0-9_-]{1,40}$/;

@@ -227,8 +227,8 @@ describe("stats history and failures", () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent([
       "#EXTM3U",
       '#EXTINF:-1 tvg-id="s1",La Vie Rêve', "http://example.com/1.m3u8",
-      '#EXTINF:-1 tvg-id="s2",БНТ 1 HD', "http://example.com/2.m3u8",
-      '#EXTINF:-1 tvg-id="s3",Nova-Sport', "http://example.com/3.m3u8",
+      '#EXTINF:-1 tvg-id="s2",КАНАЛ 1 HD', "http://example.com/2.m3u8",
+      '#EXTINF:-1 tvg-id="s3",Nord-Sport', "http://example.com/3.m3u8",
       '#EXTINF:-1 tvg-id="s4",Ćirilica Đorđe', "http://example.com/4.m3u8",
     ].join("\n")));
     const cfg = enc({ t: "m3u", m: "http://example.com/search-norm.m3u" });
@@ -236,12 +236,12 @@ describe("stats history and failures", () => {
 
     expect(await names("la vie reve")).toEqual(["La Vie Rêve"]);
     expect(await names("RÊVE")).toEqual(["La Vie Rêve"]);
-    expect(await names("bnt 1")).toEqual(["БНТ 1 HD"]);
-    expect(await names("бнт")).toEqual(["БНТ 1 HD"]);
-    expect(await names("nova sport")).toEqual(["Nova-Sport"]);
-    expect(await names("нова")).toEqual(["Nova-Sport"]);
+    expect(await names("kanal 1")).toEqual(["КАНАЛ 1 HD"]);
+    expect(await names("канал")).toEqual(["КАНАЛ 1 HD"]);
+    expect(await names("nord sport")).toEqual(["Nord-Sport"]);
+    expect(await names("норд")).toEqual(["Nord-Sport"]);
     expect(await names("cirilica dorde")).toEqual(["Ćirilica Đorđe"]);
-    expect(await names("bnt nova")).toEqual([]);
+    expect(await names("kanal nord")).toEqual([]);
   });
 
   test("one failed download shared by many waiting requests counts as one error", async () => {

@@ -38,7 +38,7 @@ describe("Xtream account checks", () => {
   });
 
   test("channel page shows when the subscription expires", async () => {
-    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 5, name: "Diema" }]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 5, name: "Delta" }]);
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
     jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
     jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active", exp_date: "1796083200" });
@@ -48,7 +48,7 @@ describe("Xtream account checks", () => {
   });
 
   test("channel page warns when the subscription has expired", async () => {
-    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 5, name: "Diema" }]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 5, name: "Delta" }]);
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
     jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
     jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active", exp_date: String(past) });
@@ -78,7 +78,7 @@ describe("stream formats the account allows", () => {
   let users = 0;
   // Stream buttons for channel 7 (account cache is per login: a new user each time)
   const formatsFor = async (account) => {
-    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 7, name: "Nova" }]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 7, name: "North" }]);
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
     if (account instanceof Error) jest.spyOn(xtream, "getAccountInfo").mockRejectedValue(account);
     else jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(account);

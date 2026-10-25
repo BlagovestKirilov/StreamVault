@@ -9,6 +9,7 @@ then browse, search and play your channels like any other content.
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
 ![Nuvio](https://img.shields.io/badge/Nuvio-Addon-purple?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20StreamVault-7C5CFC?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/streamvaultaddon)
 
 > StreamVault provides **no channels or content**. Use it only with playlists and subscriptions you have the
 > right to watch.
@@ -20,8 +21,8 @@ then browse, search and play your channels like any other content.
 - **Watch live TV** — all your live channels inside Stremio or Nuvio
 - **Your categories, your order** — pick the categories (Xtream) or playlist groups (M3U) you want; they show in
   the order you picked them, and with 2 or more picked each gets its own home-screen row (up to 8)
-- **Search** — by channel name; ignores accents and works in Latin or Cyrillic (`bnt` finds `БНТ`)
-- **One tile per channel** — "BTV", "BTV HD" and "BTV UHD" are one tile; its play list offers every version,
+- **Search** — by channel name; ignores accents and works in Latin or Cyrillic (`kanal` finds `Канал`)
+- **One tile per channel** — "Channel One", "Channel One HD" and "Channel One UHD" are one tile; its play list offers every version,
   best quality first
 - **TV guide** — what's on now and next for Xtream channels, in your own time zone
 - **Change settings anytime** — open Configure in your app, change categories, press **Save changes**: same link,
@@ -86,8 +87,12 @@ users), and the video goes straight from your provider to your player. Full deta
 
 ## Support
 
-StreamVault is free, open source and ad-free. If it's useful to you, tips on
-[Ko-fi](https://ko-fi.com/streamvaultaddon) pay for the hosting.
+StreamVault is free, open source and ad-free. If it's useful to you, a tip on Ko-fi pays for the
+hosting — thank you!
+
+<p align="center">
+  <a href="https://ko-fi.com/streamvaultaddon"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support StreamVault on Ko-fi" height="36" /></a>
+</p>
 
 ---
 
