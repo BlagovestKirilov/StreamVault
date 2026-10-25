@@ -86,8 +86,8 @@ users), and the video goes straight from your provider to your player. Full deta
 
 ## Support
 
-StreamVault is free and open source. If it's useful to you, you can support the hosting on
-[Ko-fi](https://ko-fi.com/streamvaultaddon).
+StreamVault is free, open source and ad-free. If it's useful to you, tips on
+[Ko-fi](https://ko-fi.com/streamvaultaddon) pay for the hosting.
 
 ---
 
