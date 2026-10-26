@@ -681,3 +681,36 @@ describe("Ko-fi link clicks", () => {
     expect(html).toContain('href="/go/kofi?from=footer"');
   });
 });
+
+// ─── README installs badge ───
+
+describe("installs badge", () => {
+  test("shields.io endpoint JSON with the install count, rounded down", async () => {
+    const res = await request(app).get("/badge/installs.json");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ schemaVersion: 1, label: "installs", color: "7C5CFC", cacheSeconds: 3600 });
+    const installs = (await request(app).get("/stats")).body.installs;
+    expect(res.body.message).toBe(String(installs)); // under 1000 in tests: the exact number
+    expect(Object.keys(res.body).sort((a, b) => a.localeCompare(b)))
+      .toEqual(["cacheSeconds", "color", "label", "message", "schemaVersion"]); // nothing else public
+  });
+
+  test("large counts never round up", () => {
+    const script = `
+      const { app } = require('./addon'); const r = require('supertest');
+      const stats = require('./stats').stats;
+      const out = [];
+      (async () => {
+        for (const n of [999, 1000, 2747, 2999, 3000, 3050, 12345]) {
+          stats.installs = n;
+          out.push((await r(app).get('/badge/installs.json')).body.message);
+        }
+        console.log(JSON.stringify(out)); process.exit(0);
+      })();`;
+    const { spawnSync } = require("node:child_process");
+    const path = require("node:path");
+    const dir = require("node:fs").mkdtempSync(path.join(require("node:os").tmpdir(), "sv-badge-"));
+    const run = spawnSync(process.execPath, ["-e", script], { cwd: path.join(__dirname, "..", "src"), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000 });
+    expect(JSON.parse(run.stdout.trim().split("\n").pop())).toEqual(["999", "1k+", "2.7k+", "2.9k+", "3k+", "3k+", "12.3k+"]);
+  });
+});

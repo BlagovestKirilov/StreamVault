@@ -348,6 +348,18 @@ app.get("/setup", (req, res) => {
 });
 app.get("/:config/configure", serveConfigure);
 
+// Live installs badge for the README (shields.io "endpoint" format). Only this one
+// total is public — /stats stays behind STATS_SECRET. Rounded down with a "+", so the
+// badge never shows more than the real number (2747 → "2.7k+"). Shields caches it.
+function installsBadgeText(n) {
+  if (n < 1000) return String(n);
+  const k = Math.floor(n / 100) / 10;
+  return `${Number.isInteger(k) ? k : k.toFixed(1)}k+`;
+}
+app.get("/badge/installs.json", limitConfig, (_req, res) => {
+  res.json({ schemaVersion: 1, label: "installs", message: installsBadgeText(stats.installs), color: "7C5CFC", cacheSeconds: 3600 });
+});
+
 // The configure page's Ko-fi links go through here: every click is counted (all
 // time + per day, by where it was: the result dialog or the footer), then the
 // browser goes on to Ko-fi. Only numbers — nothing about who clicked.

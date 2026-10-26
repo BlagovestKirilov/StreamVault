@@ -32,7 +32,7 @@ searches and errors — as numbers per day.
 To count *unique* users, your IP address is turned into a one-way code with a secret key. **The IP address
 itself is never saved**, and the code can't be turned back into it. These codes are kept for up to 30 days
 (per-day lists), and the newest 10,000 are kept to tell new installs from returning ones. Daily totals are
-kept for 90 days.
+kept for 90 days. The total number of installs is public (the README badge) — just that one number.
 
 Clicks on the configure page's Ko-fi links are counted the same way — just a number per day and in
 total, nothing about who clicked.
