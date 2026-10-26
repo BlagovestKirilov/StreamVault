@@ -3853,7 +3853,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(fly_volume_used_pct{app=\"streamvault\"})",
+          "expr": "100 * max(streamvault_volume_bytes{kind=\"used\"}) / max(streamvault_volume_bytes{kind=\"total\"})",
           "legendFormat": "used %",
           "refId": "A"
         }
@@ -3880,7 +3880,7 @@
           "mode": "multi"
         }
       },
-      "description": "stats.json + links.json live here (1 GB volume)"
+      "description": "stats.json + links.json live here (1 GB volume). Measured by StreamVault itself (Fly exports no volume metrics for this app)."
     },
     {
       "type": "timeseries",

@@ -8,6 +8,15 @@ describe("Prometheus metrics", () => {
   const { buildMetricsText } = require("../src/addon");
   const metrics = require("../src/metrics");
 
+  test("disk use of the data folder is measured by the server (Fly exports none)", () => {
+    const text = buildMetricsText();
+    const value = (kind) => Number(new RegExp(String.raw`^streamvault_volume_bytes\{kind="${kind}"\} (\d+)$`, "m").exec(text)?.[1]);
+    expect(value("total")).toBeGreaterThan(0);
+    expect(value("used")).toBeGreaterThan(0);
+    expect(value("used")).toBeLessThanOrEqual(value("total"));
+    expect(value("available")).toBeLessThanOrEqual(value("total"));
+  });
+
   test("valid text format with memory, caches, today's counters and per-route requests", async () => {
     await request(app).get("/health");
     await request(app).get("/catalog/tv/iptv_live.json");

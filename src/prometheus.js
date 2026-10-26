@@ -4,9 +4,10 @@
  * the recent lists, as Prometheus gauges/counters.
  */
 
+const fs = require("node:fs");
 const metrics = require("./metrics");
 const {
-  stats, todayKey, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
+  STATS_DIR, stats, todayKey, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
@@ -57,6 +58,7 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
   g("downloads_waiting", "Big provider downloads waiting for a slot", downloadQueue.length);
   g("inflight_loads", "Shared in-flight loads (once())", inflight.size);
   g("stable_links", "Saved stable install links + edited old links (links.json)", linkStore.size());
+  writeVolumeMetrics(g);
 
   // All-time usage (from stats.json, survives restarts)
   c("installs_total", "Installs (new users) since the start", stats.installs);
@@ -81,6 +83,23 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
 }
 
 // Today (UTC) — every daily counter, the provider errors and our error responses
+// Disk usage of the data folder (the /data volume on Fly): Fly doesn't export volume
+// metrics for this app, so the server measures it itself. Skipped if it can't be read.
+function writeVolumeMetrics(g) {
+  let disk;
+  try {
+    disk = fs.statfsSync(STATS_DIR);
+  } catch (_) {
+    return; // no statfs on this system: the panel just stays empty
+  }
+  const help = "Disk space of the data folder (stats.json, links.json)";
+  const total = disk.blocks * disk.bsize;
+  const available = disk.bavail * disk.bsize;
+  g("volume_bytes", help, total, { kind: "total" });
+  g("volume_bytes", help, (disk.blocks - disk.bfree) * disk.bsize, { kind: "used" });
+  g("volume_bytes", help, available, { kind: "available" });
+}
+
 function writeTodayMetrics(g) {
   const today = todayKey();
   const row = stats.history[today] || {};
