@@ -280,10 +280,6 @@ function extractConfig(req, res, next) {
   }
 }
 
-// A broken install link opened by an app (manifest/catalog/meta/stream): answered
-// like an install without settings — the "Set up StreamVault first" tile says what
-// to do, instead of an error the app retries silently (one Nuvio retried hourly).
-// The configure page (/api/config) and /play keep their error responses.
 // The "Set up StreamVault first" tile for an install that can't show channels: only
 // on the first page of the StreamVault row — not on later pages, and not in search
 // results (apps like Nuvio send their global film search to every addon, so the tile
@@ -294,6 +290,10 @@ function setupTileCatalog(extra, type) {
   return { metas: later || search ? [] : [noticeMeta("setup", type)] };
 }
 
+// A broken install link opened by an app (manifest/catalog/meta/stream): answered
+// like an install without settings — the "Set up StreamVault first" tile says what
+// to do, instead of an error the app retries silently (one Nuvio retried hourly).
+// The configure page (/api/config) and /play keep their error responses.
 function brokenLinkAnswer(req) {
   const route = req.route?.path || "";
   const { type, id } = req.params;

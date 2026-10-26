@@ -7,8 +7,8 @@
 const fs = require("node:fs");
 const metrics = require("./metrics");
 const {
-  STATS_DIR, stats, todayKey, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
-  recentPlayRejects, recentBadLinks, recentTestFailures,
+  STATS_DIR, stats, todayKey, recentErrors, recentUnknownPaths, recentEmptyStreams,
+  recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
   m3uCache, M3U_CACHE_MAX, xtreamCache, XTREAM_CACHE_MAX, EPG_CACHE_MAX, epgCache, accountCache,
@@ -82,7 +82,6 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
   return w.text();
 }
 
-// Today (UTC) — every daily counter, the provider errors and our error responses
 // Disk usage of the data folder (the /data volume on Fly): Fly doesn't export volume
 // metrics for this app, so the server measures it itself. Skipped if it can't be read.
 function writeVolumeMetrics(g) {
@@ -100,6 +99,7 @@ function writeVolumeMetrics(g) {
   g("volume_bytes", help, available, { kind: "available" });
 }
 
+// Today (UTC) — every daily counter, the provider errors and our error responses
 function writeTodayMetrics(g) {
   const today = todayKey();
   const row = stats.history[today] || {};
