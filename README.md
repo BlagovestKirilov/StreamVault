@@ -3,7 +3,7 @@
 **Your live TV from Xtream Codes or an M3U playlist, inside Stremio and Nuvio.**
 
 StreamVault is a free addon that brings the live channels of your own IPTV subscription or playlist into
-[Stremio](https://www.stremio.com) and Nuvio. Set it up once on the configure page,
+[Stremio](https://www.stremio.com) and [Nuvio](https://nuvio.tv). Set it up once on the configure page,
 then browse, search and play your channels like any other content.
 
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
