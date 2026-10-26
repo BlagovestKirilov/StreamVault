@@ -36,7 +36,7 @@ const { registerApiRoutes, formatAccountInfo } = require("./api");
 const prometheus = require("./prometheus");
 const xtream = require("./xtream");
 const {
-  makePosterUrl, cleanName, catalogView, catalogMeta, normalizeForSearch,
+  makePosterUrl, cleanName, catalogView, catalogMeta, searchKey, channelSearchKey,
 } = require("./catalog");
 const STATS_SECRET = process.env.STATS_SECRET || "";
 
@@ -673,9 +673,9 @@ function filterCatalog(metas, extra) {
   if (extra.search?.trim()) {
     stats.searches++;
     countToday("searches");
-    const words = normalizeForSearch(extra.search).split(" ").filter(w => w.length > 0);
+    const words = searchKey(extra.search).split(" ").filter(w => w.length > 0);
     result = result.filter(m => {
-      const name = normalizeForSearch(m.name);
+      const name = channelSearchKey(m);
       return words.every(word => name.includes(word));
     });
   }

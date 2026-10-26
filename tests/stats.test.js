@@ -244,6 +244,26 @@ describe("stats history and failures", () => {
     expect(await names("kanal nord")).toEqual([]);
   });
 
+  test("search treats ks = x and y = i as the same (Cyrillic typed for Latin and back)", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent([
+      "#EXTM3U",
+      '#EXTINF:-1 tvg-id="x1",Maxima One', "http://example.com/1.m3u8",
+      '#EXTINF:-1 tvg-id="x2",Максима Две', "http://example.com/2.m3u8",
+      '#EXTINF:-1 tvg-id="x3",Yoana Live', "http://example.com/3.m3u8",
+      '#EXTINF:-1 tvg-id="x4",Йоана Шоу', "http://example.com/4.m3u8",
+    ].join("\n")));
+    const cfg = enc({ t: "m3u", m: "http://example.com/search-alike.m3u" });
+    const names = async (q) => (await request(app).get(`/${cfg}/catalog/tv/iptv_live/search=${encodeURIComponent(q)}.json`)).body.metas.map(m => m.name);
+
+    expect(await names("макс")).toEqual(["Максима Две", "Maxima One"]); // кс → ks = x
+    expect(await names("max")).toEqual(["Максима Две", "Maxima One"]);
+    expect(await names("йоана")).toEqual(["Йоана Шоу", "Yoana Live"]);  // й → i = y
+    expect(await names("yoana live")).toEqual(["Yoana Live"]);
+    // sorting is unchanged: the full list keeps its normal A–Z order
+    expect((await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.name))
+      .toEqual(["Йоана Шоу", "Максима Две", "Maxima One", "Yoana Live"]);
+  });
+
   test("one failed download shared by many waiting requests counts as one error", async () => {
     // slow failure so all requests wait for the same download
     jest.spyOn(m3u, "parseM3U").mockImplementation(() =>

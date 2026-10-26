@@ -28,6 +28,25 @@ function normalizeForSearch(text) {
   return s.replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+// Search also treats sound-alike spellings as equal: "ks" = "x" ("макс" → maks finds
+// "MAX") and "y" = "i" ("Йордан" → iordan finds "Yordan"). Search only — sorting keeps
+// normalizeForSearch. The same rule runs on the search and on the names, so it only
+// ever adds matches.
+function searchKey(text) {
+  return normalizeForSearch(text).replaceAll("ks", "x").replaceAll("y", "i");
+}
+
+// A channel's search key, built once per tile of a cached list (not per search)
+const searchKeys = new WeakMap();
+function channelSearchKey(meta) {
+  let key = searchKeys.get(meta);
+  if (key === undefined) {
+    key = searchKey(meta.name);
+    searchKeys.set(meta, key);
+  }
+  return key;
+}
+
 // --- Channel lists ---
 /**
  * Generate a poster URL with the channel name as visible text (PNG).
@@ -224,5 +243,6 @@ function catalogMeta({ logo, ...item }) {
 }
 
 module.exports = {
-  makePosterUrl, channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels, catalogMeta, normalizeForSearch,
+  makePosterUrl, channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels,
+  searchKey, channelSearchKey, catalogMeta,
 };
