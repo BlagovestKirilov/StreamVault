@@ -9,6 +9,7 @@ then browse, search and play your channels like any other content.
 ![Stremio](https://img.shields.io/badge/Stremio-Addon-blue?style=flat-square)
 ![Nuvio](https://img.shields.io/badge/Nuvio-Addon-purple?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+![Installs](https://img.shields.io/badge/Installs-2.7k%2B-7C5CFC?style=flat-square)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20StreamVault-7C5CFC?style=flat-square&logo=kofi&logoColor=white)](https://ko-fi.com/streamvaultaddon)
 
 > StreamVault provides **no channels or content**. Use it only with playlists and subscriptions you have the
