@@ -108,7 +108,7 @@ function xtreamTestProblem(cats, account) {
   // the account status is what tells a wrong password / expired account apart
   const problem = accountProblem(account);
   if (problem) return ["account", problem];
-  if (!Array.isArray(cats)) return ["invalid_response", "Invalid response from server"];
+  if (!Array.isArray(cats)) return ["invalid_response", "This address doesn't answer like an Xtream server. Check the server address (only http://name:port, without /get.php or other paths) — or use the M3U tab if you have a playlist link"];
   if (cats.length === 0) return ["no_channels", "No live channels on this account"];
   return null;
 }

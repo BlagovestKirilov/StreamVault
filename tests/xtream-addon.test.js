@@ -25,6 +25,7 @@ describe("Xtream account checks", () => {
     ["past expiry date", { auth: 1, status: "Active", exp_date: String(past) }, undefined, "Your account expired on"],
     ["no categories", { auth: 1, status: "Active", exp_date: String(future) }, [], "No live channels on this account"],
     ["empty list, no account info", null, [], "No live channels on this account"],
+    ["a web page instead of Xtream data", { auth: 1, status: "Active" }, "<html>Welcome</html>", "doesn't answer like an Xtream server"],
   ])("fails for %s", async (_, account, cats, error) => {
     const res = await test_(account, cats);
     expect(res.body.ok).toBe(false);

@@ -284,13 +284,21 @@ function extractConfig(req, res, next) {
 // like an install without settings — the "Set up StreamVault first" tile says what
 // to do, instead of an error the app retries silently (one Nuvio retried hourly).
 // The configure page (/api/config) and /play keep their error responses.
+// The "Set up StreamVault first" tile for an install that can't show channels: only
+// on the first page of the StreamVault row — not on later pages, and not in search
+// results (apps like Nuvio send their global film search to every addon, so the tile
+// kept appearing on every keystroke among people's film results).
+function setupTileCatalog(extra, type) {
+  const later = /(^|&)skip=[1-9]/.test(extra || "");
+  const search = /(^|&)search=/.test(extra || "");
+  return { metas: later || search ? [] : [noticeMeta("setup", type)] };
+}
+
 function brokenLinkAnswer(req) {
   const route = req.route?.path || "";
   const { type, id } = req.params;
   if (route.endsWith("/manifest.json")) return BASE_MANIFEST;
-  if (route.includes("/catalog/")) {
-    return { metas: /(^|&)skip=[1-9]/.test(req.params.extra || "") ? [] : [noticeMeta("setup", type)] };
-  }
+  if (route.includes("/catalog/")) return setupTileCatalog(req.params.extra, type);
   if (route.includes("/meta/")) {
     return isBareForeign(type, id) ? { meta: { id, type, name: "Unknown" } } : { meta: noticeMeta("setup", type) };
   }
@@ -566,8 +574,7 @@ function serveUnconfigured(req, res, body) {
   res.json(body);
 }
 app.get(["/catalog/:type/:id.json", "/catalog/:type/:id/:extra.json"], limitAddon, (req, res) => {
-  const firstPage = !/(^|&)skip=[1-9]/.test(req.params.extra || "");
-  serveUnconfigured(req, res, { metas: firstPage ? [noticeMeta("setup", req.params.type)] : [] });
+  serveUnconfigured(req, res, setupTileCatalog(req.params.extra, req.params.type));
 });
 // Apps also ask an empty install about films/series (tt… ids, "anime" type):
 // not ours — counted as foreignRequests, not as an install without settings

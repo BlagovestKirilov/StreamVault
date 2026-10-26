@@ -446,7 +446,10 @@ http://example.com/1.m3u8`));
   });
 
   test("bare search/next pages, channel page and stream are handled too", async () => {
-    expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas[0].id).toBe("iptv_notice_setup");
+    // no tile in search results (apps send their global film search to every addon)
+    expect((await request(app).get("/catalog/tv/iptv_live/search=news.json")).body.metas).toEqual([]);
+    expect((await request(app).get("/s-zzzzzzzzzzzz/catalog/tv/iptv_live/search=news.json")).body.metas).toEqual([]); // broken link: same
+    expect((await request(app).get("/catalog/tv/iptv_live.json")).body.metas[0].id).toBe("iptv_notice_setup"); // the row still has it
     expect((await request(app).get("/catalog/tv/iptv_live/skip=100.json")).body.metas).toEqual([]);
     const meta = (await request(app).get("/meta/tv/iptv_tv_1.json")).body.meta;
     expect(meta.description).toMatch(/^On this phone: tap Play to set up\./);
