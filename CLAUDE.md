@@ -86,6 +86,7 @@ Four formats for the `:config` segment (`parseConfigPath`): **stable** `s-<id>` 
 - Test Connection hints: "use http:// instead of https://" only when the entered address really starts with `https://`; an SSL error on an `http://` address gets a "secure-connection (SSL) problem" message.
 - Logs: `[INSTALL]` is written only for NEW installs (returning users re-read the manifest constantly; they're counted as `launches`/`dau`). A failed background refresh logs one `[REFRESH]` line even when several requests shared it.
 - Provider HTTP 451 (blocks servers by country/data centre) is treated like 401/403: "Provider refused access" tile, its own Test Connection hint.
+- Test Connection 404 has its own hint (`TEST_ERROR_HINTS["404"]`): many panels answer a wrong login / expired line with 404 (GitHub issue #1) — "doesn't recognise this login or link", plus the "only from your own device/home network" case.
 - `/<link>/configure/manifest.json` (configure-page link pasted into an app, which appends /manifest.json) is answered as `/<link>/manifest.json`.
 - `HEAD /` redirects to `/configure` like `GET` (uptime monitors check `/` with HEAD). Film/series/anime requests to an empty install count as `foreignRequests`, not `unconfigured`. `X-Powered-By` is disabled.
 

@@ -63,6 +63,8 @@ const TEST_ERROR_HINTS = {
   https_mismatch: "Your server address should probably start with http:// instead of https://",
   "429": "Your provider is limiting requests — try again in a few minutes",
   "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
+  // Many panels answer a wrong login / expired line with 404 (seen in GitHub issue #1)
+  "404": "Your provider doesn't recognise this login or link (404). Check the username and password (or the link) and that your subscription is active. Some providers accept logins only from your own device or home network — if it works in your player app, contact your provider",
   "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
 };
 
