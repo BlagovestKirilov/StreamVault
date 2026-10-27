@@ -663,8 +663,9 @@
       line-height: 1.5;
     }
     .saved-support span { color: var(--muted); font-size: 0.78rem; }
-    .support-btn-filled { background: var(--accent); color: #fff; }
-    .support-btn-filled:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); color: #fff; }
+    /* A shade deeper than --accent: white text needs 4.5:1 (5.4:1, hover 7:1) */
+    .support-btn-filled { background: color-mix(in srgb, var(--accent) 88%, #000); color: #fff; }
+    .support-btn-filled:hover { background: color-mix(in srgb, var(--accent) 75%, #000); color: #fff; }
 
     /* Error toast */
     .toast {
