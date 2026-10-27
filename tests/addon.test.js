@@ -59,7 +59,7 @@ http://example.com/1.m3u8`));
     expect(bare.body.description).toMatch(/^Not connected yet/);
     expect(bare.body.description).toBe("Not connected yet. Open Configure to add your Xtream Codes account or M3U playlist. Already have a connected StreamVault? Delete this one.");
     const m3uMan = await request(app).get(`/${enc({ t: "m3u", m: "http://desc.example.com/list.m3u" })}/manifest.json`);
-    expect(m3uMan.body.description).toBe("✓ Connected to your M3U playlist. If another StreamVault only shows “Set up StreamVault first”, delete that one.");
+    expect(m3uMan.body.description).toBe("✓ Connected to your M3U playlist. If another StreamVault only shows “Set up StreamVault first”, delete that one. Free and ad-free — tips: ko-fi.com/streamvaultaddon");
     expect(m3uMan.body.name).toBe(bare.body.name); // same name keeps listings unchanged
   });
 
