@@ -282,26 +282,39 @@ function catchupDay(ts, timezone) {
 }
 
 // Providers that record channels but have no guide on the server (an empty table
-// even for a recorded channel): the last full hours instead, newest first — each
-// an hour from the provider's archive. Hours start on the provider's clock, so it
-// needs its UTC offset (server_info); without one there's no safe start time.
-const MAX_CATCHUP_HOURS = 24;
+// even for a recorded channel): time slots instead, newest first — the last 24
+// full hours one by one, older ones in 3-hour blocks back to the archive's limit
+// (3 days = 24 + 16 rows, short enough to scroll on a TV). Slots start on the
+// provider's clock, so it needs its UTC offset (server_info); without one there's
+// no safe start time.
+const HOURLY_SLOTS = 24;
+const BLOCK_HOURS = 3;
 function hourlySlots(archiveDays, offsetMin) {
   if (!Number.isInteger(offsetMin)) return [];
   const offset = offsetMin * 60;
   const nowLocal = Math.floor(Date.now() / 1000) + offset;
   const thisHour = nowLocal - (nowLocal % 3600);
-  const hours = Math.min(MAX_CATCHUP_HOURS, archiveDays * 24);
-  return Array.from({ length: hours }, (_, i) => {
-    const startLocal = thisHour - (i + 1) * 3600;
+  const oldest = nowLocal - archiveDays * 86400; // the archive's limit
+  const slot = (startLocal, hours) => {
     const local = new Date(startLocal * 1000).toISOString(); // provider's wall clock
     return {
       start: `${local.slice(0, 10)}:${local.slice(11, 13)}-${local.slice(14, 16)}`,
       startTs: startLocal - offset,
-      endTs: startLocal - offset + 3600,
+      endTs: startLocal - offset + hours * 3600,
       title: "",
     };
-  });
+  };
+  const slots = [];
+  let start = thisHour;
+  while (start - 3600 >= oldest && slots.length < HOURLY_SLOTS) {
+    start -= 3600;
+    slots.push(slot(start, 1));
+  }
+  while (start - BLOCK_HOURS * 3600 >= oldest) {
+    start -= BLOCK_HOURS * 3600;
+    slots.push(slot(start, BLOCK_HOURS));
+  }
+  return slots;
 }
 
 // One stream per past programme: /timeshift/<user>/<pass>/<minutes>/<start>/<id>.<ext>

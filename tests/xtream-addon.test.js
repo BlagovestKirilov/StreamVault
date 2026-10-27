@@ -205,11 +205,16 @@ describe("Xtream catch-up without a guide on the server", () => {
     const cfg = setup("slots-1", { auth: 1, status: "Active", serverUtcOffsetMin: 120 });
     const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`)).body.streams;
     const catchup = streams.filter(s => s.name === "StreamVault\n⏪ Catch-up");
-    expect(catchup).toHaveLength(24);
+    // 2-day archive: the last 24 hours one by one, then the day before in 3-hour blocks
+    expect(catchup).toHaveLength(24 + 7);
     // provider 22:07 → last full hour 21:00–22:00 its time = 19:00–20:00 UTC
     expect(catchup[0].title).toBe("Today 19:00 - 20:00\nKilo");
     expect(catchup[0].url).toContain("/timeshift/30/2026-10-27:21-00/60/ts/");
     expect(catchup[23].url).toContain("/timeshift/30/2026-10-26:22-00/60/ts/");
+    expect(catchup[24].title).toBe("Yesterday 17:00 - 20:00\nKilo");
+    expect(catchup[24].url).toContain("/timeshift/30/2026-10-26:19-00/180/ts/");
+    // the oldest block still starts inside the archive (2026-10-25 22:07 provider time)
+    expect(catchup.at(-1).url).toContain("/timeshift/30/2026-10-26:01-00/180/ts/");
   });
 
   test("no provider clock offset: no guessed catch-up times", async () => {
