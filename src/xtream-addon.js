@@ -214,9 +214,7 @@ async function getXtreamMeta(config, type, id) {
   }
 
   if (item?.archiveDays) {
-    description += `
-
-⏪ Catch-up: past ${item.archiveDays} day${item.archiveDays === 1 ? "" : "s"} — pick a programme under the play options`;
+    description += `\n\n⏪ Catch-up: past ${item.archiveDays} day${item.archiveDays === 1 ? "" : "s"} — pick a programme under the play options`;
   }
 
   const subscription = subscriptionLine(await accountPromise);
