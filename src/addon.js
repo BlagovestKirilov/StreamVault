@@ -470,7 +470,7 @@ function configuredManifest(genres, type, config = {}) {
     // Says which other install to delete. Points at the live "Set up StreamVault
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
-    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one. Free and ad-free — tips: ko-fi.com/streamvaultaddon`,
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
     catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config)],
     behaviorHints: { configurable: true },
   };
