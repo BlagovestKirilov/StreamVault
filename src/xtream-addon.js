@@ -5,7 +5,7 @@
 
 const xtream = require("./xtream");
 const { trimTrailingSlashes } = require("./urlguard");
-const { withinMs } = require("./util");
+const { withinMs, safeError } = require("./util");
 const { ACCOUNT_WAIT_MS } = require("./notices");
 const {
   m3uCache, xtreamCache, XTREAM_CACHE_TTL, XTREAM_CACHE_MAX, ACCOUNT_CACHE_TTL, ACCOUNT_RETRY_MS,
@@ -371,9 +371,16 @@ async function getXtreamStreams(config, type, id, play = {}) {
   const formats = allowedFormats(account);
   const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
   if (!archived) return live;
-  const programs = await programsPromise;
-  const entries = programs.length ? programs : hourlySlots(archived.archiveDays, account?.serverUtcOffsetMin);
-  return [...live, ...catchupStreams(config, archived, entries, play, formats)];
+  // Catch-up is extra: whatever goes wrong building it (odd guide data, a bug),
+  // the live streams are still answered
+  try {
+    const programs = await programsPromise;
+    const entries = programs.length ? programs : hourlySlots(archived.archiveDays, account?.serverUtcOffsetMin);
+    return [...live, ...catchupStreams(config, archived, entries, play, formats)];
+  } catch (e) {
+    console.warn(`[CATCHUP] skipped for one channel: ${safeError(e)}`);
+    return live;
+  }
 }
 
 // The version of a channel tile the provider records (the opened one first) —

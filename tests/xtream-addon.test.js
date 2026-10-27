@@ -217,6 +217,22 @@ describe("Xtream catch-up without a guide on the server", () => {
     expect(catchup.at(-1).url).toContain("/timeshift/30/2026-10-26:01-00/180/ts/");
   });
 
+  test("a failure while building catch-up still answers the live streams", async () => {
+    jest.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-27T20:07:00Z"));
+    // The oldest slots get a weekday label ("Sun 25.10"): make that formatter throw
+    const RealFormat = Intl.DateTimeFormat;
+    jest.spyOn(Intl, "DateTimeFormat").mockImplementation((locale, options) => {
+      if (options?.weekday) throw new Error("formatter broke");
+      return new RealFormat(locale, options);
+    });
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = setup("slots-broken", { auth: 1, status: "Active", serverUtcOffsetMin: 120 });
+    const res = await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`);
+    // both versions of the tile (Kilo, Kilo UHD) still offer TS + HLS; only catch-up is gone
+    expect(res.body.streams.map(s => s.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS", "StreamVault\nTS", "StreamVault\nHLS"]);
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("[CATCHUP] skipped"));
+  });
+
   test("no provider clock offset: no guessed catch-up times", async () => {
     const cfg = setup("slots-2", { auth: 1, status: "Active" });
     const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`)).body.streams;
