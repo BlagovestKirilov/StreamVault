@@ -26,8 +26,8 @@ then browse, search and play your channels like any other content.
 - **One tile per channel** — "Channel One", "Channel One HD" and "Channel One UHD" are one tile; its play list offers every version,
   best quality first
 - **TV guide** — what's on now and next for Xtream channels, in your own time zone
-- **Catch-up** — on Xtream channels your provider records, watch the programme on now from the start or
-  one that already aired (as many days back as your provider keeps), right in the play options
+- **Catch-up** — on Xtream channels your provider records, watch what already aired, right in the play
+  options: by programme (or the one on now from the start), or by hour when your provider has no TV guide
 - **Change settings anytime** — open Configure in your app, change categories, press **Save changes**: same link,
   nothing to reinstall
 - **Know what's wrong** — instead of an empty screen you get a tile that explains it: provider down, login

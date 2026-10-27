@@ -174,3 +174,55 @@ describe("Xtream catch-up", () => {
     }
   });
 });
+
+describe("Xtream catch-up without a guide on the server", () => {
+  const xtream = require("../src/xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  const setup = (user, account) => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
+      { stream_id: 31, name: "Kilo UHD" },
+      { stream_id: 30, name: "Kilo", tv_archive: 1, tv_archive_duration: "2" },
+    ]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(account);
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    jest.spyOn(xtream, "getEpgTable").mockResolvedValue([]); // recorded channel, no guide
+    return enc({ t: "xtream", s: "http://example.com", u: user, p: "p", z: "UTC" });
+  };
+
+  test("the provider's UTC offset comes from server_info", () => {
+    expect(xtream.serverUtcOffsetMin({ time_now: "2026-10-27 22:07:00", timestamp_now: Date.parse("2026-10-27T20:07:00Z") / 1000 })).toBe(120);
+    expect(xtream.serverUtcOffsetMin({ time_now: "2026-10-27 15:37:30", timestamp_now: Date.parse("2026-10-27T20:07:30Z") / 1000 })).toBe(-270);
+    expect(xtream.serverUtcOffsetMin({})).toBeNull();
+    expect(xtream.serverUtcOffsetMin(undefined)).toBeNull();
+    expect(xtream.serverUtcOffsetMin({ time_now: "garbage", timestamp_now: 1 })).toBeNull();
+  });
+
+  test("offers the last full hours on the provider's clock, newest first", async () => {
+    jest.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-27T20:07:00Z"));
+    const cfg = setup("slots-1", { auth: 1, status: "Active", serverUtcOffsetMin: 120 });
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`)).body.streams;
+    const catchup = streams.filter(s => s.name === "StreamVault\n⏪ Catch-up");
+    expect(catchup).toHaveLength(24);
+    // provider 22:07 → last full hour 21:00–22:00 its time = 19:00–20:00 UTC
+    expect(catchup[0].title).toBe("Today 19:00 - 20:00\nKilo");
+    expect(catchup[0].url).toContain("/timeshift/30/2026-10-27:21-00/60/ts/");
+    expect(catchup[23].url).toContain("/timeshift/30/2026-10-26:22-00/60/ts/");
+  });
+
+  test("no provider clock offset: no guessed catch-up times", async () => {
+    const cfg = setup("slots-2", { auth: 1, status: "Active" });
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`)).body.streams;
+    expect(streams.some(s => s.name.includes("Catch-up"))).toBe(false);
+  });
+
+  test("a tile whose main version isn't recorded still gets catch-up from the one that is", async () => {
+    const cfg = setup("slots-3", { auth: 1, status: "Active", serverUtcOffsetMin: 0 });
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_31.json`)).body.meta;
+    expect(meta.description).toContain("⏪ Catch-up: past 2 days");
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_31.json`)).body.streams;
+    expect(streams.filter(s => s.name.includes("Catch-up")).every(s => s.url.includes("/timeshift/30/"))).toBe(true);
+  });
+});

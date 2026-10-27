@@ -89,7 +89,24 @@ async function getEpgTable(config, streamId) {
  */
 async function getAccountInfo(config) {
   const { data } = await http.get(baseUrl(config));
-  return data?.user_info || null;
+  const info = data?.user_info;
+  if (!info || typeof info !== "object") return null;
+  const offset = serverUtcOffsetMin(data.server_info);
+  return offset === null ? info : { ...info, serverUtcOffsetMin: offset };
+}
+
+/**
+ * The provider's clock offset from UTC in minutes, from server_info's local
+ * "time_now" ("2026-10-27 21:00:00") and "timestamp_now" (unix secs). Catch-up
+ * links need start times in the provider's local time. Rounded to 15 minutes;
+ * null when either is missing or the offset is impossible.
+ */
+function serverUtcOffsetMin(serverInfo) {
+  const local = Date.parse(`${String(serverInfo?.time_now || "").replace(" ", "T")}Z`);
+  const utc = Number(serverInfo?.timestamp_now) * 1000;
+  if (!Number.isFinite(local) || !utc) return null;
+  const minutes = Math.round((local - utc) / 60000 / 15) * 15;
+  return Math.abs(minutes) <= 14 * 60 ? minutes : null;
 }
 
 module.exports = {
@@ -98,4 +115,5 @@ module.exports = {
   getLiveStreams,
   getShortEPG,
   getEpgTable,
+  serverUtcOffsetMin,
 };

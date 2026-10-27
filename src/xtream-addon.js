@@ -213,8 +213,10 @@ async function getXtreamMeta(config, type, id) {
     // No TV guide from the provider: the channel page just shows no guide
   }
 
-  if (item?.archiveDays) {
-    description += `\n\n⏪ Catch-up: past ${item.archiveDays} day${item.archiveDays === 1 ? "" : "s"} — pick a programme under the play options`;
+  const archived = archivedVersion(catalog, item, catalogView(catalog).versionsById.get(id) || []);
+  if (archived) {
+    const days = archived.archiveDays;
+    description += `\n\n⏪ Catch-up: past ${days} day${days === 1 ? "" : "s"} — in the play options`;
   }
 
   const subscription = subscriptionLine(await accountPromise);
@@ -279,6 +281,29 @@ function catchupDay(ts, timezone) {
   return `${weekday} ${d.slice(8, 10)}.${d.slice(5, 7)}`;
 }
 
+// Providers that record channels but have no guide on the server (an empty table
+// even for a recorded channel): the last full hours instead, newest first — each
+// an hour from the provider's archive. Hours start on the provider's clock, so it
+// needs its UTC offset (server_info); without one there's no safe start time.
+const MAX_CATCHUP_HOURS = 24;
+function hourlySlots(archiveDays, offsetMin) {
+  if (!Number.isInteger(offsetMin)) return [];
+  const offset = offsetMin * 60;
+  const nowLocal = Math.floor(Date.now() / 1000) + offset;
+  const thisHour = nowLocal - (nowLocal % 3600);
+  const hours = Math.min(MAX_CATCHUP_HOURS, archiveDays * 24);
+  return Array.from({ length: hours }, (_, i) => {
+    const startLocal = thisHour - (i + 1) * 3600;
+    const local = new Date(startLocal * 1000).toISOString(); // provider's wall clock
+    return {
+      start: `${local.slice(0, 10)}:${local.slice(11, 13)}-${local.slice(14, 16)}`,
+      startTs: startLocal - offset,
+      endTs: startLocal - offset + 3600,
+      title: "",
+    };
+  });
+}
+
 // One stream per past programme: /timeshift/<user>/<pass>/<minutes>/<start>/<id>.<ext>
 function catchupStreams(config, channel, programs, { baseUrl, configPath }, formats) {
   const streamId = channel.id.replace("iptv_tv_", "");
@@ -324,15 +349,25 @@ async function getXtreamStreams(config, type, id, play = {}) {
   const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
   // Catch-up from the opened channel, or else its first version the provider records;
   // started now so it loads alongside the account lookup
-  const archived = item?.archiveDays ? item : versions.map(v => catalog.find(m => m.id === v.id)).find(m => m?.archiveDays);
+  const archived = archivedVersion(catalog, item, versions);
   const programsPromise = archived
     ? withinMs(getCatchupPrograms(config, archived.id.replace("iptv_tv_", ""), archived.archiveDays), CATCHUP_WAIT_MS, [])
     : Promise.resolve([]);
   // Usually cached already (catalog / expiry tile); a slow provider gets both formats
-  const formats = allowedFormats(await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null));
+  const account = await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null);
+  const formats = allowedFormats(account);
   const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
   if (!archived) return live;
-  return [...live, ...catchupStreams(config, archived, await programsPromise, play, formats)];
+  const programs = await programsPromise;
+  const entries = programs.length ? programs : hourlySlots(archived.archiveDays, account?.serverUtcOffsetMin);
+  return [...live, ...catchupStreams(config, archived, entries, play, formats)];
+}
+
+// The version of a channel tile the provider records (the opened one first) —
+// a tile's main version (e.g. UHD) may have no archive while another one has
+function archivedVersion(catalog, item, versions) {
+  if (item?.archiveDays) return item;
+  return versions.map(v => catalog.find(m => m.id === v.id)).find(m => m?.archiveDays) || null;
 }
 
 // The formats this account may play, from its "allowed_output_formats" — e.g.
