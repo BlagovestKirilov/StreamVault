@@ -54,6 +54,8 @@ Didn't open? Copy the link from the result and add it by hand: **Stremio** → A
 ### Good to know
 
 - **Live TV only** — films and series aren't supported.
+- **Catch-up** shows only on Xtream channels your provider records, as far back as it keeps them
+  (often 1–3 days). Without a TV guide from your provider you pick by hour instead of by programme.
 - **Stremio needs VLC for live TV:** Settings → Advanced/Playback → Default Player → External → VLC.
   Nuvio plays live TV in its own player.
 - **Nuvio:** fully close and reopen the app after installing or saving changes to see your channels.
@@ -68,10 +70,10 @@ Didn't open? Copy the link from the result and add it by hand: **Stremio** → A
 
 ## Supported sources
 
-| Source | Live TV | Pick categories | TV guide | Formats |
-|--------|:---:|:---:|:---:|---|
-| **Xtream Codes** | ✅ | ✅ categories | ✅ | TS + HLS (what the account allows) |
-| **M3U playlist** | ✅ | ✅ groups | — | as in the playlist |
+| Source | Live TV | Pick categories | TV guide | Catch-up | Formats |
+|--------|:---:|:---:|:---:|:---:|---|
+| **Xtream Codes** | ✅ | ✅ categories | ✅ | ✅ channels your provider records | TS + HLS (what the account allows) |
+| **M3U playlist** | ✅ | ✅ groups | — | — | as in the playlist |
 
 ---
 
