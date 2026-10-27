@@ -1084,6 +1084,31 @@
     document.getElementById('server').addEventListener('paste', () => setTimeout(() => { splitXtreamLink(); updateButtons(); }, 0));
     document.getElementById('server').addEventListener('change', splitXtreamLink);
 
+    // The other way round: an Xtream provider's playlist link (".../get.php?username=
+    // ..&password=..") pasted into the M3U tab. As Xtream it gets the TV guide and
+    // account status, so fill in the Xtream tab instead. The link stays in the M3U
+    // field: tapping M3U goes back to it. Not when editing an installed setup.
+    function m3uLinkToXtream() {
+      if (editingLink) return;
+      let u;
+      try {
+        u = new URL(document.getElementById('m3uUrl').value.trim());
+      } catch (_) {
+        return;
+      }
+      const username = u.searchParams.get('username');
+      const password = u.searchParams.get('password');
+      if (!/\/get\.php$/i.test(u.pathname) || !username || !password) return;
+      setTab('xtream');
+      document.getElementById('server').value = u.origin;
+      document.getElementById('username').value = username;
+      document.getElementById('password').value = password;
+      updateButtons();
+      showToast('This is an Xtream link — filled in the Xtream tab (adds the TV guide). To use it as a playlist, tap M3U', true);
+    }
+    document.getElementById('m3uUrl').addEventListener('paste', () => setTimeout(m3uLinkToXtream, 0));
+    document.getElementById('m3uUrl').addEventListener('change', m3uLinkToXtream);
+
     // 'change' too: browser/password-manager autofill doesn't always fire 'input'
     ['server', 'username', 'password', 'm3uUrl'].forEach(id => {
       const el = document.getElementById(id);
