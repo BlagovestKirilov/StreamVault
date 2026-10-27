@@ -324,15 +324,16 @@ async function getXtreamStreams(config, type, id, play = {}) {
   // an older saved id of a lower version is opened
   const item = catalog.find(m => m.id === id);
   const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
-  // Usually cached already (catalog / expiry tile); a slow provider gets both formats
-  // Catch-up from the opened channel, or else its first version the provider records
+  // Catch-up from the opened channel, or else its first version the provider records;
+  // started now so it loads alongside the account lookup
   const archived = item?.archiveDays ? item : versions.map(v => catalog.find(m => m.id === v.id)).find(m => m?.archiveDays);
   const programsPromise = archived
     ? withinMs(getCatchupPrograms(config, archived.id.replace("iptv_tv_", ""), archived.archiveDays), CATCHUP_WAIT_MS, [])
-    : null;
+    : Promise.resolve([]);
+  // Usually cached already (catalog / expiry tile); a slow provider gets both formats
   const formats = allowedFormats(await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null));
   const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
-  if (!programsPromise) return live;
+  if (!archived) return live;
   return [...live, ...catchupStreams(config, archived, await programsPromise, play, formats)];
 }
 
