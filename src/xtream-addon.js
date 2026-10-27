@@ -69,6 +69,9 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
       logo,
     };
     if (category) meta.genres = [category];
+    // Catch-up: the provider keeps this channel's past programmes for N days
+    const archiveDays = Number(item.tv_archive_duration);
+    if (Number(item.tv_archive) === 1 && archiveDays > 0) meta.archiveDays = Math.min(archiveDays, 30);
     return meta;
   });
   sortChannels(result, categoryIds.map(id => categoryNames.get(id)).filter(Boolean));
@@ -210,6 +213,12 @@ async function getXtreamMeta(config, type, id) {
     // No TV guide from the provider: the channel page just shows no guide
   }
 
+  if (item?.archiveDays) {
+    description += `
+
+⏪ Catch-up: past ${item.archiveDays} day${item.archiveDays === 1 ? "" : "s"} — pick a programme under the play options`;
+  }
+
   const subscription = subscriptionLine(await accountPromise);
   if (subscription) description += `\n\n${subscription}`;
 
@@ -218,6 +227,86 @@ async function getXtreamMeta(config, type, id) {
   const meta = { id, type, name, poster, posterShape: "square", description };
   if (item?.genres) meta.genres = item.genres;
   return meta;
+}
+
+// --- Catch-up (TV archive): past programmes of channels the provider records ---
+// Offered under the live streams: the programme on now "from the start", then
+// the ones that ended, newest first. Waits at most CATCHUP_WAIT_MS for the guide
+// so a slow provider never holds up the live streams.
+const CATCHUP_WAIT_MS = 3000;
+const MAX_CATCHUP = 24;
+const PROVIDER_START = /^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})/; // "2026-10-27 20:00:00" (provider's local time)
+
+// Past programmes that can be watched again, newest first (cached like the guide)
+async function getCatchupPrograms(config, streamId, archiveDays) {
+  const key = `catchup:${trimTrailingSlashes(config.server)}_${streamId}`;
+  const cached = touch(epgCache, key);
+  if (cached && Date.now() - cached.ts < EPG_CACHE_TTL) return cached.data;
+  return once(`epg:${key}`, async () => {
+    const listings = await xtream.getEpgTable(config, streamId);
+    const nowSec = Date.now() / 1000;
+    const oldest = nowSec - archiveDays * 86400;
+    // Only what the streams need (the full table can hold a week of programmes)
+    const data = listings
+      .map(e => ({
+        start: PROVIDER_START.exec(String(e.start || "")),
+        startTs: Number(e.start_timestamp),
+        endTs: Number(e.stop_timestamp || e.end_timestamp),
+        archived: e.has_archive === undefined || Number(e.has_archive) === 1,
+        title: e.title ? Buffer.from(e.title, "base64").toString("utf-8").slice(0, 80) : "",
+      }))
+      .filter(p => p.start && p.archived && p.startTs >= oldest && p.startTs <= nowSec && p.endTs > p.startTs)
+      .toSorted((a, b) => b.startTs - a.startTs)
+      .slice(0, MAX_CATCHUP)
+      .map(({ start, startTs, endTs, title }) => ({ start: `${start[1]}:${start[2]}-${start[3]}`, startTs, endTs, title }));
+    setCapped(epgCache, key, { data, ts: Date.now() }, EPG_CACHE_MAX);
+    return data;
+  });
+}
+
+// "Today", "Yesterday" or "Mon 26.10" in the viewer's time zone
+function catchupDay(ts, timezone) {
+  const day = (sec) => {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: timezone || "UTC" }).format(sec * 1000);
+    } catch (_) {
+      return new Date(sec * 1000).toISOString().slice(0, 10);
+    }
+  };
+  const nowSec = Date.now() / 1000;
+  const d = day(ts);
+  if (d === day(nowSec)) return "Today";
+  if (d === day(nowSec - 86400)) return "Yesterday";
+  const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(new Date(`${d}T12:00:00Z`));
+  return `${weekday} ${d.slice(8, 10)}.${d.slice(5, 7)}`;
+}
+
+// One stream per past programme: /timeshift/<user>/<pass>/<minutes>/<start>/<id>.<ext>
+function catchupStreams(config, channel, programs, { baseUrl, configPath }, formats) {
+  const streamId = channel.id.replace("iptv_tv_", "");
+  const server = trimTrailingSlashes(config.server);
+  const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
+  const ext = formats.ts ? "ts" : "m3u8";
+  const nowSec = Date.now() / 1000;
+  return programs.map(p => {
+    const minutes = Math.ceil((p.endTs - p.startTs) / 60);
+    const running = p.endTs > nowSec;
+    // Older installs have no time zone: the provider's own start time ("20:00")
+    const time = config.timezone
+      ? epgTimeRange({ start_timestamp: p.startTs, stop_timestamp: p.endTs }, config.timezone)
+      : `${p.start.slice(11, 13)}:${p.start.slice(14, 16)}`;
+    const label = `${running ? "From the start" : catchupDay(p.startTs, config.timezone)} ${time}`;
+    const safeName = encodeURIComponent(`${tvName} ${p.title}`.trim().slice(0, 100).toWellFormed());
+    const url = baseUrl && configPath
+      ? `${baseUrl}/play/${configPath}/timeshift/${streamId}/${p.start}/${minutes}/${ext}/${safeName}`
+      : `${server}/timeshift/${config.username}/${config.password}/${minutes}/${p.start}/${streamId}.${ext}`;
+    return {
+      name: `StreamVault\n${running ? "▶ From start" : "⏪ Catch-up"}`,
+      title: `${[label, p.title].filter(Boolean).join(" ")}\n${tvName}`,
+      url,
+      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-catchup" },
+    };
+  });
 }
 
 // play: { baseUrl, configPath } for /play links
@@ -236,8 +325,15 @@ async function getXtreamStreams(config, type, id, play = {}) {
   const item = catalog.find(m => m.id === id);
   const versions = catalogView(catalog).versionsById.get(id) || [{ id, name: item?.name }];
   // Usually cached already (catalog / expiry tile); a slow provider gets both formats
+  // Catch-up from the opened channel, or else its first version the provider records
+  const archived = item?.archiveDays ? item : versions.map(v => catalog.find(m => m.id === v.id)).find(m => m?.archiveDays);
+  const programsPromise = archived
+    ? withinMs(getCatchupPrograms(config, archived.id.replace("iptv_tv_", ""), archived.archiveDays), CATCHUP_WAIT_MS, [])
+    : null;
   const formats = allowedFormats(await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null));
-  return versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
+  const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
+  if (!programsPromise) return live;
+  return [...live, ...catchupStreams(config, archived, await programsPromise, play, formats)];
 }
 
 // The formats this account may play, from its "allowed_output_formats" — e.g.

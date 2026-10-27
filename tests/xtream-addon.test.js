@@ -106,3 +106,71 @@ describe("stream formats the account allows", () => {
     expect(await formatsFor(account)).toEqual(expected);
   });
 });
+
+// ─── Catch-up (TV archive) ───
+
+describe("Xtream catch-up", () => {
+  const xtream = require("../src/xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const b64 = (s) => Buffer.from(s).toString("base64");
+  const now = Math.floor(Date.now() / 1000);
+  // provider's local time string for a unix time (tests: provider runs on UTC)
+  const local = (sec) => new Date(sec * 1000).toISOString().slice(0, 19).replace("T", " ");
+  const slot = (start, mins, title, archive = 1) => ({
+    start: local(start), start_timestamp: String(start), stop_timestamp: String(start + mins * 60),
+    title: b64(title), has_archive: archive,
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const setup = (user, streams, table) => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue(streams);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active" });
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    const table_ = jest.spyOn(xtream, "getEpgTable").mockResolvedValue(table);
+    return { cfg: enc({ t: "xtream", s: "http://example.com", u: user, p: "p", z: "UTC" }), table_ };
+  };
+
+  test("archived channels offer the running programme from the start, then past ones, newest first", async () => {
+    const { cfg } = setup("cu-1", [{ stream_id: 9, name: "Delta News", tv_archive: 1, tv_archive_duration: "3" }], [
+      slot(now - 3 * 3600, 60, "Old Show"),
+      slot(now - 1800, 60, "Running Show"),
+      slot(now - 2 * 3600, 60, "Not Recorded", 0),
+      slot(now - 10 * 86400, 60, "Too Old"),
+      slot(now + 3600, 60, "Future Show"),
+    ]);
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_9.json`)).body.streams;
+    expect(streams.slice(0, 2).map(s => s.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS"]);
+    const catchup = streams.slice(2);
+    expect(catchup).toHaveLength(2);
+    expect(catchup[0].name).toBe("StreamVault\n▶ From start");
+    expect(catchup[0].title).toMatch(/^From the start \d\d:\d\d - \d\d:\d\d Running Show\nDelta News$/);
+    expect(catchup[1].name).toBe("StreamVault\n⏪ Catch-up");
+    expect(catchup[1].title).toMatch(/Old Show\nDelta News$/);
+    const start = local(now - 3 * 3600).replace(" ", ":").slice(0, 16).replace(/:(\d\d):(\d\d)$/, ":$1-$2");
+    expect(catchup[1].url).toContain(`/play/${cfg}/timeshift/9/${start}/60/ts/`);
+  });
+
+  test("channels without an archive don't ask the provider for the guide table", async () => {
+    const { cfg, table_ } = setup("cu-2", [{ stream_id: 4, name: "Echo", tv_archive: 0 }], []);
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_4.json`)).body.streams;
+    expect(streams).toHaveLength(2);
+    expect(table_).not.toHaveBeenCalled();
+  });
+
+  test("the channel page says how many days can be watched again", async () => {
+    const { cfg } = setup("cu-3", [{ stream_id: 7, name: "Foxtrot", tv_archive: "1", tv_archive_duration: "7" }], []);
+    const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_7.json`)).body.meta;
+    expect(meta.description).toContain("⏪ Catch-up: past 7 days");
+  });
+
+  test("/play/…/timeshift redirects to the provider's timeshift link; bad values are refused", async () => {
+    const cfg = enc({ t: "xtream", s: "http://example.com:8080", u: "u1", p: "p1" });
+    const ok = await request(app).get(`/play/${cfg}/timeshift/12/2026-10-27:20-00/60/ts/Delta`);
+    expect(ok.status).toBe(302);
+    expect(ok.headers.location).toBe("http://example.com:8080/timeshift/u1/p1/60/2026-10-27:20-00/12.ts");
+    for (const bad of ["12/2026-10-27 20:00/60/ts", "12/2026-10-27:20-00/0/ts", "12/2026-10-27:20-00/2000/ts", "a.b/2026-10-27:20-00/60/ts", "12/2026-10-27:20-00/60/mp4"]) {
+      expect((await request(app).get(`/play/${cfg}/timeshift/${bad}/x`)).status).toBe(400);
+    }
+  });
+});

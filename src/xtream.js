@@ -72,6 +72,18 @@ async function getShortEPG(config, streamId) {
 }
 
 /**
+ * Fetch the full TV guide table for a channel (past programmes too, each with
+ * "has_archive" = 1 when it can be watched again through /timeshift/).
+ * @param {Object} config
+ * @param {string|number} streamId
+ */
+async function getEpgTable(config, streamId) {
+  const url = `${baseUrl(config)}&action=get_simple_data_table&stream_id=${streamId}`;
+  const { data } = await http.get(url);
+  return Array.isArray(data?.epg_listings) ? data.epg_listings : [];
+}
+
+/**
  * Fetch account details (player_api.php with no action → { user_info, server_info }).
  * @returns {Object|null} user_info: status, exp_date (unix secs or null), max_connections, active_cons, is_trial
  */
@@ -85,4 +97,5 @@ module.exports = {
   getLiveCategories,
   getLiveStreams,
   getShortEPG,
+  getEpgTable,
 };

@@ -825,7 +825,7 @@ function notePlayRejects(req, res, next) {
     if (res.statusCode !== 400) return;
     noteRecent(recentPlayRejects, {
       reason: res.locals.rejectReason || "unknown",
-      streamType: req.params.streamType,
+      streamType: req.params.streamType || "timeshift",
       streamId: String(req.params.streamId).slice(0, 40),
       ext: req.params.ext,
       userAgent: userAgent(req),
@@ -861,6 +861,26 @@ app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRe
   const server = trimTrailingSlashes(config.server);
   const url = `${server}/${streamType}/${config.username}/${config.password}/${streamId}.${ext}`;
   res.redirect(302, url);
+});
+
+// Catch-up: /timeshift/<user>/<pass>/<minutes>/<YYYY-MM-DD:HH-MM>/<id>.<ext> on the
+// provider (start in the provider's local time, as its guide gives it)
+const TIMESHIFT_START = /^\d{4}-\d{2}-\d{2}:\d{2}-\d{2}$/;
+app.get("/play/:config/timeshift/:streamId/:start/:minutes/:ext/:name", limitAddon, notePlayRejects, extractConfig, (req, res) => {
+  const config = req.userConfig;
+  const { streamId, start, minutes, ext } = req.params;
+  const reject = (reason) => {
+    res.locals.rejectReason = reason;
+    return res.status(400).json({ error: "Invalid stream" });
+  };
+  const reason = playRejectReason(config, "live", streamId, ext);
+  if (reason) return reject(reason);
+  if (!TIMESHIFT_START.test(start)) return reject("catch-up start time has an unexpected format");
+  const mins = Number(minutes);
+  if (!Number.isInteger(mins) || mins < 1 || mins > 1440) return reject("catch-up length out of range");
+  if (!isExternalUrlSyntax(config.server)) return reject("server address invalid or blocked");
+  const server = trimTrailingSlashes(config.server);
+  res.redirect(302, `${server}/timeshift/${config.username}/${config.password}/${mins}/${start}/${streamId}.${ext}`);
 });
 
 // --- Channel lists, pages and streams: xtream-addon.js / m3u-addon.js ---
