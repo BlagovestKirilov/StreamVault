@@ -256,6 +256,26 @@ http://example.com/fennec.m3u8`));
     expect((await request(app).get(`/${cfg}/stream/tv/iptv_tv_m3u_gone_channel_5.json`)).body.streams).toEqual([]);
   });
 
+  test("a channel renamed by its quality tag or given a tvg-id is still found", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U
+#EXTINF:-1,Alpha
+http://example.com/a.m3u8
+#EXTINF:-1,TR: Fennec Sport 1 UHD
+http://example.com/fennec-uhd.m3u8
+#EXTINF:-1 tvg-id="brix.tv",Brix News
+http://example.com/brix.m3u8
+#EXTINF:-1,Отбор
+http://example.com/cyr.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/renamed.m3u" });
+    const play = async (id) => (await request(app).get(`/${cfg}/stream/tv/iptv_tv_${id}.json`)).body.streams.map(s => s.url);
+    // saved as "TR: Fennec Sport 1 4K", now "… UHD"
+    expect(await play("m3u_tr_fennec_sport_1_4k_7")).toEqual(["http://example.com/fennec-uhd.m3u8"]);
+    // saved before the provider added a tvg-id
+    expect(await play("m3u_brix_news_2")).toEqual(["http://example.com/brix.m3u8"]);
+    // a different channel of the same family isn't a match
+    expect(await play("m3u_tr_fennec_sport_2_hd_1")).toEqual([]);
+  });
+
   test("apps that keep manifest.json in the path still work", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",Alpha\nhttp://example.com/a.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/manifest-path.m3u" });

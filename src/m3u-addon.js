@@ -46,18 +46,34 @@ function findM3UChannel(channels, channelId) {
     const base = channels.find((ch) => ch.id === variant[1] && ch.type === "tv");
     if (base) return base;
   }
-  const m = /^(m3u_.*_)(\d+)$/.exec(channelId);
+  const m = /^m3u_(.*)_(\d+)$/.exec(channelId);
   if (!m) return null;
-  const [, prefix, oldPos] = m;
-  let best = null, bestDist = Infinity;
-  for (const ch of channels) {
-    if (ch.type !== "tv" || !ch.id.startsWith(prefix)) continue;
-    const pos = ch.id.slice(prefix.length);
-    if (!/^\d+$/.test(pos)) continue;
-    const dist = Math.abs(Number(pos) - Number(oldPos));
-    if (dist < bestDist) { best = ch; bestDist = dist; }
-  }
-  return best;
+  const [, slug, oldPos] = m;
+  const nearest = (matches) => {
+    let best = null, bestDist = Infinity;
+    for (const ch of channels) {
+      if (ch.type !== "tv" || !matches(ch)) continue;
+      const pos = /_(\d+)$/.exec(ch.id);
+      const dist = pos ? Math.abs(Number(pos[1]) - Number(oldPos)) : Number.MAX_SAFE_INTEGER; // tvg-id: no position
+      if (dist < bestDist) { best = ch; bestDist = dist; }
+    }
+    return best;
+  };
+  const prefix = `m3u_${slug}_`;
+  const sameSlug = nearest(ch => ch.id.startsWith(prefix) && /^\d+$/.test(ch.id.slice(prefix.length)));
+  if (sameSlug) return sameSlug;
+  // Renamed by a quality tag ("Sport 1 4K" → "Sport 1 UHD") or given a tvg-id since:
+  // the same name without quality tags. Compared as the id's slug (Latin letters
+  // and digits only), so a name that had none left can't match anything.
+  const base = slugBase(slug);
+  if (base.length < 2) return null;
+  return nearest(ch => slugBase(ch.name) === base);
+}
+
+// "TR: beIN Sports 1 4K" / "tr_bein_sports_1_4k" → "tr bein sports 1"
+function slugBase(text) {
+  const words = String(text).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return words ? nameKey(words).mergeBase : "";
 }
 
 async function getM3UMeta(config, type, id) {
