@@ -7,6 +7,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const net = require("node:net");
 const { ROOT, safeError } = require("./util");
 const { CONFIG_SECRET } = require("./configlink");
 
@@ -34,8 +35,39 @@ const stats = {
 // CONFIG_SECRET: without it the codes can't be reversed by trying every IPv4.
 const userKeySecret = crypto.createHash("sha256").update(`stats-users|${CONFIG_SECRET}`).digest();
 const USER_KEY_RE = /^[0-9a-f]{16}$/;
+function hmacKey(value) {
+  return crypto.createHmac("sha256", userKeySecret).update(String(value)).digest("hex").slice(0, 16);
+}
+// Phones and PCs change the second half of their IPv6 address every few hours
+// (privacy addresses), so one person kept turning into a "new" user. Count IPv6
+// by its first half (/64, one home or phone network); IPv4 by the whole address.
+function userNetwork(ip) {
+  const s = String(ip || "").replace(/^::ffff:/i, "").split("%")[0];
+  if (!net.isIPv6(s)) return s;
+  const [head, tail = ""] = s.toLowerCase().split("::");
+  const left = head ? head.split(":") : [];
+  if (s.includes("::")) {
+    const right = tail ? tail.split(":") : [];
+    left.push(...new Array(8 - left.length - right.length).fill("0"));
+  }
+  return `${left.slice(0, 4).map(part => part.replace(/^0+(?=.)/, "")).join(":")}::/64`;
+}
 function userKey(ip) {
-  return crypto.createHmac("sha256", userKeySecret).update(String(ip)).digest("hex").slice(0, 16);
+  return hmacKey(userNetwork(ip));
+}
+// Codes saved before the /64 change were made from the full IPv6 address: a
+// returning user with such a code is moved over to the network code once, so the
+// switch doesn't count every IPv6 user as a new install again
+function knownUser(ip) {
+  const user = userKey(ip);
+  if (stats.users.has(user)) return user;
+  const old = hmacKey(String(ip || "").replace(/^::ffff:/i, ""));
+  if (old !== user) {
+    for (const set of [stats.users, stats.bareUsers]) {
+      if (set.delete(old)) set.add(user);
+    }
+  }
+  return user;
 }
 // Entries saved before this change are plain IPs — convert them on load
 function toUserKeys(list) {
@@ -252,7 +284,7 @@ function saveStatsSync() {
 setInterval(saveStats, 60000);
 
 module.exports = {
-  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
+  STATS_DIR, stats, userKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
   dayRow, countToday, countCode, providerErrorKey, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,

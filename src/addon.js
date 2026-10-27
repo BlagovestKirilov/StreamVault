@@ -14,7 +14,7 @@ const {
   configFromQueryString, normalizeXtreamLogin,
 } = require("./configlink");
 const {
-  STATS_DIR, stats, userKey, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
+  STATS_DIR, stats, userKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
   countCode, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
   recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
@@ -139,8 +139,9 @@ app.use("/public", express.static(path.join(ROOT, "public"), { maxAge: "7d" }));
 // /configure" fallback sent them the configure page, so every visit downloaded
 // (and counted) the page twice.
 const ICON_FILE = path.join(ROOT, "public", "img", "logo.png");
-// (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png)
-app.get(["/favicon.ico", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
+// (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png;
+// Nuvio asks for /favicon.png)
+app.get(["/favicon.ico", "/favicon.png", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
 });
 
@@ -393,7 +394,7 @@ app.get("/:config/configure/manifest.json", (req, _res, next) => {
 
 app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) => {
   const ip = getIp(req);
-  const user = userKey(ip);
+  const user = knownUser(ip);
   const isNew = !stats.users.has(user);
   if (isNew) {
     stats.users.add(user);
@@ -581,7 +582,7 @@ app.get("/stats", limitStats, (req, res) => {
 // Logged with the User-Agent to learn which apps do this.
 function serveUnconfigured(req, res, body) {
   countToday("unconfigured");
-  noteBareUser(userKey(getIp(req)));
+  noteBareUser(knownUser(getIp(req)));
   noteRecent(recentUnconfigured, { path: maskPath(req.path), userAgent: userAgent(req) });
   res.json(body);
 }
@@ -790,10 +791,14 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
       streams = await getM3UStreams(config, id);
     }
 
-    stats.streams++;
-    countToday("streams");
-    if (streams.length > 0) addDailyUser(stats.dailyViewers, userKey(getIp(req)));
-    if (streams.length === 0) {
+    // "streams" = channels that had something to play; empty answers are counted
+    // on their own (emptyStreams), not in both
+    if (streams.length > 0) {
+      stats.streams++;
+      countToday("streams");
+      if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
+      addDailyUser(stats.dailyViewers, userKey(getIp(req)));
+    } else {
       countToday("emptyStreams");
       noteRecent(recentEmptyStreams, {
         source: config.type,
@@ -802,7 +807,6 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
         reason: "channel is no longer in the user's playlist / category selection",
       });
     }
-    if (stats.streamsByType[type] !== undefined) stats.streamsByType[type]++;
     res.json({ streams });
   } catch (e) {
     handleProviderError("stream", req, e);

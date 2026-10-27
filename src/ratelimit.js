@@ -17,7 +17,8 @@ function getIp(req) {
 
 // IP for log lines: personal data, so only the network part is kept
 // (203.0.113.45 → 203.0.113.x, 2a00:4804:d000:33d:58c5:… → 2a00:4804:d000:33d:x).
-// Counting/limits still use the full IP in memory; it just isn't written to logs.
+// Limits still use the full IP in memory (user counting: a one-way code of the
+// IPv4 / the IPv6 /64, see stats.js userNetwork); it just isn't written to logs.
 function maskIp(ip) {
   const s = String(ip || "").replace(/^::ffff:/i, "");
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return s.replace(/\.\d{1,3}$/, ".x");

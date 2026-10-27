@@ -205,7 +205,7 @@ describe("stats history and failures", () => {
   const todayRow = async () => (await request(app).get("/stats")).body.history.find(r => r.date === today());
   afterEach(() => jest.restoreAllMocks());
 
-  test("counts today's launches, searches and streams (incl. empty results)", async () => {
+  test("counts today's launches, searches and streams (empty results only as emptyStreams)", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="h1",Hist One\nhttp://example.com/1.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/history.m3u" });
     const before = (await todayRow()) || { launches: 0, searches: 0, streams: 0, emptyStreams: 0 };
@@ -218,7 +218,7 @@ describe("stats history and failures", () => {
     const after = await todayRow();
     expect(after.launches - before.launches).toBe(1);
     expect(after.searches - before.searches).toBe(1);
-    expect(after.streams - before.streams).toBe(2);
+    expect(after.streams - before.streams).toBe(1);
     expect(after.emptyStreams - before.emptyStreams).toBe(1);
     expect(after.dau).toBeGreaterThanOrEqual(1);
   });
@@ -298,6 +298,50 @@ describe("stats history and failures", () => {
 });
 
 // ─── Configure page visit counting ───
+
+describe("unique users by network", () => {
+  const crypto = require("crypto");
+  const { userKey, userNetwork, knownUser, stats } = require("../src/stats");
+  const { CONFIG_SECRET } = require("../src/configlink");
+
+  test("IPv6 counts by its first half (/64), IPv4 by the whole address", () => {
+    expect(userNetwork("2001:db8:aa:1:1111:2222:3333:4444")).toBe("2001:db8:aa:1::/64");
+    expect(userNetwork("2001:0DB8:00AA:0001::1")).toBe("2001:db8:aa:1::/64");
+    expect(userNetwork("2001:db8::5")).toBe("2001:db8:0:0::/64");
+    expect(userNetwork("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(userNetwork("203.0.113.9")).toBe("203.0.113.9");
+    // a phone's privacy address changes: still the same user
+    expect(userKey("2001:db8:aa:1:1111:2222:3333:4444")).toBe(userKey("2001:db8:aa:1:9999:8888:7777:6666"));
+    expect(userKey("2001:db8:aa:1::1")).not.toBe(userKey("2001:db8:aa:2::1"));
+    expect(userKey("203.0.113.9")).not.toBe(userKey("203.0.113.10"));
+  });
+
+  test("a user saved with the old full-address code is moved over, not counted as new", () => {
+    const ip = "2001:db8:bb:7:aaaa:bbbb:cccc:dddd";
+    const secret = crypto.createHash("sha256").update(`stats-users|${CONFIG_SECRET}`).digest();
+    const old = crypto.createHmac("sha256", secret).update(ip).digest("hex").slice(0, 16);
+    stats.users.add(old);
+    stats.bareUsers.add(old);
+    const user = knownUser(ip);
+    expect(user).toBe(userKey(ip));
+    expect(stats.users.has(user)).toBe(true);
+    expect(stats.users.has(old)).toBe(false);
+    expect(stats.bareUsers.has(user)).toBe(true);
+    expect(stats.bareUsers.has(old)).toBe(false);
+  });
+
+  test("a new address on the same IPv6 network is a returning user, not a new install", async () => {
+    const m3u = require("../src/m3u");
+    jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([]);
+    const cfg = Buffer.from(JSON.stringify({ t: "m3u", m: "http://example.com/v6.m3u" })).toString("base64").replace(/=+$/, "");
+    const installs = async () => (await request(app).get("/stats").set("Fly-Client-IP", "192.0.2.200")).body.installs;
+    const before = await installs();
+    await request(app).get(`/${cfg}/manifest.json`).set("Fly-Client-IP", "2001:db8:cc:1:1:2:3:4");
+    await request(app).get(`/${cfg}/manifest.json`).set("Fly-Client-IP", "2001:db8:cc:1:5:6:7:8");
+    expect(await installs()).toBe(before + 1);
+    jest.restoreAllMocks();
+  });
+});
 
 describe("configure visit counting", () => {
   const configures = async () => (await request(app).get("/stats")).body.configures;

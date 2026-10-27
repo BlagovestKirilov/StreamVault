@@ -594,7 +594,7 @@ describe("unknown pages", () => {
       expect(res.body).toEqual({ error: "Not found" });
     });
 
-  test.each(["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/apple-touch-icon-240x240.png", "/apple-touch-icon-240x240-precomposed.png"])(
+  test.each(["/favicon.ico", "/favicon.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/apple-touch-icon-240x240.png", "/apple-touch-icon-240x240-precomposed.png"])(
     "GET %s returns the logo (browsers ask for it on every visit)", async (path) => {
       const res = await request(app).get(path);
       expect(res.status).toBe(200);
