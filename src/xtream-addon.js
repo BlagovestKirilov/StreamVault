@@ -333,7 +333,8 @@ function catchupStreams(config, channel, programs, { baseUrl, configPath }, form
       : `${p.start.slice(11, 13)}:${p.start.slice(14, 16)}`;
     const label = `${running ? "From the start" : catchupDay(p.startTs, config.timezone)} ${time}`;
     const safeName = encodeURIComponent(`${tvName} ${p.title}`.trim().slice(0, 100).toWellFormed());
-    const url = baseUrl && configPath
+    // HLS straight to the provider, like live HLS (see xtreamStreamPair)
+    const url = baseUrl && configPath && ext === "ts"
       ? `${baseUrl}/play/${configPath}/timeshift/${streamId}/${p.start}/${minutes}/${ext}/${safeName}`
       : `${server}/timeshift/${config.username}/${config.password}/${minutes}/${p.start}/${streamId}.${ext}`;
     return {
@@ -412,14 +413,15 @@ function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
   const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
   const safeName = encodeURIComponent(tvName.toWellFormed());
-  // Route through /play redirect so VLC shows channel name (last path segment)
-  const useRedirect = baseUrl && configPath;
-  const tsUrl = useRedirect
+  // TS goes through the /play redirect so VLC shows the channel name (last path
+  // segment). HLS goes straight to the provider: its playlist lists segments as
+  // "/hls/…ts", and some players (libmpv: Stremio desktop, mpv apps) resolve those
+  // against the link they were given, not the one they were redirected to — every
+  // segment then hit StreamVault and 404ed.
+  const tsUrl = baseUrl && configPath
     ? `${baseUrl}/play/${configPath}/live/${streamId}/ts/${safeName}`
     : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
-  const hlsUrl = useRedirect
-    ? `${baseUrl}/play/${configPath}/live/${streamId}/m3u8/${safeName}`
-    : `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
+  const hlsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
 
   return [
     formats.ts && {

@@ -247,3 +247,34 @@ describe("Xtream catch-up without a guide on the server", () => {
     expect(streams.filter(s => s.name.includes("Catch-up")).every(s => s.url.includes("/timeshift/30/"))).toBe(true);
   });
 });
+
+describe("Xtream stream links", () => {
+  const xtream = require("../src/xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+
+  const setup = (user, account) => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 41, name: "Lima", tv_archive: 1, tv_archive_duration: "1" }]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(account);
+    jest.spyOn(xtream, "getEpgTable").mockResolvedValue([]);
+    return enc({ t: "xtream", s: "http://example.com:8080", u: user, p: "pw", z: "UTC" });
+  };
+
+  test("TS goes through /play (channel name in VLC), HLS straight to the provider (players resolve its segments there)", async () => {
+    const cfg = setup("links-1", { auth: 1, status: "Active" });
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_41.json`)).body.streams;
+    const ts = streams.find(s => s.name === "StreamVault\nTS");
+    const hls = streams.find(s => s.name === "StreamVault\nHLS");
+    expect(ts.url).toMatch(new RegExp(`/play/${cfg}/live/41/ts/Lima$`));
+    expect(hls.url).toBe("http://example.com:8080/live/links-1/pw/41.m3u8");
+  });
+
+  test("catch-up on an HLS-only account links straight to the provider too", async () => {
+    const cfg = setup("links-2", { auth: 1, status: "Active", allowed_output_formats: ["m3u8"], serverUtcOffsetMin: 0 });
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_41.json`)).body.streams;
+    const catchup = streams.filter(s => s.name.includes("Catch-up"));
+    expect(catchup.length).toBeGreaterThan(0);
+    for (const s of catchup) expect(s.url).toMatch(/^http:\/\/example\.com:8080\/timeshift\/links-2\/pw\/60\/\d{4}-\d{2}-\d{2}:\d{2}-00\/41\.m3u8$/);
+  });
+});
