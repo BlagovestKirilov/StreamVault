@@ -23,8 +23,10 @@ const stats = {
   configType: { xtream: 0, m3u: 0 },
   installsByType: { xtream: 0, m3u: 0 },
   kofiClicks: { dialog: 0, footer: 0, other: 0 }, // clicks on the Ko-fi link (all time, every click)
+  catchupPlays: 0,  // catch-up programmes started (all time; TS only — HLS goes to the provider directly)
   dailyActive: {},  // { "2026-05-31": Set([user keys]) } — app loaded StreamVault
   dailyViewers: {}, // same, but users who opened a channel and got something to play
+  dailyCatchup: {}, // same, users who started a catch-up programme
   dailyBare: {},    // same, users whose app loads StreamVault without settings (never set up)
   bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
@@ -86,6 +88,8 @@ try {
   if (!stats.kofiClicks) stats.kofiClicks = { dialog: 0, footer: 0, other: 0 };
   if (!stats.dailyActive) stats.dailyActive = {};
   if (!stats.dailyViewers) stats.dailyViewers = {};
+  if (!stats.dailyCatchup) stats.dailyCatchup = {};
+  if (typeof stats.catchupPlays !== "number") stats.catchupPlays = 0;
   if (!stats.dailyBare) stats.dailyBare = {};
   stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
@@ -96,7 +100,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyBare]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -127,6 +131,7 @@ function saveStatsData() {
   return {
     ...stats, users: [...stats.users], bareUsers: [...stats.bareUsers],
     dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
+    dailyCatchup: lastDays(stats.dailyCatchup, 30),
     dailyBare: lastDays(stats.dailyBare, 30),
   };
 }
@@ -142,11 +147,12 @@ function lastDays(daily, days) {
   return kept;
 }
 
-// { dau, viewers, bareUsers } for a day still in the per-day lists (older days: {})
+// { dau, viewers, catchupUsers, bareUsers } for a day still in the per-day lists (older days: {})
 function uniqueCounts(day) {
   const counts = {};
   if (stats.dailyActive[day]) counts.dau = stats.dailyActive[day].size;
   if (stats.dailyViewers[day]) counts.viewers = stats.dailyViewers[day].size;
+  if (stats.dailyCatchup[day]) counts.catchupUsers = stats.dailyCatchup[day].size;
   if (stats.dailyBare[day]) counts.bareUsers = stats.dailyBare[day].size;
   return counts;
 }

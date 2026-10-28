@@ -1,6 +1,6 @@
 # Privacy
 
-What StreamVault stores, why, and for how long. Last updated: 27 October 2026.
+What StreamVault stores, why, and for how long. Last updated: 28 October 2026.
 
 StreamVault is a free, open-source addon run by [BlagovestKirilov](https://github.com/BlagovestKirilov) on a
 server at [Fly.io](https://fly.io) in Amsterdam (EU). It doesn't sell or share anything, shows no ads and
@@ -27,7 +27,7 @@ Server backups are kept for 30 days.
 ## Usage statistics
 
 To keep the service running well, StreamVault counts things like installs, app launches, channels opened,
-searches and errors — as numbers per day.
+catch-up programmes started, searches and errors — as numbers per day.
 
 To count *unique* users, your IP address (for IPv6, only its first half — your home or phone network) is
 turned into a one-way code with a secret key. **The IP address

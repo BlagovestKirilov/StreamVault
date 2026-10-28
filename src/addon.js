@@ -525,6 +525,7 @@ app.get("/stats", limitStats, (req, res) => {
     reconfiguresTotal: stats.reconfigures,
     reinstallsTotal: stats.reinstalls,
     kofiClicksTotal: stats.kofiClicks,
+    catchupPlaysTotal: stats.catchupPlays,
     streamsPlayed: stats.streams,
     streamsByType: stats.streamsByType,
     searches: stats.searches,
@@ -879,9 +880,28 @@ app.get("/play/:config/timeshift/:streamId/:start/:minutes/:ext/:name", limitAdd
   const mins = Number(minutes);
   if (!Number.isInteger(mins) || mins < 1 || mins > 1440) return reject("catch-up length out of range");
   if (!isExternalUrlSyntax(config.server)) return reject("server address invalid or blocked");
+  if (req.method === "GET") noteCatchupPlay(userKey(getIp(req)), streamId, start);
   const server = trimTrailingSlashes(config.server);
   res.redirect(302, `${server}/timeshift/${config.username}/${config.password}/${mins}/${start}/${streamId}.${ext}`);
 });
+
+// One catch-up play per person and programme per 10 min: players re-request the
+// link when seeking or reconnecting, which isn't another play. Only TS passes
+// here (HLS goes to the provider directly), so HLS-only accounts aren't counted.
+const CATCHUP_PLAY_DEDUPE_MS = 10 * 60 * 1000;
+const recentCatchupPlays = new Map(); // user|stream|start -> last counted (ms)
+function noteCatchupPlay(user, streamId, start) {
+  const key = `${user}|${streamId}|${start}`;
+  const now = Date.now();
+  const last = recentCatchupPlays.get(key);
+  if (last && now - last < CATCHUP_PLAY_DEDUPE_MS) return;
+  recentCatchupPlays.delete(key); // re-insert: Map order = oldest first, for the cap
+  recentCatchupPlays.set(key, now);
+  if (recentCatchupPlays.size > 5000) recentCatchupPlays.delete(recentCatchupPlays.keys().next().value);
+  stats.catchupPlays++;
+  countToday("catchupPlays");
+  addDailyUser(stats.dailyCatchup, user);
+}
 
 // --- Channel lists, pages and streams: xtream-addon.js / m3u-addon.js ---
 

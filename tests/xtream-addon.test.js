@@ -164,6 +164,25 @@ describe("Xtream catch-up", () => {
     expect(meta.description).toContain("⏪ Catch-up: past 7 days");
   });
 
+  test("catch-up plays are counted once per person and programme, with unique users per day", async () => {
+    const cfg = enc({ t: "xtream", s: "http://example.com:8080", u: "count-1", p: "p1" });
+    const stats = async () => (await request(app).get("/stats").set("Fly-Client-IP", "192.0.2.230")).body;
+    const today = new Date().toISOString().slice(0, 10);
+    const row = (s) => s.history.find(r => r.date === today) || {};
+    const play = (ip, start, method = "get") =>
+      request(app)[method](`/play/${cfg}/timeshift/12/${start}/60/ts/Delta`).set("Fly-Client-IP", ip);
+    const before = await stats();
+    await play("203.0.113.61", "2026-10-27:20-00");
+    await play("203.0.113.61", "2026-10-27:20-00"); // seeking / reconnect: same play
+    await play("203.0.113.61", "2026-10-27:20-00", "head"); // link previews aren't plays
+    await play("203.0.113.61", "2026-10-27:19-00"); // another programme
+    await play("198.51.100.62", "2026-10-27:20-00"); // another person
+    const after = await stats();
+    expect(after.catchupPlaysTotal - before.catchupPlaysTotal).toBe(3);
+    expect((row(after).catchupPlays || 0) - (row(before).catchupPlays || 0)).toBe(3);
+    expect((row(after).catchupUsers || 0) - (row(before).catchupUsers || 0)).toBe(2);
+  });
+
   test("/play/…/timeshift redirects to the provider's timeshift link; bad values are refused", async () => {
     const cfg = enc({ t: "xtream", s: "http://example.com:8080", u: "u1", p: "p1" });
     const ok = await request(app).get(`/play/${cfg}/timeshift/12/2026-10-27:20-00/60/ts/Delta`);

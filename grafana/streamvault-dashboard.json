@@ -1292,6 +1292,165 @@
       "description": "Ko-fi link clicks today (UTC): result dialog + footer, every click counted."
     },
     {
+      "type": "stat",
+      "title": "Catch-up plays (all time)",
+      "id": 61,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_catchup_plays_total) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Catch-up programmes started (TS through /play; HLS goes to the provider directly and is not counted). Once per person and programme per 10 min."
+    },
+    {
+      "type": "stat",
+      "title": "Catch-up plays today",
+      "id": 62,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"catchupPlays\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Catch-up programmes started today (UTC), counted like the all-time tile."
+    },
+    {
+      "type": "stat",
+      "title": "Catch-up users today",
+      "id": 63,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"catchupUsers\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Different people (one-way IP codes, like Viewers) who started catch-up today (UTC)."
+    },
+    {
       "type": "row",
       "title": "Server health",
       "id": 21,
@@ -1300,7 +1459,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 21
       },
       "panels": []
     },
@@ -1316,7 +1475,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -1401,7 +1560,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -1480,7 +1639,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 22
       },
       "targets": [
         {
@@ -1526,7 +1685,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 30
       },
       "panels": []
     },
@@ -1542,7 +1701,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 31
       },
       "targets": [
         {
@@ -1895,7 +2054,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 31
       },
       "targets": [
         {
@@ -2249,7 +2408,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 39
       },
       "targets": [
         {
@@ -2358,7 +2517,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 39
       },
       "targets": [
         {
@@ -2433,7 +2592,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 47
       },
       "panels": []
     },
@@ -2449,7 +2608,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 48
       },
       "targets": [
         {
@@ -2608,7 +2767,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 48
       },
       "targets": [
         {
@@ -2780,7 +2939,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 56
       },
       "targets": [
         {
@@ -2854,7 +3013,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 56
       },
       "targets": [
         {
@@ -2907,7 +3066,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 64
       },
       "panels": []
     },
@@ -2923,7 +3082,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 61
+        "y": 65
       },
       "targets": [
         {
@@ -2971,7 +3130,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 61
+        "y": 65
       },
       "targets": [
         {
@@ -3015,7 +3174,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 73
       },
       "panels": []
     },
@@ -3031,7 +3190,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 70
+        "y": 74
       },
       "targets": [
         {
@@ -3139,7 +3298,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 70
+        "y": 74
       },
       "targets": [
         {
@@ -3210,7 +3369,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 82
       },
       "panels": []
     },
@@ -3226,7 +3385,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 79
+        "y": 83
       },
       "targets": [
         {
@@ -3300,7 +3459,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 79
+        "y": 83
       },
       "targets": [
         {
@@ -3374,7 +3533,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 91
       },
       "targets": [
         {
@@ -3447,7 +3606,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 91
       },
       "targets": [
         {
@@ -3522,7 +3681,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 99
       },
       "targets": [
         {
@@ -3596,7 +3755,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 99
       },
       "targets": [
         {
@@ -3669,7 +3828,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 103
+        "y": 107
       },
       "targets": [
         {
@@ -3738,7 +3897,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 111
+        "y": 115
       },
       "panels": []
     },
@@ -3754,7 +3913,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 112
+        "y": 116
       },
       "targets": [
         {
@@ -3894,7 +4053,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 112
+        "y": 116
       },
       "targets": [
         {
@@ -3951,7 +4110,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 120
+        "y": 124
       },
       "targets": [
         {
@@ -4000,7 +4159,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 120
+        "y": 124
       },
       "targets": [
         {
@@ -4110,7 +4269,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 120
+        "y": 124
       },
       "targets": [
         {
@@ -4167,7 +4326,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 128
+        "y": 132
       },
       "targets": [
         {
@@ -4215,7 +4374,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 128
+        "y": 132
       },
       "targets": [
         {

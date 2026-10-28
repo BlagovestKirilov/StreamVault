@@ -65,6 +65,7 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
   c("configures_total", "Configure page visits since the start", stats.configures);
   c("reconfigures_total", "Configure opened from an installed StreamVault (all time)", stats.reconfigures);
   c("reinstalls_total", "Save changes pressed on the configure page (all time)", stats.reinstalls);
+  c("catchup_plays_total", "Catch-up programmes started through StreamVault (all time; TS only)", stats.catchupPlays);
   for (const [from, n] of Object.entries(stats.kofiClicks)) {
     c("kofi_clicks_total", "Clicks on the Ko-fi link (all time, every click), by where", n, { from });
   }
@@ -105,9 +106,10 @@ function writeTodayMetrics(g) {
   const row = stats.history[today] || {};
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyActive[today]?.size || 0, { counter: "dau" });
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyViewers[today]?.size || 0, { counter: "viewers" });
+  g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyCatchup[today]?.size || 0, { counter: "catchupUsers" });
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyBare[today]?.size || 0, { counter: "bareUsers" });
   for (const [counter, value] of Object.entries(row)) {
-    if (typeof value === "number" && !["dau", "viewers", "bareUsers"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
+    if (typeof value === "number" && !["dau", "viewers", "catchupUsers", "bareUsers"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
   }
   for (const [where, codes] of Object.entries(row.providerErrors || {})) {
     for (const [code, n] of Object.entries(codes)) {
