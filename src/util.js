@@ -22,10 +22,24 @@ function userAgent(req) {
 }
 
 // Path for logs/stats with install links hidden: any segment that is a user's
-// config ("e-<hex>", base64 "ey...") or just very long becomes "<config>"
+// config ("e-<hex>", base64 "ey...") or just very long becomes "<config>".
+// Logins are hidden too: a provider stream path (".../live|timeshift|movie|series/
+// <user>/<pass>/....ts|.m3u8") hides the two segments after the keyword, and
+// anything with "@" (often the username) is hidden wherever it appears.
+const STREAM_KEYWORD = /^(live|timeshift|movie|series)$/i;
+const STREAM_FILE = /\.(ts|m3u8|mp4|mkv|avi)$/i;
 function maskPath(p) {
-  return p.split("/").map(seg => (/^(e-|ey|s-)/.test(seg) || seg.length > 40 ? "<config>" : seg))
-    .join("/").slice(0, 150);
+  const isStreamPath = STREAM_FILE.test(p);
+  let hide = 0;
+  return p.split("/").map(seg => {
+    if (hide > 0) {
+      hide--;
+      return "<hidden>";
+    }
+    if (isStreamPath && STREAM_KEYWORD.test(seg)) hide = 2;
+    if (/^(e-|ey|s-)/.test(seg) || seg.length > 40) return "<config>";
+    return seg.includes("@") ? "<hidden>" : seg;
+  }).join("/").slice(0, 150);
 }
 
 /**

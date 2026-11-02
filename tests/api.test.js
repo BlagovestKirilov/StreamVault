@@ -335,7 +335,8 @@ describe("failed tests record the address shape (private parts hidden)", () => {
     jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
     await request(app).post("/api/test").send({ type: "xtream", server: "http://example.com:8080/myuser/c/", username: "secretuser", password: "secretpass" });
     const f = await lastFailure();
-    expect(f).toMatchObject({ source: "xtream", error: "404", address: "http://<host>:8080/<seg>/<seg>/" });
+    // the server is kept in its parsed form, trailing slash trimmed (normalizeXtreamLogin)
+    expect(f).toMatchObject({ source: "xtream", error: "404", address: "http://<host>:8080/<seg>/<seg>" });
     expect(JSON.stringify(f)).not.toMatch(/example\.com|myuser|secret/);
   });
 

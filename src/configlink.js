@@ -5,6 +5,7 @@
  */
 
 const crypto = require("node:crypto");
+const { trimTrailingSlashes } = require("./urlguard");
 
 // --- Encryption for config URLs ---
 // The fallback is for local dev only: in production it would let anyone decrypt
@@ -121,7 +122,13 @@ function isPlaylistLink(url) {
 // Users often paste their provider's full link into "Server address", e.g.
 // "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
 // Xtream needs just the server (scheme + host + port): take that, and fill an
-// empty username/password from the link. Anything else is left unchanged.
+// empty username/password from the link.
+// Any other address is rewritten in its parsed form: "http:host:8080" or
+// "http:/host" are accepted by browsers and Node (and so pass Test Connection),
+// but the play links are built from the address as text, and strict players
+// (Nuvio's ktor) read "http:host:8080/live/…" as a path on StreamVault itself —
+// nothing played. Runs on every request (extractConfig), so installs saved
+// before the fix are repaired too.
 function normalizeXtreamLogin(server, username, password) {
   const out = {
     server: String(server || "").trim(),
@@ -135,6 +142,8 @@ function normalizeXtreamLogin(server, username, password) {
       if (!out.username) out.username = u.searchParams.get("username") || "";
       if (!out.password) out.password = u.searchParams.get("password") || "";
       out.server = u.origin;
+    } else if (u.protocol === "http:" || u.protocol === "https:") {
+      out.server = trimTrailingSlashes(`${u.origin}${u.pathname}`);
     }
   } catch (_) {
     return out; // not a URL: left as typed — validation reports it

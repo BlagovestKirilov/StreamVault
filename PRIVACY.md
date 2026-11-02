@@ -48,7 +48,7 @@ links, passwords or playlist links. Fly.io keeps logs for a limited time.
 
 To answer quickly, the server keeps copies in memory of what your provider returns — channel lists, account
 details (such as the expiry date) and the TV guide — for minutes to hours. It also keeps the last few
-errors, with install links hidden. All of this disappears when the server restarts.
+errors, with install links and logins hidden. All of this disappears when the server restarts.
 
 ## Who else is involved
 

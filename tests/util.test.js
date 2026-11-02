@@ -51,3 +51,28 @@ describe("safeError", () => {
     expect(safeError(err)).toBe("Unknown error");
   });
 });
+
+// ─── maskPath ───
+
+describe("maskPath", () => {
+  const { maskPath } = require("../src/util");
+
+  test("hides install links (base64, e-, s-) as before", () => {
+    expect(maskPath("/eyJ0IjoieHRyZWFtIn0/manifest.json")).toBe("/<config>/manifest.json");
+    expect(maskPath("/s-abcdefabcdef/catalog/tv/iptv_live.json")).toBe("/<config>/catalog/tv/iptv_live.json");
+  });
+
+  test("hides the login in provider stream paths that reach StreamVault by mistake", () => {
+    expect(maskPath("/provider.example/live/someone@mail.example/Secret123/948207.ts"))
+      .toBe("/provider.example/live/<hidden>/<hidden>/948207.ts");
+    expect(maskPath("/provider.example/timeshift/user1/Secret123/60/2026-11-01:07-00/1763841.ts"))
+      .toBe("/provider.example/timeshift/<hidden>/<hidden>/60/2026-11-01:07-00/1763841.ts");
+    expect(maskPath("/x/movie/user1/Secret123/55.mp4")).toBe("/x/movie/<hidden>/<hidden>/55.mp4");
+  });
+
+  test("hides anything with @ and leaves ordinary paths readable", () => {
+    expect(maskPath("/someone@mail.example/x.json")).toBe("/<hidden>/x.json");
+    expect(maskPath("/catalog/tv/iptv_live/search=live.json")).toBe("/catalog/tv/iptv_live/search=live.json");
+    expect(maskPath("/meta/movie/tt123.json")).toBe("/meta/movie/tt123.json");
+  });
+});

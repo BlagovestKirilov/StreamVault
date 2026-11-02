@@ -102,3 +102,33 @@ describe("timezone config key", () => {
     expect(parseConfigPath(res.body.config).timezone).toBe("Europe/Sofia");
   });
 });
+
+// ─── Server addresses missing their slashes ───
+
+describe("Xtream server address in its parsed form", () => {
+  const { normalizeXtreamLogin } = require("../src/configlink");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  test.each([
+    ["http:provider.example:8080", "http://provider.example:8080"],
+    ["http:/provider.example", "http://provider.example"],
+    ["http://Provider.example:8080/", "http://provider.example:8080"],
+    ["http://provider.example/panel/", "http://provider.example/panel"],
+    ["https://provider.example", "https://provider.example"],
+  ])("%s → %s", (typed, expected) => {
+    expect(normalizeXtreamLogin(typed, "u", "p").server).toBe(expected);
+  });
+
+  test("not a URL: left as typed (validation reports it)", () => {
+    expect(normalizeXtreamLogin("provider.example", "u", "p").server).toBe("provider.example");
+  });
+
+  test("an install saved with 'http:host' gets a playable link (not a path on StreamVault)", async () => {
+    const cfg = enc({ t: "xtream", s: "http:provider.example:8080", u: "u1", p: "p1" });
+    const live = await request(app).get(`/play/${cfg}/live/12/ts/Delta`);
+    expect(live.status).toBe(302);
+    expect(live.headers.location).toBe("http://provider.example:8080/live/u1/p1/12.ts");
+    const catchup = await request(app).get(`/play/${cfg}/timeshift/12/2026-11-01:07-00/60/ts/Delta`);
+    expect(catchup.headers.location).toBe("http://provider.example:8080/timeshift/u1/p1/60/2026-11-01:07-00/12.ts");
+  });
+});
