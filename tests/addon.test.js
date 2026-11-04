@@ -276,6 +276,18 @@ http://example.com/cyr.m3u8`));
     expect(await play("m3u_tr_fennec_sport_2_hd_1")).toEqual([]);
   });
 
+  test("an install link pasted twice into the app still installs (second copy used)", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([]);
+    const cfg = enc({ t: "m3u", m: "http://example.com/twice.m3u" });
+    const doubled = `/${cfg}/manifest.jsonhttps://streamvault.test/${cfg}/manifest.json`;
+    const res = await request(app).get(doubled).set("Host", "streamvault.test");
+    expect(res.status).toBe(200);
+    expect(res.body.description).toMatch(/^✓ Connected to your M3U playlist/);
+    // a link to another server is not followed
+    const foreign = await request(app).get(`/${cfg}/manifest.jsonhttps://elsewhere.example/${cfg}/manifest.json`).set("Host", "streamvault.test");
+    expect(foreign.status).toBe(404);
+  });
+
   test("apps that keep manifest.json in the path still work", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",Alpha\nhttp://example.com/a.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/manifest-path.m3u" });

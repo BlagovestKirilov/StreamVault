@@ -93,6 +93,7 @@ Four formats for the `:config` segment (`parseConfigPath`): **stable** `s-<id>` 
 - Test Connection 404 has its own hint (`TEST_ERROR_HINTS["404"]`): many panels answer a wrong login / expired line with 404 (GitHub issue #1) — "doesn't recognise this login or link (404). Check … subscription is active" (kept short: it shows as a toast).
 - Configure page link pasting: a full Xtream link in the server field is split into server/username/password (`splitXtreamLink`, server side `normalizeXtreamLogin`); a `.m3u` link there moves to the M3U tab; an Xtream `…/get.php?username=…&password=…` link pasted in the **M3U** field fills the Xtream tab instead (`m3uLinkToXtream` — TV guide + account status; the link stays in the M3U field so tapping M3U goes back; skipped when editing an installed setup).
 - `/<link>/configure/manifest.json` (configure-page link pasted into an app, which appends /manifest.json) is answered as `/<link>/manifest.json`.
+- An install link **pasted twice** (`/<link>/manifest.jsonhttps://<this host>/<link>/manifest.json`, seen from DRM Player 2026-11-03) is answered with the second copy; only when that copy points at this server (`Host` header), anything else stays a 404.
 - `HEAD /` redirects to `/configure` like `GET` (uptime monitors check `/` with HEAD). Film/series/anime requests to an empty install count as `foreignRequests`, not `unconfigured`. `X-Powered-By` is disabled.
 
 ### Memory (the server has crashed from OOM before — keep it bounded)

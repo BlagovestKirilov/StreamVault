@@ -391,6 +391,22 @@ app.get("/:config/configure/manifest.json", (req, _res, next) => {
   req.url = `/${req.params.config}/manifest.json`;
   next();
 });
+// The install link pasted twice into an app ("…/manifest.jsonhttps://<this
+// server>/<link>/manifest.json"): use the second copy. Only a link to this
+// server; anything else stays a 404.
+const PASTED_TWICE = "/manifest.jsonhttp";
+app.use((req, _res, next) => {
+  const at = req.path.indexOf(PASTED_TWICE);
+  if (at > 0) {
+    try {
+      const second = new URL(req.path.slice(at + "/manifest.json".length));
+      if (second.host === req.get("host") && second.pathname.endsWith("/manifest.json")) req.url = second.pathname;
+    } catch (_) {
+      // not a link after all: the normal 404
+    }
+  }
+  next();
+});
 
 app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) => {
   const ip = getIp(req);
