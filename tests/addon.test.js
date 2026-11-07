@@ -283,6 +283,24 @@ http://example.com/cyr.m3u8`));
     expect(spaced.body).toEqual(plain.body);
   });
 
+  test("an install link with a stray space works for the manifest and everything the app asks next", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",Alpha News\nhttp://example.com/a.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/spaced.m3u" });
+    const connected = /^✓ Connected to your M3U playlist/;
+    for (const path of [`/${cfg}/%20manifest.json`, `/${cfg}%20/manifest.json`, `/%20${cfg}/manifest.json`, `/${cfg}/manifest.json%20`]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+      expect(res.body.description).toMatch(connected);
+    }
+    const catalog = await request(app).get(`/${cfg}/%20/catalog/tv/iptv_live.json`);
+    expect(catalog.body.metas.map(m => m.name)).toEqual(["Alpha News"]);
+    const streams = await request(app).get(`/${cfg}/%20/stream/tv/iptv_tv_a.json`);
+    expect(streams.body.streams.map(s => s.url)).toEqual(["http://example.com/a.m3u8"]);
+    // a space inside a search is the user's text, and stays
+    const search = await request(app).get(`/${cfg}/catalog/tv/iptv_live/search=alpha%20news.json`);
+    expect(search.body.metas.map(m => m.name)).toEqual(["Alpha News"]);
+  });
+
   test("an install link pasted twice into the app still installs (second copy used)", async () => {
     jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([]);
     const cfg = enc({ t: "m3u", m: "http://example.com/twice.m3u" });

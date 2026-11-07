@@ -8,7 +8,7 @@
 const express = require("express");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { ROOT, safeError, userAgent, parseExtra, maskPath, withinMs } = require("./util");
+const { ROOT, safeError, userAgent, parseExtra, maskPath, trimPathSpaces, withinMs } = require("./util");
 const {
   encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted, settingsFromBase64,
   configFromQueryString, normalizeXtreamLogin,
@@ -103,6 +103,15 @@ app.use((err, _req, res, next) => {
     return res.status(400).json({ ok: false, error: "Invalid request" });
   }
   next(err);
+});
+
+// An install link pasted with a stray space ("/<link>/%20manifest.json"): apps then
+// ask for "/<link>/%20/catalog/…" too, so it's cleaned on every request. Install
+// links never contain spaces; a space inside a part (a search) is left alone.
+app.use((req, _res, next) => {
+  const clean = trimPathSpaces(req.path);
+  if (clean !== req.path) req.url = clean + req.url.slice(req.path.length);
+  next();
 });
 
 // Some apps build resource URLs from the full manifest URL instead of its folder:
@@ -380,8 +389,7 @@ registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, limitProvide
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
-// (%20: a space before manifest.json, seen from Facebook's link preview and Safari)
-app.get(["/manifest.json", "/%20manifest.json"], limitAddon, (_req, res) => {
+app.get("/manifest.json", limitAddon, (_req, res) => {
   res.json(BASE_MANIFEST);
 });
 

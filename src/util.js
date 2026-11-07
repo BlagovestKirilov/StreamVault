@@ -21,6 +21,20 @@ function userAgent(req) {
   return String(req.get("user-agent") || "none").slice(0, 150);
 }
 
+// Path without stray spaces at the start or end of each part; a part that was only
+// spaces goes away. "/a%20/%20/%20b.json" → "/a/b.json"; "/search=a%20b.json" stays.
+const ENCODED_SPACE = "%20";
+function trimPathSpaces(p) {
+  if (!p.includes(ENCODED_SPACE)) return p;
+  const parts = p.split("/").flatMap(part => {
+    let seg = part;
+    while (seg.startsWith(ENCODED_SPACE)) seg = seg.slice(ENCODED_SPACE.length);
+    while (seg.endsWith(ENCODED_SPACE)) seg = seg.slice(0, -ENCODED_SPACE.length);
+    return seg || !part ? [seg] : [];
+  });
+  return parts.join("/") || "/";
+}
+
 // Path for logs/stats with install links hidden: any segment that is a user's
 // config ("e-<hex>", base64 "ey...") or just very long becomes "<config>".
 // Logins are hidden too: a provider stream path (".../live|timeshift|movie|series/
@@ -79,4 +93,4 @@ async function withinMs(promise, ms, fallback) {
   }
 }
 
-module.exports = { ROOT, safeError, userAgent, parseExtra, maskPath, withinMs };
+module.exports = { ROOT, safeError, userAgent, parseExtra, maskPath, trimPathSpaces, withinMs };

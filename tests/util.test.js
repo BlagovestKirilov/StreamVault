@@ -76,3 +76,23 @@ describe("maskPath", () => {
     expect(maskPath("/meta/movie/tt123.json")).toBe("/meta/movie/tt123.json");
   });
 });
+
+// ─── trimPathSpaces ───
+
+describe("trimPathSpaces", () => {
+  const { trimPathSpaces } = require("../src/util");
+
+  test.each([
+    ["/manifest.json", "/manifest.json"],
+    ["/%20manifest.json", "/manifest.json"],
+    ["/link/%20manifest.json", "/link/manifest.json"],
+    ["/link%20/manifest.json", "/link/manifest.json"],
+    ["/%20%20link/manifest.json%20", "/link/manifest.json"],
+    ["/link/%20/catalog/tv/x.json", "/link/catalog/tv/x.json"],
+    ["/link/catalog/tv/x/search=a%20b.json", "/link/catalog/tv/x/search=a%20b.json"],
+    ["/%20", "/"],
+    ["/", "/"],
+  ])("%s → %s", (input, expected) => {
+    expect(trimPathSpaces(input)).toBe(expected);
+  });
+});
