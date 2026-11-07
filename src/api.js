@@ -119,6 +119,17 @@ function xtreamTestProblem(cats, account) {
 const PLACEHOLDER_RE = /<[^<>]{1,40}>|%3C[^%]{1,40}%3E/i;
 const PLACEHOLDER_HINT = "The address still contains a placeholder like <FILENAME> — replace it with your real playlist link";
 
+// StreamVault's own address or install link entered as the provider: without this
+// the server asks itself and the user sees a meaningless 404
+const OWN_ADDRESS_HINT = "This is a StreamVault link — enter your IPTV provider's server address or playlist link";
+function isOwnAddress(address, req) {
+  try {
+    return new URL(String(address).trim()).host === String(req.get("host")).toLowerCase();
+  } catch (_) {
+    return false; // not a URL: the normal validation reports it
+  }
+}
+
 // Test Connection, Xtream: login + categories (+ account status)
 async function testXtream(body, res) {
   const { server, username, password } = normalizeXtreamLogin(body.server, body.username, body.password);
@@ -311,6 +322,9 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
   app.post("/api/test", limitProviderChecks, async (req, res) => {
     const body = req.body || {};
     try {
+      if (isOwnAddress(body.type === "xtream" ? body.server : body.m3uUrl, req)) {
+        return res.status(400).json({ ok: false, error: OWN_ADDRESS_HINT });
+      }
       if (body.type === "xtream") return await testXtream(body, res);
       if (body.type === "m3u") return await testM3u(body.m3uUrl, res);
       res.status(400).json({ ok: false, error: "Unknown source type" });

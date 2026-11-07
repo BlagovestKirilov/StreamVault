@@ -276,6 +276,13 @@ http://example.com/cyr.m3u8`));
     expect(await play("m3u_tr_fennec_sport_2_hd_1")).toEqual([]);
   });
 
+  test("the bare manifest link shared with a space before manifest.json still works", async () => {
+    const plain = await request(app).get("/manifest.json");
+    const spaced = await request(app).get("/%20manifest.json");
+    expect(spaced.status).toBe(200);
+    expect(spaced.body).toEqual(plain.body);
+  });
+
   test("an install link pasted twice into the app still installs (second copy used)", async () => {
     jest.spyOn(m3u, "parseM3UGroups").mockResolvedValue([]);
     const cfg = enc({ t: "m3u", m: "http://example.com/twice.m3u" });

@@ -68,6 +68,22 @@ describe("configure page API", () => {
     expect(res.body.error).toMatch(/refused the connection from StreamVault's server/);
   });
 
+  test("StreamVault's own address as the provider gets a clear answer, without asking itself", async () => {
+    const parse = jest.spyOn(m3u, "parseM3UGroups");
+    const test_ = (body) => request(app).post("/api/test").set("Host", "streamvault.test").send(body);
+    const asM3u = await test_({ type: "m3u", m3uUrl: "https://streamvault.test/s-abcdefabcdef/manifest.json" });
+    expect(asM3u.status).toBe(400);
+    expect(asM3u.body).toEqual({ ok: false, error: expect.stringMatching(/This is a StreamVault link/) });
+    const asXtream = await test_({ type: "xtream", server: "https://STREAMVAULT.test/", username: "u", password: "p" });
+    expect(asXtream.body.error).toMatch(/This is a StreamVault link/);
+    expect(parse).not.toHaveBeenCalled();
+    // another server is tested as usual
+    parse.mockRejectedValue(new Error("Request failed with status code 404"));
+    const other = await test_({ type: "m3u", m3uUrl: "http://example.com/other-host.m3u" });
+    expect(other.body.error).toMatch(/doesn't recognise/);
+    expect(parse).toHaveBeenCalled();
+  });
+
   test("a 404 Test Connection says the login / link isn't recognised", async () => {
     jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(new Error("Request failed with status code 404"));
     const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/hint-404.m3u" });

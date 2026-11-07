@@ -380,7 +380,8 @@ registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, limitProvide
 // --- Routes ---
 
 // Root manifest (no config yet) — Stremio reads this to show config UI
-app.get("/manifest.json", limitAddon, (_req, res) => {
+// (%20: a space before manifest.json, seen from Facebook's link preview and Safari)
+app.get(["/manifest.json", "/%20manifest.json"], limitAddon, (_req, res) => {
   res.json(BASE_MANIFEST);
 });
 
