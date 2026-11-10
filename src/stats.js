@@ -242,6 +242,8 @@ function providerErrorKey(e) {
   if (status) return status;
   // https:// address on a server that only speaks plain http on that port
   if (/EPROTO|wrong version number|SSL routines/i.test(msg)) return "https_mismatch";
+  // Response over the 50 MB download limit (a huge playlist)
+  if (/maxContentLength|maxBodyLength/.test(msg)) return "too_big";
   if (/Invalid or blocked URL|ENOTFOUND|EAI_AGAIN|ECONNREFUSED/i.test(msg)) return "bad_address";
   if (/timeout|ETIMEDOUT|ECONNRESET|socket hang up/i.test(msg)) return "timeout";
   return "other";

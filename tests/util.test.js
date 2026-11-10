@@ -50,6 +50,24 @@ describe("safeError", () => {
     const err = {};
     expect(safeError(err)).toBe("Unknown error");
   });
+
+  test("hides a provider's IPv4 address and port", () => {
+    expect(safeError(new Error("connect ECONNREFUSED 203.0.113.7:8880"))).toBe("connect ECONNREFUSED 203.0.113.x");
+    expect(safeError(new Error("connect EHOSTUNREACH 198.51.100.24:80"))).toBe("connect EHOSTUNREACH 198.51.100.x");
+  });
+
+  test("hides a provider's IPv6 address", () => {
+    expect(safeError(new Error("connect ECONNREFUSED 2001:db8:85a3::8a2e:370:7334"))).toBe("connect ECONNREFUSED <ip>");
+  });
+
+  test("leaves clock times and status codes alone", () => {
+    expect(safeError(new Error("Request failed with status code 503"))).toBe("Request failed with status code 503");
+    expect(safeError(new Error("expired at 12:30:45"))).toBe("expired at 12:30:45");
+  });
+
+  test("explains a download over the size limit", () => {
+    expect(safeError(new Error("maxContentLength size of 52428800 exceeded"))).toBe("Playlist too big (over 50 MB)");
+  });
 });
 
 // ─── maskPath ───

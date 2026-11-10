@@ -65,6 +65,7 @@ const TEST_ERROR_HINTS = {
   "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
   // Many panels answer a wrong login / expired line with 404 (seen in GitHub issue #1)
   "404": "Your provider doesn't recognise this login or link (404). Check the username and password (or the link) and that your subscription is active",
+  too_big: "Your provider's list is too big for StreamVault (over 50 MB). If you used a playlist link, try your Xtream login (server, username, password) instead, or ask your provider for a smaller playlist",
   "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
 };
 

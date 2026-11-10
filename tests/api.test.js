@@ -91,6 +91,13 @@ describe("configure page API", () => {
     expect(res.body.error).toMatch(/doesn't recognise this login or link \(404\)/);
   });
 
+  test("a playlist over the 50 MB limit says it is too big and suggests the Xtream login", async () => {
+    jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(new Error("maxContentLength size of 52428800 exceeded"));
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/hint-big.m3u" });
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/too big for StreamVault \(over 50 MB\).*Xtream login/);
+  });
+
   test("an oversized request gets a short JSON answer, counted under its route", async () => {
     const huge = "#EXTINF:-1,Channel\nhttp://example.com/1.m3u8\n".repeat(600); // ~27 KB of pasted playlist
     const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: huge });

@@ -9,11 +9,20 @@ const path = require("node:path");
 const ROOT = path.join(__dirname, "..");
 
 // --- Helper: sanitize error messages (never leak URLs/credentials) ---
+// Network errors name the provider's server ("connect ECONNREFUSED 203.0.113.7:8880"):
+// its address is hidden like user IPs (last part → x, port dropped).
+const IPV4_PORT = /\b(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}(?::\d+)?\b/g;
+const IPV6 = /\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){3,7}\b/gi; // 3+ colons: not a clock time
+function maskIps(msg) {
+  return msg.replaceAll(IPV4_PORT, "$1.x").replaceAll(IPV6, "<ip>");
+}
+
 function safeError(e) {
   const msg = e.message || "Unknown error";
   if (msg.includes("://")) return "Connection failed";
-  if (msg.length > 100) return msg.slice(0, 100);
-  return msg;
+  // axios: "maxContentLength size of 52428800 exceeded" — say it in plain words
+  if (/maxContentLength|maxBodyLength/.test(msg)) return "Playlist too big (over 50 MB)";
+  return maskIps(msg).slice(0, 100);
 }
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)

@@ -145,7 +145,7 @@ function handleProviderError(where, req, e) {
     return;
   }
   if (shared) reportedErrors.add(e);
-  console.error(`${where[0].toUpperCase()}${where.slice(1)} error:`, e.message);
+  console.error(`${where[0].toUpperCase()}${where.slice(1)} error:`, safeError(e));
   recordError(where, req.userConfig, e);
 }
 
