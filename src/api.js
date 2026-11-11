@@ -131,20 +131,28 @@ function isOwnAddress(address, req) {
   }
 }
 
+// Test Connection input rejected before the provider is contacted (400): counted by
+// reason per day (stats history "testRejects"), so a jump in 400s shows what new
+// users trip over (placeholder left in, playlist link in the server field, …)
+function rejectTest(res, source, reason, error) {
+  countCode("testRejects", `test (${source})`, reason);
+  return res.status(400).json({ ok: false, error });
+}
+
 // Test Connection, Xtream: login + categories (+ account status)
 async function testXtream(body, res) {
   const { server, username, password } = normalizeXtreamLogin(body.server, body.username, body.password);
   if (PLACEHOLDER_RE.test(server)) {
-    return res.status(400).json({ ok: false, error: PLACEHOLDER_HINT.replace("playlist link", "server address") });
+    return rejectTest(res, "xtream", "placeholder", PLACEHOLDER_HINT.replace("playlist link", "server address"));
   }
   if (isPlaylistLink(server)) {
-    return res.status(400).json({ ok: false, error: "This is a playlist link — use the M3U tab instead" });
+    return rejectTest(res, "xtream", "playlist_link", "This is a playlist link — use the M3U tab instead");
   }
   if (!server || !username || !password) {
-    return res.status(400).json({ ok: false, error: "Missing credentials" });
+    return rejectTest(res, "xtream", "missing", "Missing credentials");
   }
   if (!(await validateExternalUrl(server))) {
-    return res.status(400).json({ ok: false, error: "Invalid or blocked server URL" });
+    return rejectTest(res, "xtream", "invalid_url", "Invalid or blocked server URL");
   }
   const config = { server: trimTrailingSlashes(server), username, password };
   const [cats, account] = await Promise.all([
@@ -168,13 +176,13 @@ async function testXtream(body, res) {
 // Test Connection, M3U: playlist groups with channel counts
 async function testM3u(m3uUrl, res) {
   if (!m3uUrl) {
-    return res.status(400).json({ ok: false, error: "Missing M3U URL" });
+    return rejectTest(res, "m3u", "missing", "Missing M3U URL");
   }
   if (PLACEHOLDER_RE.test(m3uUrl)) {
-    return res.status(400).json({ ok: false, error: PLACEHOLDER_HINT });
+    return rejectTest(res, "m3u", "placeholder", PLACEHOLDER_HINT);
   }
   if (!(await validateExternalUrl(m3uUrl))) {
-    return res.status(400).json({ ok: false, error: "Invalid or blocked M3U URL" });
+    return rejectTest(res, "m3u", "invalid_url", "Invalid or blocked M3U URL");
   }
   // Group counts only (no channel list in memory); shared with /api/m3u-groups,
   // so test + group picker cost one download
@@ -324,11 +332,11 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
     const body = req.body || {};
     try {
       if (isOwnAddress(body.type === "xtream" ? body.server : body.m3uUrl, req)) {
-        return res.status(400).json({ ok: false, error: OWN_ADDRESS_HINT });
+        return rejectTest(res, body.type === "xtream" ? "xtream" : "m3u", "own_address", OWN_ADDRESS_HINT);
       }
       if (body.type === "xtream") return await testXtream(body, res);
       if (body.type === "m3u") return await testM3u(body.m3uUrl, res);
-      res.status(400).json({ ok: false, error: "Unknown source type" });
+      rejectTest(res, "unknown", "unknown_type", "Unknown source type");
     } catch (e) {
       answerTestFailure(body, res, e);
     }

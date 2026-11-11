@@ -370,6 +370,15 @@ describe("speed", () => {
     expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
   });
 
+  test("an install link with an extra /manifest (Nuvio beta) works as the install link", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://nuvio-manifest.example.com/list.m3u" });
+    const res = await request(app).get(`/${cfg}/manifest/manifest.json`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe("community.streamvault.addon");
+    expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
+  });
+
   test("a request on a connection the provider already closed is retried once", async () => {
     const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
     const flaky = jest.fn().mockRejectedValueOnce(reset).mockResolvedValue("ok");

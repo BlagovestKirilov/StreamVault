@@ -91,6 +91,26 @@ describe("configure page API", () => {
     expect(res.body.error).toMatch(/doesn't recognise this login or link \(404\)/);
   });
 
+  test("Test Connection inputs rejected before contacting the provider are counted by reason", async () => {
+    const { dayRow } = require("../src/stats");
+    const before = (r) => dayRow().testRejects?.[r[0]]?.[r[1]] || 0;
+    const missing = before(["test (xtream)", "missing"]);
+    const playlist = before(["test (xtream)", "playlist_link"]);
+    const m3uMissing = before(["test (m3u)", "missing"]);
+
+    let res = await request(app).post("/api/test").send({ type: "xtream", server: "http://reject-count.example.com", username: "" });
+    expect(res.status).toBe(400);
+    res = await request(app).post("/api/test").send({ type: "xtream", server: "http://reject-count.example.com/list.m3u", username: "a", password: "b" });
+    expect(res.status).toBe(400);
+    res = await request(app).post("/api/test").send({ type: "m3u" });
+    expect(res.status).toBe(400);
+
+    const row = dayRow().testRejects;
+    expect(row["test (xtream)"].missing).toBe(missing + 1);
+    expect(row["test (xtream)"].playlist_link).toBe(playlist + 1);
+    expect(row["test (m3u)"].missing).toBe(m3uMissing + 1);
+  });
+
   test("a playlist over the 50 MB limit says it is too big and suggests the Xtream login", async () => {
     jest.spyOn(m3u, "parseM3UGroups").mockRejectedValue(new Error("maxContentLength size of 52428800 exceeded"));
     const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/hint-big.m3u" });

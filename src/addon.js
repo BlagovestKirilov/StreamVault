@@ -396,7 +396,9 @@ app.get("/manifest.json", limitAddon, (_req, res) => {
 // Configured manifest (user completed install)
 // Some users paste the configure page's link ("…/<link>/configure") into the app
 // and it adds /manifest.json: answer it as the install link it was meant to be
-app.get("/:config/configure/manifest.json", (req, _res, next) => {
+// Nuvio 1.1.0-beta.13 asks for "…/<link>/manifest/manifest.json" (an extra
+// "/manifest"): same install link
+app.get(["/:config/configure/manifest.json", "/:config/manifest/manifest.json"], (req, _res, next) => {
   req.url = `/${req.params.config}/manifest.json`;
   next();
 });
