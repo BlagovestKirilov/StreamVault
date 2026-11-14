@@ -119,6 +119,14 @@ function isPlaylistLink(url) {
   }
 }
 
+// Does the typed server start with a scheme? "http:host" / "http:/host" count
+// (normalizeXtreamLogin fixes them); "provider.com:8080" does not (new URL would
+// read "provider.com:" as the scheme)
+const HAS_SCHEME = /^(https?:|[a-z][a-z0-9+.-]*:\/\/)/i;
+function hasScheme(server) {
+  return HAS_SCHEME.test(String(server || "").trim());
+}
+
 // Users often paste their provider's full link into "Server address", e.g.
 // "http://provider.com:8080/get.php?username=abc&password=123&type=m3u_plus".
 // Xtream needs just the server (scheme + host + port): take that, and fill an
@@ -129,13 +137,6 @@ function isPlaylistLink(url) {
 // (Nuvio's ktor) read "http:host:8080/live/…" as a path on StreamVault itself —
 // nothing played. Runs on every request (extractConfig), so installs saved
 // before the fix are repaired too.
-// "http:host" / "http:/host" count as having one (fixed below); "provider.com:8080"
-// does not (new URL would read "provider.com:" as the scheme)
-const HAS_SCHEME = /^(https?:|[a-z][a-z0-9+.-]*:\/\/)/i;
-function hasScheme(server) {
-  return HAS_SCHEME.test(String(server || "").trim());
-}
-
 function normalizeXtreamLogin(server, username, password) {
   const out = {
     server: String(server || "").trim(),
