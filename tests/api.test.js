@@ -398,6 +398,15 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(res.body.ok).toBe(false);
     expect(live).toHaveBeenCalledTimes(calls);
   });
+
+  test("both schemes fail: the first try's error is answered, refused has a plain hint", async () => {
+    jest.spyOn(xtream, "getLiveCategories")
+      .mockRejectedValueOnce(new Error(REFUSED))
+      .mockRejectedValueOnce(new Error(WRONG_SCHEME));
+    const res = await send("example.com:8080");
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/^Can't connect to this server\. Check the address and the port/);
+  });
 });
 
 // ─── Xtream account info + EPG timezone ───

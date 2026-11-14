@@ -65,6 +65,8 @@ const TEST_ERROR_HINTS = {
   "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
   // Many panels answer a wrong login / expired line with 404 (seen in GitHub issue #1)
   "404": "Your provider doesn't recognise this login or link (404). Check the username and password (or the link) and that your subscription is active",
+  // Connection refused (nothing listening on that port) or an address that leads nowhere
+  bad_address: "Can't connect to this server. Check the address and the port (e.g. :8080) with your provider",
   too_big: "Your provider's list is too big for StreamVault (over 50 MB). If you used a playlist link, try your Xtream login (server, username, password) instead, or ask your provider for a smaller playlist",
   "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
 };
@@ -159,6 +161,7 @@ async function loginWithEitherScheme(typedServer, login) {
   const typed = hasScheme(typedServer);
   const tries = !typed && new URL(first.server).port === "443" ? [second, first] : [first, second];
   const retryKeys = typed ? FAST_SCHEME_KEYS : ANY_SCHEME_KEYS;
+  let firstError;
   for (const [i, config] of tries.entries()) {
     try {
       const [cats, account] = await Promise.all([
@@ -167,7 +170,12 @@ async function loginWithEitherScheme(typedServer, login) {
       ]);
       return { config, cats, account };
     } catch (e) {
-      if (i === tries.length - 1 || !retryKeys.has(providerErrorKey(e))) throw e;
+      // Both failed: answer with the first try's error. It is about the address
+      // as the user meant it (e.g. "no answer"), the fallback's is usually noise
+      // ("SSL problem" from https on a plain-http port).
+      if (i === tries.length - 1) throw firstError || e;
+      if (!retryKeys.has(providerErrorKey(e))) throw e;
+      firstError = e;
     }
   }
 }
