@@ -9,7 +9,7 @@ const m3u = require("./m3u");
 const { safeError } = require("./util");
 const { validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
 const {
-  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin,
+  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme,
 } = require("./configlink");
 const {
   stats, countToday, countCode, providerErrorKey, noteRecent, recentTestFailures,
@@ -139,6 +139,33 @@ function rejectTest(res, source, reason, error) {
   return res.status(400).json({ ok: false, error });
 }
 
+// Login + categories (+ account status). A server typed without http:// or https://
+// was given http:// (normalizeXtreamLogin); if the provider can't be reached that
+// way (refused, timeout, "plain HTTP sent to an HTTPS port" …) https:// is tried
+// too. Port 443 tries https first. A provider that answered (wrong login, 403,
+// 404, …) is not retried: the scheme was fine.
+const OTHER_SCHEME_KEYS = new Set(["https_mismatch", "bad_address", "timeout", "other", "400", "497"]);
+async function loginWithEitherScheme(typedServer, login) {
+  const first = { ...login, server: trimTrailingSlashes(login.server) };
+  const tries = [first];
+  if (!hasScheme(typedServer)) {
+    const https = { ...first, server: first.server.replace(/^http:/i, "https:") };
+    if (new URL(first.server).port === "443") tries.unshift(https);
+    else tries.push(https);
+  }
+  for (const [i, config] of tries.entries()) {
+    try {
+      const [cats, account] = await Promise.all([
+        xtream.getLiveCategories(config),
+        xtream.getAccountInfo(config).catch(() => null), // no account info = can't check it, not a failure
+      ]);
+      return { config, cats, account };
+    } catch (e) {
+      if (i === tries.length - 1 || !OTHER_SCHEME_KEYS.has(providerErrorKey(e))) throw e;
+    }
+  }
+}
+
 // Test Connection, Xtream: login + categories (+ account status)
 async function testXtream(body, res) {
   const { server, username, password } = normalizeXtreamLogin(body.server, body.username, body.password);
@@ -154,11 +181,7 @@ async function testXtream(body, res) {
   if (!(await validateExternalUrl(server))) {
     return rejectTest(res, "xtream", "invalid_url", "Invalid or blocked server URL");
   }
-  const config = { server: trimTrailingSlashes(server), username, password };
-  const [cats, account] = await Promise.all([
-    xtream.getLiveCategories(config),
-    xtream.getAccountInfo(config).catch(() => null), // no account info = can't check it, not a failure
-  ]);
+  const { config, cats, account } = await loginWithEitherScheme(body.server, { server, username, password });
   const failure = xtreamTestProblem(cats, account);
   if (failure) {
     countCode("providerErrors", "test (xtream)", failure[0]);
@@ -168,6 +191,9 @@ async function testXtream(body, res) {
     ok: true,
     message: `Connected! Found ${cats.length} live categories.`,
     account: formatAccountInfo(account),
+    // The address that worked, scheme included: the configure page puts it in the
+    // server field (users often type it without http://)
+    server: config.server,
     // Lets the configure page fill the category picker without a second request
     categories: cats.map(c => ({ category_id: c.category_id, category_name: c.category_name || "" })),
   });

@@ -119,8 +119,13 @@ describe("Xtream server address in its parsed form", () => {
     expect(normalizeXtreamLogin(typed, "u", "p").server).toBe(expected);
   });
 
-  test("not a URL: left as typed (validation reports it)", () => {
-    expect(normalizeXtreamLogin("provider.example", "u", "p").server).toBe("provider.example");
+  test("no scheme: http:// is added (Xtream panels speak plain http)", () => {
+    expect(normalizeXtreamLogin("provider.example", "u", "p").server).toBe("http://provider.example");
+    expect(normalizeXtreamLogin("provider.example:8080/", "u", "p").server).toBe("http://provider.example:8080");
+  });
+
+  test("another scheme is left as typed (validation reports it)", () => {
+    expect(normalizeXtreamLogin("ftp://provider.example", "u", "p").server).toBe("ftp://provider.example");
   });
 
   test("an install saved with 'http:host' gets a playable link (not a path on StreamVault)", async () => {

@@ -129,12 +129,22 @@ function isPlaylistLink(url) {
 // (Nuvio's ktor) read "http:host:8080/live/…" as a path on StreamVault itself —
 // nothing played. Runs on every request (extractConfig), so installs saved
 // before the fix are repaired too.
+// "http:host" / "http:/host" count as having one (fixed below); "provider.com:8080"
+// does not (new URL would read "provider.com:" as the scheme)
+const HAS_SCHEME = /^(https?:|[a-z][a-z0-9+.-]*:\/\/)/i;
+function hasScheme(server) {
+  return HAS_SCHEME.test(String(server || "").trim());
+}
+
 function normalizeXtreamLogin(server, username, password) {
   const out = {
     server: String(server || "").trim(),
     username: String(username || "").trim(),
     password: String(password || "").trim(),
   };
+  // Providers often give the server without a scheme ("provider.com:8080"): plain
+  // http is what Xtream panels speak. Test Connection also tries https (api.js).
+  if (out.server && !hasScheme(out.server)) out.server = `http://${out.server}`;
   try {
     const u = new URL(out.server);
     const isFullLink = /\/(get|player_api|xmltv|panel_api)\.php$/i.test(u.pathname) || u.searchParams.has("username");
@@ -153,5 +163,5 @@ function normalizeXtreamLogin(server, username, password) {
 
 module.exports = {
   CONFIG_SECRET, encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
-  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin,
+  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin, hasScheme,
 };

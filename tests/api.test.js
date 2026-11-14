@@ -349,6 +349,55 @@ describe("/api/encrypt input validation", () => {
   });
 });
 
+// ─── Xtream server typed without http:// or https:// ───
+
+describe("Test Connection: Xtream server without a scheme", () => {
+  const xtream = require("../src/xtream");
+  const send = (server) => request(app).post("/api/test").send({ type: "xtream", server, username: "u", password: "p" });
+  const cats = [{ category_id: "1", category_name: "News" }];
+  beforeEach(() => jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null));
+  afterEach(() => jest.restoreAllMocks());
+
+  test("http:// is added and the working address is returned", async () => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
+    const res = await send("example.com:8080");
+    expect(res.body.ok).toBe(true);
+    expect(res.body.server).toBe("http://example.com:8080");
+    expect(live).toHaveBeenCalledTimes(1);
+  });
+
+  test("https:// is tried when http:// can't connect", async () => {
+    const live = jest.spyOn(xtream, "getLiveCategories")
+      .mockRejectedValueOnce(new Error("connect ECONNREFUSED 203.0.113.7:80"))
+      .mockResolvedValueOnce(cats);
+    const res = await send("example.com");
+    expect(res.body.ok).toBe(true);
+    expect(res.body.server).toBe("https://example.com");
+    expect(live.mock.calls.map(c => c[0].server)).toEqual(["http://example.com", "https://example.com"]);
+  });
+
+  test("port 443 tries https:// first", async () => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
+    const res = await send("example.com:443");
+    expect(res.body.server).toBe("https://example.com:443");
+    expect(live).toHaveBeenCalledTimes(1);
+  });
+
+  test("a provider that answered (403) is not retried with https://", async () => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("Request failed with status code 403"));
+    const res = await send("example.com:8080");
+    expect(res.body.ok).toBe(false);
+    expect(live).toHaveBeenCalledTimes(1);
+  });
+
+  test("a server typed with a scheme is used as is", async () => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("connect ECONNREFUSED 203.0.113.7:80"));
+    const res = await send("http://example.com");
+    expect(res.body.ok).toBe(false);
+    expect(live).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ─── Xtream account info + EPG timezone ───
 
 describe("formatAccountInfo", () => {
