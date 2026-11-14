@@ -423,17 +423,22 @@ function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
     : `${server}/live/${config.username}/${config.password}/${streamId}.ts`;
   const hlsUrl = `${server}/live/${config.username}/${config.password}/${streamId}.m3u8`;
 
+  // HLS first: same picture as TS, but a dropped connection only buffers for a
+  // moment (the player re-reads the segment list), while TS (one endless download)
+  // just ends and the player treats the live channel as finished. Costs a few
+  // seconds of delay and a slightly slower start; TS stays as the second choice
+  // for providers whose HLS server is weak.
   return [
-    formats.ts && {
-      name: "StreamVault\nTS",
-      title: `${tvName}\nMPEG-TS`,
-      url: tsUrl,
-      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
-    },
     formats.hls && {
       name: "StreamVault\nHLS",
       title: `${tvName}\nHLS / m3u8`,
       url: hlsUrl,
+      behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
+    },
+    formats.ts && {
+      name: "StreamVault\nTS",
+      title: `${tvName}\nMPEG-TS`,
+      url: tsUrl,
       behaviorHints: { notWebReady: true, bingeGroup: "streamvault-live" },
     },
   ].filter(Boolean);

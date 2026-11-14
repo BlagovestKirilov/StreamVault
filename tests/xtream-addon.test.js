@@ -91,17 +91,17 @@ describe("stream formats the account allows", () => {
   afterEach(() => jest.restoreAllMocks());
 
   test.each([
-    ["both allowed", allowing(["m3u8", "ts"]), ["TS", "HLS"]],
+    ["both allowed", allowing(["m3u8", "ts"]), ["HLS", "TS"]],
     ["only TS", allowing(["ts"]), ["TS"]],
     ["only HLS, in upper case", allowing(["M3U8"]), ["HLS"]],
     ["mixed case with spaces", allowing([" Ts "]), ["TS"]],
     ["the names HLS / MPEGTS", allowing(["Hls"]), ["HLS"]],
-    ["a comma-separated string", allowing("TS, m3u8"), ["TS", "HLS"]],
-    ["only a format we don't offer (rtmp): both", allowing(["rtmp"]), ["TS", "HLS"]],
-    ["an empty list: both", allowing([]), ["TS", "HLS"]],
-    ["not reported: both", { auth: 1, status: "Active" }, ["TS", "HLS"]],
-    ["no account info: both", null, ["TS", "HLS"]],
-    ["account lookup failed: both", new Error("timeout of 15000ms exceeded"), ["TS", "HLS"]],
+    ["a comma-separated string", allowing("TS, m3u8"), ["HLS", "TS"]],
+    ["only a format we don't offer (rtmp): both", allowing(["rtmp"]), ["HLS", "TS"]],
+    ["an empty list: both", allowing([]), ["HLS", "TS"]],
+    ["not reported: both", { auth: 1, status: "Active" }, ["HLS", "TS"]],
+    ["no account info: both", null, ["HLS", "TS"]],
+    ["account lookup failed: both", new Error("timeout of 15000ms exceeded"), ["HLS", "TS"]],
   ])("%s", async (_, account, expected) => {
     expect(await formatsFor(account)).toEqual(expected);
   });
@@ -140,7 +140,7 @@ describe("Xtream catch-up", () => {
       slot(now + 3600, 60, "Future Show"),
     ]);
     const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_9.json`)).body.streams;
-    expect(streams.slice(0, 2).map(s => s.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS"]);
+    expect(streams.slice(0, 2).map(s => s.name)).toEqual(["StreamVault\nHLS", "StreamVault\nTS"]);
     const catchup = streams.slice(2);
     expect(catchup).toHaveLength(2);
     expect(catchup[0].name).toBe("StreamVault\n▶ From start");
@@ -247,8 +247,8 @@ describe("Xtream catch-up without a guide on the server", () => {
     jest.spyOn(console, "warn").mockImplementation(() => {});
     const cfg = setup("slots-broken", { auth: 1, status: "Active", serverUtcOffsetMin: 120 });
     const res = await request(app).get(`/${cfg}/stream/tv/iptv_tv_30.json`);
-    // both versions of the tile (Kilo, Kilo UHD) still offer TS + HLS; only catch-up is gone
-    expect(res.body.streams.map(s => s.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS", "StreamVault\nTS", "StreamVault\nHLS"]);
+    // both versions of the tile (Kilo, Kilo UHD) still offer HLS + TS; only catch-up is gone
+    expect(res.body.streams.map(s => s.name)).toEqual(["StreamVault\nHLS", "StreamVault\nTS", "StreamVault\nHLS", "StreamVault\nTS"]);
     expect(console.warn).toHaveBeenCalledWith(expect.stringContaining("[CATCHUP] skipped"));
   });
 

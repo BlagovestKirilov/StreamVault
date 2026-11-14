@@ -59,7 +59,7 @@ Didn't open? Copy the link from the result and add it by hand: **Stremio** → A
 - **Stremio needs VLC for live TV:** Settings → Advanced/Playback → Default Player → External → VLC.
   Nuvio plays live TV in its own player.
 - **Nuvio:** fully close and reopen the app after installing or saving changes to see your channels.
-- **Xtream channels come as TS and HLS / m3u8** — if one doesn't play, try the other. Accounts that allow only one
+- **Xtream channels come as HLS / m3u8 (listed first) and TS** — same picture; HLS keeps playing through short connection drops, TS starts a bit faster and is closer to live but stops when the connection drops. If one doesn't play well, try the other. Accounts that allow only one
   format see only that one.
 - **Watching on a TV?** Install on your phone or PC while logged in to the same Stremio account, then on the TV:
   Addons → Sync addons. On Samsung (Tizen) TVs, Nuvio is the only way to use StreamVault.

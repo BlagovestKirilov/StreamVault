@@ -252,10 +252,10 @@ describe("home rows, merged versions, clean names", () => {
     const titles = async (id) => (await request(app).get(`/${cfg}/stream/tv/${id}.json`)).body.streams
       .map(st => `${st.name.split("\n")[1]} ${st.title.split("\n")[0]}`);
     expect(await titles("iptv_tv_12")).toEqual([
-      "TS ALPHA UHD", "HLS ALPHA UHD", "TS ALPHA HD", "HLS ALPHA HD", "TS ALPHA", "HLS ALPHA",
+      "HLS ALPHA UHD", "TS ALPHA UHD", "HLS ALPHA HD", "TS ALPHA HD", "HLS ALPHA", "TS ALPHA",
     ]);
     expect(await titles("iptv_tv_11")).toEqual(await titles("iptv_tv_12")); // plain ALPHA's old id: same list, UHD first
-    expect(await titles("iptv_tv_14")).toEqual(["TS NORTH", "HLS NORTH"]); // single version unchanged
+    expect(await titles("iptv_tv_14")).toEqual(["HLS NORTH", "TS NORTH"]); // single version unchanged
     const meta = (await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta;
     expect(meta.name).toBe("ALPHA");
   });
@@ -292,11 +292,11 @@ http://example.com/b.m3u8`));
     expect(metas.map(m => m.name).sort()).toEqual(["⚽", "📺"].sort());
   });
 
-  test("streams say what they are (MPEG-TS / HLS), no hints", async () => {
+  test("streams say what they are (HLS first, then MPEG-TS), no hints", async () => {
     const cfg = xtreamSetup("1");
     const { streams } = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_14.json`)).body;
-    expect(streams.map(st => st.title)).toEqual(["NORTH\nMPEG-TS", "NORTH\nHLS / m3u8"]);
-    expect(streams.map(st => st.name)).toEqual(["StreamVault\nTS", "StreamVault\nHLS"]);
+    expect(streams.map(st => st.title)).toEqual(["NORTH\nHLS / m3u8", "NORTH\nMPEG-TS"]);
+    expect(streams.map(st => st.name)).toEqual(["StreamVault\nHLS", "StreamVault\nTS"]);
   });
 
   test("M3U: a merged tile offers each version's stream", async () => {
@@ -320,7 +320,7 @@ http://example.com/fhd.m3u8`));
     expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_12.json`)).body.meta.name).toBe("ALPHA");
     const { streams } = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_21.json`)).body;
     expect(streams[0].title.split("\n")[0]).toBe("Beacon News");
-    expect(streams[0].url).toMatch(/\/Beacon%20News$/);
+    expect(streams.find(st => st.name === "StreamVault\nTS").url).toMatch(/\/Beacon%20News$/);
     // the genre dropdown keeps the real names (it filters by them)
     expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND"]);
   });
