@@ -366,14 +366,19 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(live).toHaveBeenCalledTimes(1);
   });
 
-  test("https:// is tried when http:// can't connect", async () => {
-    const live = jest.spyOn(xtream, "getLiveCategories")
-      .mockRejectedValueOnce(new Error("connect ECONNREFUSED 203.0.113.7:80"))
-      .mockResolvedValueOnce(cats);
-    const res = await send("example.com");
+  const REFUSED = "connect ECONNREFUSED 203.0.113.7:80";
+  const WRONG_SCHEME = "write EPROTO error:0A00010B:SSL routines:ssl3_get_record:wrong version number";
+
+  test.each([
+    ["no scheme, http refused → https", "example.com", REFUSED, ["http://example.com", "https://example.com"]],
+    ["typed https on a plain-http server → http", "https://example.com:8080", WRONG_SCHEME, ["https://example.com:8080", "http://example.com:8080"]],
+    ["typed http, refused → https", "http://example.com", REFUSED, ["http://example.com", "https://example.com"]],
+  ])("%s: the other scheme is tried and returned", async (_name, typed, firstError, tried) => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValueOnce(new Error(firstError)).mockResolvedValueOnce(cats);
+    const res = await send(typed);
     expect(res.body.ok).toBe(true);
-    expect(res.body.server).toBe("https://example.com");
-    expect(live.mock.calls.map(c => c[0].server)).toEqual(["http://example.com", "https://example.com"]);
+    expect(res.body.server).toBe(tried[1]);
+    expect(live.mock.calls.map(c => c[0].server)).toEqual(tried);
   });
 
   test("port 443 tries https:// first", async () => {
@@ -383,18 +388,15 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(live).toHaveBeenCalledTimes(1);
   });
 
-  test("a provider that answered (403) is not retried with https://", async () => {
-    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("Request failed with status code 403"));
-    const res = await send("example.com:8080");
+  test.each([
+    ["a provider that answered (403) is not retried", "example.com:8080", "Request failed with status code 403", 1],
+    ["typed scheme + timeout is not retried (would only double the wait)", "http://example.com", "timeout of 15000ms exceeded", 1],
+    ["both schemes fail: two tries only", "https://example.com", REFUSED, 2],
+  ])("%s", async (_name, typed, error, calls) => {
+    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error(error));
+    const res = await send(typed);
     expect(res.body.ok).toBe(false);
-    expect(live).toHaveBeenCalledTimes(1);
-  });
-
-  test("a server typed with a scheme is used as is", async () => {
-    const live = jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("connect ECONNREFUSED 203.0.113.7:80"));
-    const res = await send("http://example.com");
-    expect(res.body.ok).toBe(false);
-    expect(live).toHaveBeenCalledTimes(1);
+    expect(live).toHaveBeenCalledTimes(calls);
   });
 });
 

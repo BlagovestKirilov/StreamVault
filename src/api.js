@@ -139,20 +139,26 @@ function rejectTest(res, source, reason, error) {
   return res.status(400).json({ ok: false, error });
 }
 
-// Login + categories (+ account status). A server typed without http:// or https://
-// was given http:// (normalizeXtreamLogin); if the provider can't be reached that
-// way (refused, timeout, "plain HTTP sent to an HTTPS port" …) https:// is tried
-// too. Port 443 tries https first. A provider that answered (wrong login, 403,
-// 404, …) is not retried: the scheme was fine.
-const OTHER_SCHEME_KEYS = new Set(["https_mismatch", "bad_address", "timeout", "other", "400", "497"]);
+// Login + categories (+ account status), trying the other scheme when the first
+// can't connect. The configure page then shows the address that worked.
+// - Typed without a scheme: http:// (normalizeXtreamLogin), then https:// (port 443:
+//   https first). Any connection failure, timeouts included, tries the other one.
+// - Typed with a scheme: that one, then the other, but only after a fast failure
+//   (wrong scheme for the port, refused, "plain HTTP sent to an HTTPS port", TLS
+//   errors). A timeout means no answer at all: the other scheme rarely helps and
+//   it would double the wait. https:// → http:// is what the old https_mismatch
+//   hint told users to do by hand (most Xtream panels are plain http).
+// A provider that answered (wrong login, 403, 404, …) is never retried: the scheme
+// was fine.
+const FAST_SCHEME_KEYS = new Set(["https_mismatch", "bad_address", "other", "400", "497"]);
+const ANY_SCHEME_KEYS = new Set([...FAST_SCHEME_KEYS, "timeout"]);
+const otherScheme = (server) => (/^https:/i.test(server) ? server.replace(/^https:/i, "http:") : server.replace(/^http:/i, "https:"));
 async function loginWithEitherScheme(typedServer, login) {
   const first = { ...login, server: trimTrailingSlashes(login.server) };
-  const tries = [first];
-  if (!hasScheme(typedServer)) {
-    const https = { ...first, server: first.server.replace(/^http:/i, "https:") };
-    if (new URL(first.server).port === "443") tries.unshift(https);
-    else tries.push(https);
-  }
+  const second = { ...first, server: otherScheme(first.server) };
+  const typed = hasScheme(typedServer);
+  const tries = !typed && new URL(first.server).port === "443" ? [second, first] : [first, second];
+  const retryKeys = typed ? FAST_SCHEME_KEYS : ANY_SCHEME_KEYS;
   for (const [i, config] of tries.entries()) {
     try {
       const [cats, account] = await Promise.all([
@@ -161,7 +167,7 @@ async function loginWithEitherScheme(typedServer, login) {
       ]);
       return { config, cats, account };
     } catch (e) {
-      if (i === tries.length - 1 || !OTHER_SCHEME_KEYS.has(providerErrorKey(e))) throw e;
+      if (i === tries.length - 1 || !retryKeys.has(providerErrorKey(e))) throw e;
     }
   }
 }
