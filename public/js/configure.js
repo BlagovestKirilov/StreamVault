@@ -324,10 +324,13 @@ function stremioAppLink(manifestUrl) {
 
 // Open the new link in the app (Stremio, or whichever app handles stremio://)
 function openInApp(manifestUrl) {
-  // Prefetch manifest to warm up server/DNS/TLS, then open the app
-  fetch(manifestUrl).finally(() => {
-    window.location.href = stremioAppLink(manifestUrl);
-  });
+  // Prefetch manifest to warm up server/DNS/TLS, then open the app. A failed
+  // prefetch doesn't matter (the app still opens): handled, not an unhandled rejection
+  fetch(manifestUrl)
+    .finally(() => {
+      window.location.href = stremioAppLink(manifestUrl);
+    })
+    .catch(() => {});
 }
 
 async function install() {
@@ -672,7 +675,8 @@ function isValidUrl(str) {
 
 // Opened from Stremio's "Configure" on an installed addon (/<config>/configure):
 // fill in the saved details and categories so nothing has to be retyped
-(async function prefillInstalledSetup() {
+// (runs once on load; `void`: nothing waits for it, it handles its own errors)
+void (async function prefillInstalledSetup() {
   const match = window.location.pathname.match(/^\/([^/]+)\/configure\/?$/);
   if (!match) return;
   editingLink = decodeURIComponent(match[1]);
@@ -693,8 +697,9 @@ function isValidUrl(str) {
     // Editing an installed StreamVault: saving updates it in place, nothing to install
     document.getElementById('btnInstallText').textContent = 'Save changes';
     showToast('Your installed setup is loaded — change it and press Save changes', true);
-    // Test right away: loads the category list (saved choices ticked) and unlocks Install
-    loadCategories();
+    // Test right away: loads the category list (saved choices ticked) and unlocks Install.
+    // Not awaited on purpose (the page stays usable); runCheck catches its own errors
+    void loadCategories();
   } catch (_) {
     editingLink = ''; // couldn't load the installed setup: behave like a fresh setup
   }

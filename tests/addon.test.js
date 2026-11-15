@@ -552,7 +552,7 @@ http://example.com/1.m3u8`));
     const page = (await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.71")).text;
     expect(page).toContain("Watching on a TV?");
     expect(page).toMatch(/id="tileBanner" style="display: none;/);
-    const script = (await request(app).get("/public/configure.js")).text;
+    const script = (await request(app).get("/public/js/configure.js")).text;
     expect(script).toContain("get('from') === 'tile'");
   });
 
@@ -560,11 +560,11 @@ http://example.com/1.m3u8`));
     for (const pagePath of ["/configure", "/s-abcdefghijkl/configure"]) {
       const html = (await request(app).get(pagePath)).text;
       // absolute links: a relative one would resolve to /s-…/configure.js on the edit page
-      expect(html).toContain('<link rel="stylesheet" href="/public/configure.css" />');
-      expect(html).toContain('<script src="/public/configure.js"></script>');
+      expect(html).toContain('<link rel="stylesheet" href="/public/css/configure.css" />');
+      expect(html).toContain('<script src="/public/js/configure.js"></script>');
       expect(html).not.toMatch(/<style>|<script>\s*\S/);
     }
-    for (const [file, type] of [["/public/configure.css", /text\/css/], ["/public/configure.js", /javascript/]]) {
+    for (const [file, type] of [["/public/css/configure.css", /text\/css/], ["/public/js/configure.js", /javascript/]]) {
       const res = await request(app).get(file);
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toMatch(type);

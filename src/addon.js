@@ -144,7 +144,7 @@ const limitAddon = rateLimit("addon", 1500, MINUTE);
 // The configure page's own CSS/JS are checked on every visit like the page itself
 // (max-age 0 + ETag → a tiny 304 when unchanged): with the 7-day cache below, a
 // deploy would pair the new configure.html with yesterday's script and break it.
-const PAGE_ASSETS = new Set(["/configure.css", "/configure.js"]);
+const PAGE_ASSETS = new Set(["/css/configure.css", "/js/configure.js"]);
 app.use("/public", (req, res, next) => {
   if (PAGE_ASSETS.has(req.path)) return res.sendFile(path.join(ROOT, "public", req.path.slice(1)));
   next();
