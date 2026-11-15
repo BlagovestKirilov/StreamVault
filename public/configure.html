@@ -416,7 +416,7 @@
       white-space: nowrap;
     }
     .row-btn {
-      width: 36px;
+      width: 32px;
       height: 36px;
       flex: none;
       background: none;
@@ -428,6 +428,16 @@
     }
     .row-btn:hover:not(:disabled), .row-btn:focus-visible { color: var(--accent); background: rgba(124,92,252,0.12); }
     .row-btn:disabled { opacity: 0.25; cursor: default; }
+    /* Remove sits apart from the move buttons, so a tap meant for ↓ doesn't remove */
+    .row-btn[data-dir="remove"] { margin-left: 10px; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
     .row-divider {
       padding: 6px 10px;
       font-size: 0.75rem;
@@ -922,6 +932,7 @@
         </div>
         <div class="cat-list" id="catList" style="display:none;"></div>
         <div class="cat-selected" id="catSelected"></div>
+        <p class="sr-only" id="rowLive" aria-live="polite"></p>
       </div>
 
       <!-- Test Connection button -->
@@ -1517,7 +1528,7 @@
         if (i === MAX_HOME_ROWS) {
           const divider = document.createElement('li');
           divider.className = 'row-divider';
-          divider.textContent = "Below: only in Discover's category list";
+          divider.textContent = 'Below: no home row, still in the category filter';
           list.appendChild(divider);
         }
         const name = categoryName(id);
@@ -1531,6 +1542,7 @@
         label.className = 'row-name';
         label.textContent = name;
         item.append(num, label,
+          rowButton('⤒', 'top', `Move ${name} to the top`, i === 0, () => moveCategory(id, -i, 'down')),
           rowButton('↑', 'up', `Move ${name} up`, i === 0, () => moveCategory(id, -1, 'up')),
           rowButton('↓', 'down', `Move ${name} down`, i === order.length - 1, () => moveCategory(id, 1, 'down')),
           rowButton('×', 'remove', `Remove ${name}`, false, () => removeCategory(id)));
@@ -1558,15 +1570,18 @@
       return b;
     }
 
-    // Swap with the neighbour; the Set keeps insertion order, so rebuild it
+    // Move by delta places (to the top: delta = -position); the Set keeps
+    // insertion order, so rebuild it. Screen readers hear the new position.
     function moveCategory(id, delta, dir) {
       const order = [...selectedCategories];
       const i = order.indexOf(id);
       const j = i + delta;
       if (i < 0 || j < 0 || j >= order.length) return;
-      [order[i], order[j]] = [order[j], order[i]];
+      order.splice(j, 0, ...order.splice(i, 1));
       selectedCategories = new Set(order);
       renderSelectedTags({ id, dir });
+      document.getElementById('rowLive').textContent =
+        `${categoryName(id)}: now ${j + 1} of ${order.length}${j < MAX_HOME_ROWS ? '' : ', no home row'}`;
     }
 
     function removeCategory(id) {
