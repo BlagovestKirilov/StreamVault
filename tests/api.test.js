@@ -378,6 +378,37 @@ describe("saves count whether the home-rows order was changed", () => {
   });
 });
 
+// ─── New installs and reused setups ───
+
+describe("new installs vs reused setups", () => {
+  const { stats, dayRow, todayKey, reusedSetups, setupKey } = require("../src/stats");
+  const m3uMod = require("../src/m3u");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("Install with a new setup counts once; on its first day it isn't reused, an older setup is", async () => {
+    jest.spyOn(m3uMod, "parseM3U").mockResolvedValue(m3uMod.parseM3UContent("#EXTM3U\n#EXTINF:-1,One\nhttp://example.com/1.m3u8"));
+    const day = todayKey();
+    const installs0 = dayRow().newInstalls || 0;
+    const reused0 = reusedSetups(day);
+
+    // a new install, then the app loads it
+    const link = (await request(app).post("/api/link").send({ t: "m3u", m: "http://example.com/new-install.m3u", c: "" })).body.config;
+    await request(app).get(`/${link}/manifest.json`).set("Fly-Client-IP", "198.51.100.121");
+    expect(dayRow().newInstalls).toBe(installs0 + 1);
+    expect(reusedSetups(day)).toBe(reused0); // created today: new, not reused
+
+    // Save changes on that setup is not another install
+    await request(app).post("/api/link").send({ t: "m3u", m: "http://example.com/new-install-2.m3u", c: "", editing: link });
+    expect(dayRow().newInstalls).toBe(installs0 + 1);
+
+    // a setup from an earlier day used today: reused
+    const older = (await request(app).post("/api/link").send({ t: "m3u", m: "http://example.com/older.m3u", c: "" })).body.config;
+    stats.dailyNewSetups[day].delete(setupKey(older)); // as if created yesterday
+    await request(app).get(`/${older}/manifest.json`).set("Fly-Client-IP", "198.51.100.122");
+    expect(reusedSetups(day)).toBe(reused0 + 1);
+  });
+});
+
 // ─── Why an address can't be used (Test Connection) ───
 
 describe("Test Connection says why an address can't be used", () => {

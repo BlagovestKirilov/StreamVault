@@ -7,7 +7,7 @@
 const fs = require("node:fs");
 const metrics = require("./metrics");
 const {
-  STATS_DIR, stats, todayKey, recentErrors, recentUnknownPaths, recentEmptyStreams,
+  STATS_DIR, stats, todayKey, reusedSetups, recentErrors, recentUnknownPaths, recentEmptyStreams,
   recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
@@ -111,8 +111,9 @@ function writeTodayMetrics(g) {
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailySetups[today]?.size || 0, { counter: "activeSetups" });
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailySetupMeta[today]?.size || 0, { counter: "setupMetaUsers" });
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailySetupStream[today]?.size || 0, { counter: "setupStreamUsers" });
+  g("today", "Today's (UTC) daily counters, as in /stats history", reusedSetups(today), { counter: "reusedSetups" });
   for (const [counter, value] of Object.entries(row)) {
-    if (typeof value === "number" && !["dau", "viewers", "catchupUsers", "bareUsers", "activeSetups", "setupMetaUsers", "setupStreamUsers"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
+    if (typeof value === "number" && !["dau", "viewers", "catchupUsers", "bareUsers", "activeSetups", "setupMetaUsers", "setupStreamUsers", "reusedSetups"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
   }
   for (const [where, codes] of Object.entries(row.providerErrors || {})) {
     for (const [code, n] of Object.entries(codes)) {

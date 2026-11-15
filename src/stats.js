@@ -31,6 +31,7 @@ const stats = {
   dailySetups: {},  // { day: Set([setup codes]) } — different setups (install links) the apps loaded
   dailySetupMeta: {},   // users whose app asked for the setup tile's details (meta)
   dailySetupStream: {}, // users whose app asked for the setup tile's play options (stream)
+  dailyNewSetups: {},   // { day: Set([setup codes]) } — setups created that day (Install with a new setup)
   bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
@@ -103,6 +104,7 @@ try {
   if (!stats.dailySetups) stats.dailySetups = {};
   if (!stats.dailySetupMeta) stats.dailySetupMeta = {};
   if (!stats.dailySetupStream) stats.dailySetupStream = {};
+  if (!stats.dailyNewSetups) stats.dailyNewSetups = {};
   stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
   // All-time totals started after the daily counters: seed them from the rows
@@ -112,7 +114,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream, stats.dailyNewSetups]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -148,6 +150,7 @@ function saveStatsData() {
     dailySetups: lastDays(stats.dailySetups, 30),
     dailySetupMeta: lastDays(stats.dailySetupMeta, 30),
     dailySetupStream: lastDays(stats.dailySetupStream, 30),
+    dailyNewSetups: lastDays(stats.dailyNewSetups, 30),
   };
 }
 
@@ -172,6 +175,7 @@ function uniqueCounts(day) {
   if (stats.dailySetups[day]) counts.activeSetups = stats.dailySetups[day].size;
   if (stats.dailySetupMeta[day]) counts.setupMetaUsers = stats.dailySetupMeta[day].size;
   if (stats.dailySetupStream[day]) counts.setupStreamUsers = stats.dailySetupStream[day].size;
+  if (stats.dailySetups[day]) counts.reusedSetups = reusedSetups(day);
   return counts;
 }
 
@@ -216,6 +220,26 @@ function appFamily(ua) {
 // (/setup?via=…) and bareConverted (a configured install from the same user).
 function noteSetupStep(user, step) {
   addDailyUser(step === "meta" ? stats.dailySetupMeta : stats.dailySetupStream, user);
+}
+
+// A new install: Install pressed on the configure page and a NEW setup created
+// (not Save changes on an existing one). Counted per day (newInstalls) and its
+// one-way setup code remembered for the day, so the setups apps load that day
+// can be split into new ones and reused ones (created before that day).
+function noteNewInstall(configStr) {
+  countToday("newInstalls");
+  addDailyUser(stats.dailyNewSetups, setupKey(configStr));
+}
+
+// Setups used on a day that were not created that day
+function reusedSetups(day) {
+  const used = stats.dailySetups[day];
+  if (!used) return 0;
+  const created = stats.dailyNewSetups[day];
+  if (!created) return used.size;
+  let n = 0;
+  for (const code of used) if (!created.has(code)) n++;
+  return n;
 }
 
 function noteSetupDone(user) {
@@ -353,7 +377,7 @@ function saveStatsSync() {
 setInterval(saveStats, 60000);
 
 module.exports = {
-  STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, todayKey,
+  STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteNewInstall, reusedSetups, noteSetupDone, todayKey,
   dayRow, countToday, countCode, countKey, primaryLanguage, providerErrorKey, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,

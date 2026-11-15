@@ -12,7 +12,7 @@ const {
   encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme,
 } = require("./configlink");
 const {
-  stats, countToday, countCode, providerErrorKey, noteRecent, recentTestFailures,
+  stats, countToday, countCode, providerErrorKey, noteRecent, recentTestFailures, noteNewInstall,
 } = require("./stats");
 const { once, withDownloadSlot } = require("./cache");
 const { accountProblem } = require("./notices");
@@ -375,7 +375,9 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
         return res.json({ config: editing, updated: true });
       }
       const id = linkStore.create(encrypted);
-      res.json({ config: id || "e-" + encrypted, updated: false });
+      const link = id || "e-" + encrypted;
+      noteNewInstall(link);
+      res.json({ config: link, updated: false });
     } catch (e) {
       console.error("[LINK] save failed:", e.message);
       res.status(500).json({ error: "Couldn't save your settings" });
