@@ -41,6 +41,8 @@ total, nothing about who clicked.
 To see how many different setups are in use each day, the install link your app loads is also turned into the same
 kind of one-way code (the link itself, which contains your login, is never stored). Only the daily count is kept.
 
+If your app loads StreamVault without settings, StreamVault counts which kind of app it is (for example Nuvio or Stremio — from its User-Agent, only the app family is kept) and whether the "Set up StreamVault first" tile was opened — numbers per day only.
+
 When you save settings with two or more categories, StreamVault also counts whether you changed their
 order (and whether you used "Move to the top") — just numbers per day, not which categories or what
 order.

@@ -491,6 +491,35 @@ http://example.com/1.m3u8`));
     jest.restoreAllMocks();
   });
 
+  test("setup tile funnel: bare users by app, then who opened the tile (unique per day)", async () => {
+    const { stats: live, todayKey } = require("../src/stats");
+    const day = todayKey();
+    const before = await stats();
+    const row = (s) => s.history[0];
+    const byApp = (s, name) => row(s).bareUsersByApp?.[name] || 0;
+    const sizes = () => [live.dailySetupMeta[day]?.size || 0, live.dailySetupStream[day]?.size || 0];
+    const [meta0, stream0] = sizes();
+    const as = (ip, ua, path) => request(app).get(path).set("Fly-Client-IP", ip).set("User-Agent", ua);
+
+    // Nuvio twice (one user), Android okhttp, a browser: counted once each by app family
+    await as("198.51.100.91", "Nuvio/1.1.0-beta.13", "/catalog/tv/iptv_live.json");
+    await as("198.51.100.91", "Nuvio/1.1.0-beta.13", "/catalog/tv/iptv_live.json");
+    await as("198.51.100.92", "okhttp/5.3.2", "/catalog/tv/iptv_live.json");
+    await as("198.51.100.93", "Mozilla/5.0 (X11)", "/catalog/tv/iptv_live.json");
+    // the Nuvio user opens the tile: details (meta) and play options (stream), twice
+    for (let i = 0; i < 2; i++) {
+      await as("198.51.100.91", "Nuvio/1.1.0-beta.13", "/meta/tv/iptv_notice_setup.json");
+      await as("198.51.100.91", "Nuvio/1.1.0-beta.13", "/stream/tv/iptv_notice_setup.json");
+    }
+    const s = await stats();
+    expect(byApp(s, "nuvio")).toBe(byApp(before, "nuvio") + 1);
+    expect(byApp(s, "okhttp")).toBe(byApp(before, "okhttp") + 1);
+    expect(byApp(s, "browser")).toBe(byApp(before, "browser") + 1);
+    expect(sizes()).toEqual([meta0 + 1, stream0 + 1]);
+    // the full User-Agent is never kept, only the family
+    expect(JSON.stringify(row(s).bareUsersByApp)).not.toMatch(/beta|5\.3\.2|X11/);
+  });
+
   test("film/series requests to an empty install count as foreign, not unconfigured", async () => {
     const before = (await stats()).history[0];
     for (const path of ["/stream/series/tt40385667:1:1.json", "/stream/anime/tt40385667:1:1.json", "/meta/movie/tt1.json"]) {

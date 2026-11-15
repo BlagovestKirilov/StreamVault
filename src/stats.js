@@ -29,6 +29,8 @@ const stats = {
   dailyCatchup: {}, // same, users who started a catch-up programme
   dailyBare: {},    // same, users whose app loads StreamVault without settings (never set up)
   dailySetups: {},  // { day: Set([setup codes]) } — different setups (install links) the apps loaded
+  dailySetupMeta: {},   // users whose app asked for the setup tile's details (meta)
+  dailySetupStream: {}, // users whose app asked for the setup tile's play options (stream)
   bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
@@ -99,6 +101,8 @@ try {
   if (typeof stats.catchupPlays !== "number") stats.catchupPlays = 0;
   if (!stats.dailyBare) stats.dailyBare = {};
   if (!stats.dailySetups) stats.dailySetups = {};
+  if (!stats.dailySetupMeta) stats.dailySetupMeta = {};
+  if (!stats.dailySetupStream) stats.dailySetupStream = {};
   stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
   // All-time totals started after the daily counters: seed them from the rows
@@ -108,7 +112,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -142,6 +146,8 @@ function saveStatsData() {
     dailyCatchup: lastDays(stats.dailyCatchup, 30),
     dailyBare: lastDays(stats.dailyBare, 30),
     dailySetups: lastDays(stats.dailySetups, 30),
+    dailySetupMeta: lastDays(stats.dailySetupMeta, 30),
+    dailySetupStream: lastDays(stats.dailySetupStream, 30),
   };
 }
 
@@ -164,6 +170,8 @@ function uniqueCounts(day) {
   if (stats.dailyCatchup[day]) counts.catchupUsers = stats.dailyCatchup[day].size;
   if (stats.dailyBare[day]) counts.bareUsers = stats.dailyBare[day].size;
   if (stats.dailySetups[day]) counts.activeSetups = stats.dailySetups[day].size;
+  if (stats.dailySetupMeta[day]) counts.setupMetaUsers = stats.dailySetupMeta[day].size;
+  if (stats.dailySetupStream[day]) counts.setupStreamUsers = stats.dailySetupStream[day].size;
   return counts;
 }
 
@@ -177,10 +185,37 @@ function addDailyUser(daily, user) {
 // loads StreamVault without settings, and who never loaded a configured one, is
 // counted per day (bareUsers); if they later install a configured StreamVault,
 // that's one bareConverted. By IP code like dau, so a new IP looks like a new user.
-function noteBareUser(user) {
+function noteBareUser(user, ua) {
   if (stats.users.has(user)) return; // has a configured StreamVault (an extra empty one)
   stats.bareUsers.add(user);
+  // Which app installs StreamVault without settings: each user once per day, by app
+  // family only (never the full User-Agent) — history "bareUsersByApp"
+  if (!stats.dailyBare[todayKey()]?.has(user)) {
+    const row = dayRow();
+    const byApp = row.bareUsersByApp || (row.bareUsersByApp = {});
+    const app = appFamily(ua);
+    byApp[app] = (byApp[app] || 0) + 1;
+  }
   addDailyUser(stats.dailyBare, user);
+}
+
+// Coarse app name from a User-Agent. Nuvio sends "Nuvio/…" (iOS, TV) or okhttp
+// (Android); Stremio's Android app sends none.
+function appFamily(ua) {
+  const s = String(ua || "");
+  if (/nuvio/i.test(s)) return "nuvio";
+  if (/okhttp/i.test(s)) return "okhttp";
+  if (/stremio/i.test(s)) return "stremio";
+  if (!s || s === "none") return "none";
+  if (/mozilla/i.test(s)) return "browser";
+  return "other";
+}
+
+// The setup tile's funnel after "saw it": its app asked for the tile's details
+// (meta) or its play options (stream) — unique users per day. Then setupTaps
+// (/setup?via=…) and bareConverted (a configured install from the same user).
+function noteSetupStep(user, step) {
+  addDailyUser(step === "meta" ? stats.dailySetupMeta : stats.dailySetupStream, user);
 }
 
 function noteSetupDone(user) {
@@ -302,7 +337,7 @@ function saveStatsSync() {
 setInterval(saveStats, 60000);
 
 module.exports = {
-  STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
+  STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, todayKey,
   dayRow, countToday, countCode, providerErrorKey, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,

@@ -15,7 +15,7 @@ const {
   configFromQueryString, normalizeXtreamLogin,
 } = require("./configlink");
 const {
-  STATS_DIR, stats, userKey, setupKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
+  STATS_DIR, stats, userKey, setupKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, countToday,
   countCode, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
   recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
@@ -632,7 +632,7 @@ app.get("/stats", limitStats, (req, res) => {
 // Logged with the User-Agent to learn which apps do this.
 function serveUnconfigured(req, res, body) {
   countToday("unconfigured");
-  noteBareUser(knownUser(getIp(req)));
+  noteBareUser(knownUser(getIp(req)), userAgent(req));
   noteRecent(recentUnconfigured, { path: maskPath(req.path), userAgent: userAgent(req) });
   res.json(body);
 }
@@ -645,12 +645,14 @@ const isBareForeign = (type, id) => type !== "tv" || !id.startsWith("iptv_");
 app.get("/meta/:type/:id.json", limitAddon, (req, res) => {
   const { type, id } = req.params;
   if (isBareForeign(type, id)) return answerForeign(res, { meta: { id, type, name: "Unknown" } });
+  if (id === "iptv_notice_setup") noteSetupStep(knownUser(getIp(req)), "meta");
   serveUnconfigured(req, res, { meta: noticeMeta("setup", type) });
 });
 app.get("/stream/:type/:id.json", limitAddon, (req, res) => {
   if (isBareForeign(req.params.type, req.params.id)) return answerForeign(res, { streams: [] });
-  const streams = req.params.id === "iptv_notice_setup" ? [SETUP_PLAY_STREAM] : [];
-  serveUnconfigured(req, res, { streams });
+  const isSetupTile = req.params.id === "iptv_notice_setup";
+  if (isSetupTile) noteSetupStep(knownUser(getIp(req)), "stream");
+  serveUnconfigured(req, res, { streams: isSetupTile ? [SETUP_PLAY_STREAM] : [] });
 });
 
 // --- Catalog (channel lists, names, search matching: catalog.js) ---
