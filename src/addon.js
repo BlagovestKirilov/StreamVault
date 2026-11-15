@@ -16,7 +16,7 @@ const {
 } = require("./configlink");
 const {
   STATS_DIR, stats, userKey, setupKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, countToday,
-  countCode, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
+  countCode, countKey, primaryLanguage, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
   recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
 const {
@@ -351,6 +351,10 @@ function serveConfigure(req, res) {
   if (counted) {
     stats.configures++;
     countToday("configures");
+    // Which language the visitor's browser prefers (first Accept-Language, primary
+    // subtag only, e.g. "fr"): decides whether translating the page is worth it.
+    // Only the per-day count is kept — history "configureLanguages".
+    countKey("configureLanguages", primaryLanguage(req.get("accept-language")));
     // Opened from an installed addon's Configure button (/<link>/configure)
     if (req.params.config) {
       stats.reconfigures++;

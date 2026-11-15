@@ -271,6 +271,22 @@ const MAX_KEYS_PER_LEVEL = 30;
 function boundedKey(obj, key) {
   return obj[key] !== undefined || Object.keys(obj).length < MAX_KEYS_PER_LEVEL ? key : "other";
 }
+// Per-day count by one key: row[mapName][key] (same cap: extras go to "other")
+function countKey(mapName, key) {
+  const row = dayRow();
+  const map = row[mapName] || (row[mapName] = {});
+  const k = boundedKey(map, key);
+  map[k] = (map[k] || 0) + 1;
+}
+
+// First language of an Accept-Language header, primary subtag only:
+// "fr-FR,fr;q=0.9,en;q=0.8" → "fr". Missing → "none"; anything odd → "other".
+function primaryLanguage(header) {
+  const first = String(header || "").split(",")[0].trim().split(/[-;_]/)[0].toLowerCase();
+  if (!first) return "none";
+  return /^[a-z]{2,3}$/.test(first) ? first : "other";
+}
+
 function countCode(mapName, where, code) {
   const row = dayRow();
   const map = row[mapName] || (row[mapName] = {}); // rows from before error tracking have none
@@ -338,7 +354,7 @@ setInterval(saveStats, 60000);
 
 module.exports = {
   STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, todayKey,
-  dayRow, countToday, countCode, providerErrorKey, recordError, noteRecent, saveStats,
+  dayRow, countToday, countCode, countKey, primaryLanguage, providerErrorKey, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,
 };

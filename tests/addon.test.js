@@ -591,6 +591,28 @@ http://example.com/1.m3u8`));
     expect(after.setupScans).toBe(before + 1);
   });
 
+  test("configure page visits are counted by the browser's first language only", async () => {
+    const { dayRow, primaryLanguage } = require("../src/stats");
+    expect(primaryLanguage("fr-FR,fr;q=0.9,en;q=0.8")).toBe("fr");
+    expect(primaryLanguage("pt_BR")).toBe("pt");
+    expect(primaryLanguage("EN")).toBe("en");
+    expect(primaryLanguage("")).toBe("none");
+    expect(primaryLanguage("*")).toBe("other");
+    expect(primaryLanguage("<script>")).toBe("other");
+
+    const langs = () => ({ ...dayRow().configureLanguages });
+    const before = langs();
+    const visit = (ip, lang) => request(app).get("/configure").set("Fly-Client-IP", ip).set("Accept-Language", lang);
+    await visit("198.51.100.101", "es-ES,es;q=0.9");
+    await visit("198.51.100.101", "es-ES,es;q=0.9"); // same visitor within 10 s: not counted again
+    await visit("198.51.100.102", "pt-BR,pt;q=0.9");
+    const after = langs();
+    expect((after.es || 0) - (before.es || 0)).toBe(1);
+    expect((after.pt || 0) - (before.pt || 0)).toBe(1);
+    // never the full header
+    expect(JSON.stringify(after)).not.toMatch(/ES|BR|q=/);
+  });
+
   test("the configure page shows the TV tip, and the tile banner only when opened from the tile", async () => {
     const page = (await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.71")).text;
     expect(page).toContain("Watching on a TV?");
