@@ -1500,6 +1500,9 @@
         div.appendChild(label);
         list.appendChild(div);
       });
+      // A re-sort puts the ticked ones first; without this the list stayed scrolled
+      // where it was (e.g. after clearing the search) and they were out of view
+      if (rebuild) list.scrollTop = 0;
     }
 
     function toggleCategory(id) {
