@@ -424,15 +424,18 @@ app.get(["/:config/configure/manifest.json", "/:config/manifest/manifest.json"],
   next();
 });
 // The install link pasted twice into an app ("…/manifest.jsonhttps://<this
-// server>/<link>/manifest.json"): use the second copy. Only a link to this
-// server; anything else stays a 404.
+// server>/<link>/manifest.json"): use the second copy. Apps build every request
+// from that doubled link, so the channel list, channel pages and streams arrive
+// as "…/manifest.jsonhttps://<this server>/<link>/catalog/tv/…json" too (okhttp,
+// ~20 a day, all 404 before): any path after the second copy is used. Only a
+// link to this server; anything else stays a 404.
 const PASTED_TWICE = "/manifest.jsonhttp";
 app.use((req, _res, next) => {
   const at = req.path.indexOf(PASTED_TWICE);
   if (at > 0) {
     try {
       const second = new URL(req.path.slice(at + "/manifest.json".length));
-      if (second.host === req.get("host") && second.pathname.endsWith("/manifest.json")) req.url = second.pathname;
+      if (second.host === req.get("host")) req.url = second.pathname + second.search;
     } catch (_) {
       // not a link after all: the normal 404
     }

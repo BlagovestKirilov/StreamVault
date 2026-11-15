@@ -313,6 +313,20 @@ http://example.com/cyr.m3u8`));
     expect(foreign.status).toBe(404);
   });
 
+  test("an install link pasted twice also serves the channel list, channel pages and streams", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="t",Twice\nhttp://example.com/t.m3u8`));
+    const cfg = enc({ t: "m3u", m: "http://example.com/twice-catalog.m3u" });
+    // what an app builds from the doubled link: <doubled base>/<resource>
+    const doubled = (rest) => request(app).get(`/${cfg}/manifest.jsonhttps://streamvault.test/${cfg}/${rest}`).set("Host", "streamvault.test");
+    expect((await doubled("catalog/tv/iptv_live.json")).body.metas.map(m => m.name)).toEqual(["Twice"]);
+    expect((await doubled("catalog/tv/iptv_live/search=twi.json")).body.metas.map(m => m.name)).toEqual(["Twice"]);
+    expect((await doubled("meta/tv/iptv_tv_t.json")).body.meta.name).toBe("Twice");
+    expect((await doubled("stream/tv/iptv_tv_t.json")).body.streams[0].url).toBe("http://example.com/t.m3u8");
+    // a doubled link to another server is still not followed
+    const foreign = await request(app).get(`/${cfg}/manifest.jsonhttps://elsewhere.example/${cfg}/catalog/tv/iptv_live.json`).set("Host", "streamvault.test");
+    expect(foreign.status).toBe(404);
+  });
+
   test("apps that keep manifest.json in the path still work", async () => {
     jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent(`#EXTM3U\n#EXTINF:-1 tvg-id="a",Alpha\nhttp://example.com/a.m3u8`));
     const cfg = enc({ t: "m3u", m: "http://example.com/manifest-path.m3u" });
