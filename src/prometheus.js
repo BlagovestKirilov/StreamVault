@@ -110,7 +110,7 @@ function writeTodayMetrics(g) {
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailyBare[today]?.size || 0, { counter: "bareUsers" });
   g("today", "Today's (UTC) daily counters, as in /stats history", stats.dailySetups[today]?.size || 0, { counter: "activeSetups" });
   for (const [counter, value] of Object.entries(row)) {
-    if (typeof value === "number" && !["dau", "viewers", "catchupUsers", "bareUsers"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
+    if (typeof value === "number" && !["dau", "viewers", "catchupUsers", "bareUsers", "activeSetups"].includes(counter)) g("today", "Today's (UTC) daily counters, as in /stats history", value, { counter });
   }
   for (const [where, codes] of Object.entries(row.providerErrors || {})) {
     for (const [code, n] of Object.entries(codes)) {

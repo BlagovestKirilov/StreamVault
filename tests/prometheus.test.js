@@ -35,6 +35,17 @@ describe("Prometheus metrics", () => {
     ]) expect(text).toContain(needle);
   });
 
+  test("no series is exported twice (unique counts frozen into today's row included)", () => {
+    const { stats, todayKey, dayRow } = require("../src/stats");
+    const day = todayKey();
+    stats.dailySetups[day] = new Set(["0123456789abcdef"]);
+    dayRow().activeSetups = 1; // what saveStats freezes into the row
+    const samples = buildMetricsText().split("\n").filter(l => l && !l.startsWith("#")).map(l => l.slice(0, l.lastIndexOf(" ")));
+    const dupes = samples.filter((s, i) => samples.indexOf(s) !== i);
+    expect(dupes).toEqual([]);
+    expect(samples).toContain('streamvault_today{counter="activeSetups"}');
+  });
+
   test("recent /stats lists are exported with snake_case labels and the event time", async () => {
     await request(app).get("/nothing/here.json").set("User-Agent", 'Odd "Agent"');
     const line = buildMetricsText().split("\n").find(l => l.startsWith("streamvault_recent_unknown_paths{") && l.includes("Odd"));
