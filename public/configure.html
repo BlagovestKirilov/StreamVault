@@ -1446,11 +1446,24 @@
       }
     }
 
+    // Category search: every typed word must appear in the name, in any order,
+    // ignoring case, accents, brackets and punctuation ("uk ppv" and "ppv uk" find
+    // "[UK] NORTH PPV"; a plain substring search needed the exact "uk] north ppv")
+    const searchWords = (text) => String(text).toLowerCase().normalize('NFD')
+      .replace(/\p{M}/gu, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    function categoryMatcher() {
+      const words = searchWords(document.getElementById('catSearch').value || '');
+      return (c) => {
+        const nameWords = searchWords(c.name);
+        return words.every(w => nameWords.some(n => n.includes(w)));
+      };
+    }
+
     // Select all = exactly what the search currently shows: it replaces the
     // selection, so a new search + Select all doesn't keep the previous results
     function selectAllCategories() {
-      const query = (document.getElementById('catSearch').value || '').toLowerCase();
-      selectedCategories = new Set(allCategories.filter(c => c.name.toLowerCase().includes(query)).map(c => c.id));
+      const matches = categoryMatcher();
+      selectedCategories = new Set(allCategories.filter(matches).map(c => c.id));
       renderCategoryList(true);
       renderSelectedTags();
     }
@@ -1469,9 +1482,8 @@
     let pinnedIds = [];
     function renderCategoryList(rebuild) {
       if (rebuild) pinnedIds = [...selectedCategories];
-      const query = (document.getElementById('catSearch').value || '').toLowerCase();
       const list = document.getElementById('catList');
-      const matches = (c) => c.name.toLowerCase().includes(query);
+      const matches = categoryMatcher();
       const pinned = pinnedIds.map(id => allCategories.find(c => c.id === id)).filter(c => c && matches(c));
       const pinnedSet = new Set(pinned.map(c => c.id));
       const rest = allCategories.filter(c => matches(c) && !pinnedSet.has(c.id));
