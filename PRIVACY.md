@@ -38,6 +38,9 @@ kept for 90 days. The total number of installs is public (the README badge) — 
 Clicks on the configure page's Ko-fi links are counted the same way — just a number per day and in
 total, nothing about who clicked.
 
+To see how many different setups are in use each day, the install link your app loads is also turned into the same
+kind of one-way code (the link itself, which contains your login, is never stored). Only the daily count is kept.
+
 When you save settings with two or more categories, StreamVault also counts whether you changed their
 order (and whether you used "Move to the top") — just numbers per day, not which categories or what
 order.

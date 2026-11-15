@@ -28,6 +28,7 @@ const stats = {
   dailyViewers: {}, // same, but users who opened a channel and got something to play
   dailyCatchup: {}, // same, users who started a catch-up programme
   dailyBare: {},    // same, users whose app loads StreamVault without settings (never set up)
+  dailySetups: {},  // { day: Set([setup codes]) } — different setups (install links) the apps loaded
   bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
@@ -56,6 +57,12 @@ function userNetwork(ip) {
 }
 function userKey(ip) {
   return hmacKey(userNetwork(ip));
+}
+// One setup = one install link (s-…, e-…, older forms). Counted by a one-way code
+// of the link, like users by IP, so how many setups are in use can be compared with
+// how many exist — without keeping the links (they contain credentials).
+function setupKey(configStr) {
+  return hmacKey(`setup|${configStr}`);
 }
 // Codes saved before the /64 change were made from the full IPv6 address: a
 // returning user with such a code is moved over to the network code once, so the
@@ -91,6 +98,7 @@ try {
   if (!stats.dailyCatchup) stats.dailyCatchup = {};
   if (typeof stats.catchupPlays !== "number") stats.catchupPlays = 0;
   if (!stats.dailyBare) stats.dailyBare = {};
+  if (!stats.dailySetups) stats.dailySetups = {};
   stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
   // All-time totals started after the daily counters: seed them from the rows
@@ -100,7 +108,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -133,6 +141,7 @@ function saveStatsData() {
     dailyActive: lastDays(stats.dailyActive, 30), dailyViewers: lastDays(stats.dailyViewers, 30),
     dailyCatchup: lastDays(stats.dailyCatchup, 30),
     dailyBare: lastDays(stats.dailyBare, 30),
+    dailySetups: lastDays(stats.dailySetups, 30),
   };
 }
 
@@ -147,13 +156,14 @@ function lastDays(daily, days) {
   return kept;
 }
 
-// { dau, viewers, catchupUsers, bareUsers } for a day still in the per-day lists (older days: {})
+// { dau, viewers, catchupUsers, bareUsers, activeSetups } for a day still in the per-day lists (older days: {})
 function uniqueCounts(day) {
   const counts = {};
   if (stats.dailyActive[day]) counts.dau = stats.dailyActive[day].size;
   if (stats.dailyViewers[day]) counts.viewers = stats.dailyViewers[day].size;
   if (stats.dailyCatchup[day]) counts.catchupUsers = stats.dailyCatchup[day].size;
   if (stats.dailyBare[day]) counts.bareUsers = stats.dailyBare[day].size;
+  if (stats.dailySetups[day]) counts.activeSetups = stats.dailySetups[day].size;
   return counts;
 }
 
@@ -292,7 +302,7 @@ function saveStatsSync() {
 setInterval(saveStats, 60000);
 
 module.exports = {
-  STATS_DIR, stats, userKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
+  STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, todayKey,
   dayRow, countToday, countCode, providerErrorKey, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,

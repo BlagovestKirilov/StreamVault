@@ -361,6 +361,21 @@ describe("speed", () => {
     expect(lines).toEqual([expect.stringMatching(/NEW install — type: m3u$/)]);
   });
 
+  test("setups in use are counted once per day per install link, not per network", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const { stats, todayKey } = require("../src/stats");
+    const day = todayKey();
+    const before = stats.dailySetups[day]?.size || 0;
+    const one = enc({ t: "m3u", m: "http://setups-a.example.com/list.m3u" });
+    const two = enc({ t: "m3u", m: "http://setups-b.example.com/list.m3u" });
+    await request(app).get(`/${one}/manifest.json`).set("Fly-Client-IP", "198.51.100.81");
+    await request(app).get(`/${one}/manifest.json`).set("Fly-Client-IP", "198.51.100.82"); // same setup, other network
+    await request(app).get(`/${two}/manifest.json`).set("Fly-Client-IP", "198.51.100.81");
+    expect(stats.dailySetups[day].size).toBe(before + 2);
+    // one-way codes only: the links themselves are never kept
+    expect(JSON.stringify([...stats.dailySetups[day]])).not.toMatch(/setups-a|setups-b/);
+  });
+
   test("a configure-page link with /manifest.json added works as the install link", async () => {
     jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
     const cfg = enc({ t: "m3u", m: "http://configure-manifest.example.com/list.m3u" });

@@ -14,7 +14,7 @@ const {
   configFromQueryString, normalizeXtreamLogin,
 } = require("./configlink");
 const {
-  STATS_DIR, stats, userKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
+  STATS_DIR, stats, userKey, setupKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupDone, countToday,
   countCode, noteRecent, saveStats, saveStatsSync, recentErrors, recentUnknownPaths,
   recentEmptyStreams, recentUnconfigured, recentPlayRejects, recentBadLinks, recentTestFailures,
 } = require("./stats");
@@ -435,6 +435,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   if (isNew && stats.installsByType[cType] !== undefined) stats.installsByType[cType]++;
   countToday("launches"); // Stremio fetches the manifest each time the app starts
   addDailyUser(stats.dailyActive, user);
+  addDailyUser(stats.dailySetups, setupKey(req.params.config));
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
