@@ -307,9 +307,9 @@
       background: var(--card);
       -webkit-overflow-scrolling: touch;
     }
-    .cat-list::-webkit-scrollbar { width: 6px; }
-    .cat-list::-webkit-scrollbar-track { background: transparent; }
-    .cat-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .cat-list::-webkit-scrollbar, .row-list::-webkit-scrollbar { width: 6px; }
+    .cat-list::-webkit-scrollbar-track, .row-list::-webkit-scrollbar-track { background: transparent; }
+    .cat-list::-webkit-scrollbar-thumb, .row-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
     .cat-item {
       padding: 12px 14px;
@@ -377,6 +377,64 @@
       opacity: 0.7;
     }
     .cat-tag .remove-tag:hover { opacity: 1; }
+
+    /* Picked categories in order: the first 8 are the app's home rows */
+    .cat-selected:has(.row-list) { display: block; }
+    .row-hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .row-list {
+      list-style: none;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .row-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px 4px 10px;
+      font-size: 0.85rem;
+    }
+    .row-item + .row-item { border-top: 1px solid var(--border); }
+    .row-num {
+      min-width: 1.5em;
+      color: var(--accent);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .row-extra .row-num { color: var(--muted); }
+    .row-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .row-btn {
+      width: 36px;
+      height: 36px;
+      flex: none;
+      background: none;
+      border: none;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .row-btn:hover:not(:disabled), .row-btn:focus-visible { color: var(--accent); background: rgba(124,92,252,0.12); }
+    .row-btn:disabled { opacity: 0.25; cursor: default; }
+    .row-divider {
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px dashed var(--border);
+      border-bottom: 1px dashed var(--border);
+    }
 
     /* Test Connection: same primary look as Install. Only one of the two is
        shown — Test until it passes for the current details, then Install */
@@ -1421,29 +1479,94 @@
       renderSelectedTags();
     }
 
-    function renderSelectedTags() {
+    // Same as MAX_CATEGORY_ROWS in addon.js: the first 8 picked categories become
+    // home-screen rows; the rest are only in Discover's category dropdown
+    const MAX_HOME_ROWS = 8;
+    const categoryName = (id) => (allCategories.find(c => c.id === id) || {}).name || id;
+
+    function renderSelectedTags(focus) {
       const container = document.getElementById('catSelected');
       container.innerHTML = '';
       document.getElementById('catCount').textContent = selectedCategories.size > 0
         ? `${selectedCategories.size} of ${allCategories.length} selected`
         : `None selected — all ${allCategories.length} will show`;
       if (selectedCategories.size === 0) return;
-      [...selectedCategories].forEach(id => {
-        const cat = allCategories.find(c => c.id === id);
-        const name = cat ? cat.name : id;
-
+      if (selectedCategories.size === 1) {
+        const [id] = selectedCategories;
         const tag = document.createElement('span');
         tag.className = 'cat-tag';
-        tag.textContent = name + ' ';
-
+        tag.textContent = categoryName(id) + ' ';
         const remove = document.createElement('span');
         remove.className = 'remove-tag';
-        remove.textContent = '\u00D7';
+        remove.textContent = '×';
         remove.onclick = () => removeCategory(id);
-
         tag.appendChild(remove);
         container.appendChild(tag);
+        return;
+      }
+      // Two or more: the order decides the home rows (and the channel order), so
+      // show it as a list that can be reordered
+      const hint = document.createElement('p');
+      hint.className = 'row-hint';
+      hint.textContent = `Your home rows: the first ${MAX_HOME_ROWS} become rows on the app's home screen, in this order.`;
+      container.appendChild(hint);
+      const list = document.createElement('ol');
+      list.className = 'row-list';
+      const order = [...selectedCategories];
+      order.forEach((id, i) => {
+        if (i === MAX_HOME_ROWS) {
+          const divider = document.createElement('li');
+          divider.className = 'row-divider';
+          divider.textContent = "Below: only in Discover's category list";
+          list.appendChild(divider);
+        }
+        const name = categoryName(id);
+        const item = document.createElement('li');
+        item.className = 'row-item' + (i < MAX_HOME_ROWS ? '' : ' row-extra');
+        item.dataset.id = id;
+        const num = document.createElement('span');
+        num.className = 'row-num';
+        num.textContent = i + 1;
+        const label = document.createElement('span');
+        label.className = 'row-name';
+        label.textContent = name;
+        item.append(num, label,
+          rowButton('↑', 'up', `Move ${name} up`, i === 0, () => moveCategory(id, -1, 'up')),
+          rowButton('↓', 'down', `Move ${name} down`, i === order.length - 1, () => moveCategory(id, 1, 'down')),
+          rowButton('×', 'remove', `Remove ${name}`, false, () => removeCategory(id)));
+        list.appendChild(item);
       });
+      container.appendChild(list);
+      // Keep keyboard focus on the moved category's button so it can be pressed again
+      if (focus) {
+        const item = [...list.querySelectorAll('.row-item')].find(el => el.dataset.id === focus.id);
+        const btn = item && item.querySelector(`[data-dir="${focus.dir}"]`);
+        if (btn && !btn.disabled) btn.focus();
+      }
+    }
+
+    function rowButton(text, dir, label, disabled, onClick) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'row-btn';
+      b.textContent = text;
+      b.dataset.dir = dir;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.disabled = disabled;
+      b.onclick = onClick;
+      return b;
+    }
+
+    // Swap with the neighbour; the Set keeps insertion order, so rebuild it
+    function moveCategory(id, delta, dir) {
+      const order = [...selectedCategories];
+      const i = order.indexOf(id);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= order.length) return;
+      [order[i], order[j]] = [order[j], order[i]];
+      selectedCategories = new Set(order);
+      renderSelectedTags({ id, dir });
     }
 
     function removeCategory(id) {
