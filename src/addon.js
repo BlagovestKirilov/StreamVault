@@ -6,6 +6,7 @@
  */
 
 const express = require("express");
+const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { ROOT, safeError, userAgent, parseExtra, maskPath, trimPathSpaces, withinMs } = require("./util");
@@ -141,12 +142,24 @@ const limitAddon = rateLimit("addon", 1500, MINUTE);
 // --- SSRF protection: see urlguard.js (also enforced inside m3u.js / xtream.js) ---
 
 // --- Serve static files (logo, images) ---
-// The configure page's own CSS/JS are checked on every visit like the page itself
-// (max-age 0 + ETag → a tiny 304 when unchanged): with the 7-day cache below, a
-// deploy would pair the new configure.html with yesterday's script and break it.
-const PAGE_ASSETS = new Set(["/css/configure.css", "/js/configure.js"]);
+// The configure page (html/css/js) is checked on every visit ("no-cache") with an
+// ETag made from the file's CONTENT: any deploy that changes a file gives it a new
+// ETag, so browsers fetch it at once — whatever the file dates in the image are
+// (a size+mtime ETag could call a same-size change "unchanged"). Unchanged files
+// cost a tiny 304. With the 7-day cache below, a deploy could pair the new page
+// with yesterday's script and break it.
+const PAGE_FILES = new Set(["html/configure.html", "css/configure.css", "js/configure.js"]);
+function sendPageFile(req, res, file) {
+  const body = fs.readFileSync(path.join(ROOT, "public", file)); // a few KB, a few hundred visits a day
+  const tag = `"${crypto.createHash("sha256").update(body).digest("base64url").slice(0, 22)}"`;
+  res.set({ "Cache-Control": "no-cache", ETag: tag });
+  const known = String(req.get("if-none-match") || "").split(",").map(t => t.trim().replace(/^W\//, ""));
+  if (known.includes(tag)) return res.status(304).end();
+  res.type(path.extname(file)).send(body);
+}
 app.use("/public", (req, res, next) => {
-  if (PAGE_ASSETS.has(req.path)) return res.sendFile(path.join(ROOT, "public", req.path.slice(1)));
+  const file = req.path.slice(1);
+  if (PAGE_FILES.has(file)) return sendPageFile(req, res, file);
   next();
 });
 // Cached by browsers/Stremio for a week so repeat visits don't re-download images
@@ -346,7 +359,7 @@ function serveConfigure(req, res) {
     setCapped(lastConfigureAt, ip, now, 10000);
   }
   console.log(`[CONFIGURE] ${req.method} ${maskIp(ip)} opened configure page${counted ? "" : " (repeat, not counted)"}`);
-  res.sendFile(path.join(ROOT, "public", "configure.html"));
+  sendPageFile(req, res, "html/configure.html");
 }
 // Crawlers may index the configure page (people find the addon) but nothing
 // else — install links carry users' (encrypted) settings

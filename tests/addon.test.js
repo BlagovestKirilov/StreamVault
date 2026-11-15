@@ -564,14 +564,24 @@ http://example.com/1.m3u8`));
       expect(html).toContain('<script src="/public/js/configure.js"></script>');
       expect(html).not.toMatch(/<style>|<script>\s*\S/);
     }
-    for (const [file, type] of [["/public/css/configure.css", /text\/css/], ["/public/js/configure.js", /javascript/]]) {
-      const res = await request(app).get(file);
+    const fs = require("node:fs");
+    const crypto = require("node:crypto");
+    const files = [
+      ["/configure", "public/html/configure.html", /text\/html/],
+      ["/public/html/configure.html", "public/html/configure.html", /text\/html/],
+      ["/public/css/configure.css", "public/css/configure.css", /text\/css/],
+      ["/public/js/configure.js", "public/js/configure.js", /javascript/],
+    ];
+    for (const [url, file, type] of files) {
+      const res = await request(app).get(url);
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toMatch(type);
-      expect(res.headers["cache-control"]).toMatch(/max-age=0/); // not the 7-day static cache
-      expect(res.headers.etag).toBeTruthy();
-      const again = await request(app).get(file).set("If-None-Match", res.headers.etag);
-      expect(again.status).toBe(304);
+      expect(res.headers["cache-control"]).toBe("no-cache"); // checked every visit, not the 7-day static cache
+      // ETag from the file's content: a deploy that changes the file changes it, whatever the file dates
+      const hash = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("base64url").slice(0, 22);
+      expect(res.headers.etag).toBe(`"${hash}"`);
+      expect((await request(app).get(url).set("If-None-Match", res.headers.etag)).status).toBe(304);
+      expect((await request(app).get(url).set("If-None-Match", '"an-older-version"')).status).toBe(200);
     }
     // other static files keep the long cache
     expect((await request(app).get("/public/img/logo.png")).headers["cache-control"]).toMatch(/max-age=604800/);
