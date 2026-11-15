@@ -68,7 +68,9 @@ function getCheckBody(quiet) {
     const password = document.getElementById('password').value.trim();
     if (!server || !username || !password) return fail('Fill in server, username and password first');
     // Without http:// is fine: the server tries http and https and the field
-    // gets the address that worked
+    // gets the address that worked. Only checks the address can be parsed, never
+    // connects (the server picks http or https):
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols
     if (!isValidUrl(server) && !isValidUrl('http://' + server)) return fail('Server URL must be a valid URL (http://...)');
     return { type: 'xtream', server, username, password };
   }
@@ -201,7 +203,7 @@ async function runCheck(body) {
       lastCheckKey = null;
     }
     return data;
-  } catch (e) {
+  } catch (_) {
     lastCheckKey = null;
     return { ok: false, error: "Couldn't reach StreamVault — check your internet connection" };
   }
@@ -367,7 +369,7 @@ async function install() {
     // duplicate). Not on phones (no Upgrade there).
     const updated = showInstallResult(encData, manifestUrl);
     if (!updated || !ON_PHONE) openInApp(manifestUrl);
-  } catch (e) {
+  } catch (_) {
     showToast('Failed to generate install URL');
   } finally {
     btn.classList.remove('loading');
