@@ -1,0 +1,808 @@
+/* StreamVault configure page styles (linked from configure.html) */
+:root {
+  --bg: #0a0a16;
+  --card: #13132b;
+  --card-glow: rgba(123, 91, 245, 0.04);
+  --border: #252547;
+  --accent: #7c5cfc;
+  --accent-glow: rgba(124, 92, 252, 0.25);
+  --accent-hover: #9b7fff;
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.08);
+  --red: #f87171;
+  --text: #f0f0f5;
+  --muted: #7a7a9e;
+  --input-bg: #0e0e20;
+  --input-focus: #191938;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 40px 16px 80px 16px;
+  padding: 40px env(safe-area-inset-right, 16px) 80px env(safe-area-inset-left, 16px);
+  overflow-y: auto;
+}
+
+.wrapper {
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 60px;
+  animation: fadeUp 0.5s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Logo area */
+.brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+/* Real logo: 144px WebP (~5 KB) shown at 56px, sharp on retina */
+.brand-icon {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px var(--accent-glow);
+}
+.brand h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.brand p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 6px;
+  text-wrap: balance; /* two even lines on phones, no lone last word */
+}
+
+/* Card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  background: var(--input-bg);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 24px;
+  position: relative;
+}
+.tab-btn {
+  flex: 1;
+  padding: 12px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 9px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.tab-btn.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+.tab-btn:not(.active):active {
+  background: rgba(255,255,255,0.04);
+}
+.tab-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Form */
+.panel {
+  display: none;
+  animation: fadeIn 0.25s ease;
+}
+.panel.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.field {
+  margin-bottom: 16px;
+}
+.field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.field label .label-optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.input-wrap {
+  position: relative;
+}
+
+/* Show/hide password */
+.input-wrap input#password { padding-right: 48px; }
+.pw-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-toggle:hover { color: var(--accent); }
+.pw-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.input-wrap .pw-toggle svg {
+  position: static;
+  transform: none;
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+.input-wrap svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  pointer-events: none;
+  transition: color 0.2s;
+}
+.input-wrap input {
+  width: 100%;
+  padding: 14px 14px 14px 44px;
+  background: var(--input-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+  transition: all 0.2s;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  box-shadow: none;
+}
+.input-wrap input:focus {
+  border-color: var(--accent);
+  background: var(--input-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.input-wrap input:focus + svg,
+.input-wrap:focus-within svg {
+  color: var(--accent);
+}
+.input-wrap input::placeholder {
+  color: #444466;
+}
+.input-wrap input:-webkit-autofill,
+.input-wrap input:-webkit-autofill:hover,
+.input-wrap input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  border-color: var(--border);
+}
+
+/* Category picker */
+.cat-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cat-search-wrap {
+  margin-top: 10px;
+}
+.cat-search-wrap input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--input-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+  transition: all 0.2s;
+  -webkit-appearance: none;
+}
+.cat-search-wrap input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.cat-search-wrap input::placeholder { color: #444466; }
+
+.cat-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.cat-tools span { margin-right: auto; }
+.cat-tools button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.cat-tools button:hover { color: var(--accent-hover); }
+
+.cat-list {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  -webkit-overflow-scrolling: touch;
+}
+.cat-list::-webkit-scrollbar, .row-list::-webkit-scrollbar { width: 6px; }
+.cat-list::-webkit-scrollbar-track, .row-list::-webkit-scrollbar-track { background: transparent; }
+.cat-list::-webkit-scrollbar-thumb, .row-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.cat-item {
+  padding: 12px 14px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  background: var(--card);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.cat-item:last-child { border-bottom: none; }
+/* Between the ticked categories (listed first) and the rest */
+.cat-split {
+  height: 0;
+  border-top: 2px solid var(--border);
+}
+.cat-item:active { background: rgba(124,92,252,0.15); }
+.cat-item.selected {
+  color: var(--text);
+  background: #191938;
+}
+.cat-item .cat-check {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 5px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.cat-item.selected .cat-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cat-item.selected .cat-check::after {
+  content: '✓';
+  font-size: 11px;
+  color: #fff;
+  font-weight: 700;
+}
+
+.cat-selected {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: rgba(124,92,252,0.15);
+  border: 1px solid rgba(124,92,252,0.3);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+.cat-tag .remove-tag {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.cat-tag .remove-tag:hover { opacity: 1; }
+
+/* Picked categories in order: the first 8 are the app's home rows */
+.cat-selected:has(.row-list) { display: block; }
+.row-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.row-list {
+  list-style: none;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.row-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  font-size: 0.85rem;
+}
+.row-item + .row-item { border-top: 1px solid var(--border); }
+.row-num {
+  min-width: 1.5em;
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.row-extra .row-num { color: var(--muted); }
+.row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-btn {
+  width: 32px;
+  height: 36px;
+  flex: none;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+.row-btn:hover:not(:disabled), .row-btn:focus-visible { color: var(--accent); background: rgba(124,92,252,0.12); }
+.row-btn:disabled { opacity: 0.25; cursor: default; }
+/* Remove sits apart from the move buttons, so a tap meant for ↓ doesn't remove */
+.row-btn[data-dir="remove"] { margin-left: 10px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.row-divider {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+}
+
+/* Test Connection: same primary look as Install. Only one of the two is
+   shown — Test until it passes for the current details, then Install */
+.btn-test {
+  width: 100%;
+  padding: 16px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, var(--accent), #6345e0);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-test:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--accent-glow);
+}
+.btn-test:active {
+  transform: translateY(0) scale(0.98);
+}
+.btn-test:disabled,
+.btn-test:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.btn-test.incomplete,
+.btn-test.incomplete:hover {
+  background: var(--input-bg);
+  color: var(--muted);
+  border: 1.5px solid var(--border);
+  opacity: 1;
+}
+.btn-test svg {
+  width: 20px;
+  height: 20px;
+}
+.btn-test.error {
+  background: var(--red);
+}
+
+/* Line icons in tip boxes (same stroke style as the rest of the page) */
+.tip-icon {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+  margin-right: 5px;
+}
+
+/* One block per app in the player tip box */
+.app-tip strong, .app-tip span { display: block; }
+/* App and player names link to their official download pages (dotted: a link, not a button) */
+.app-link { color: inherit; text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.app-link:hover { text-decoration-style: solid; }
+.app-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.app-tip + .app-tip { margin-top: 10px; }
+
+.tv-tip {
+  margin-top: 14px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.install-hint {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Disclaimer, report a problem, privacy — quiet, under the card */
+.page-foot {
+  margin-top: 24px;
+  padding: 0 8px 28px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.page-foot p + p { margin-top: 6px; }
+.quiet-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.quiet-link:hover { color: var(--text); }
+.quiet-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+/* Footer Ko-fi link: the only coloured thing in the small print (same heart as the dialog button) */
+.support-link { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.support-link:hover { color: var(--accent); text-decoration-thickness: 2px; }
+.support-link svg { width: 13px; height: 13px; vertical-align: -2px; margin-right: 3px; }
+
+/* Button */
+.btn-install {
+  width: 100%;
+  padding: 16px;
+  margin-top: 8px;
+  background: linear-gradient(135deg, var(--accent), #6345e0);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-install:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--accent-glow);
+}
+.btn-install:active {
+  transform: translateY(0) scale(0.98);
+}
+.btn-install svg {
+  width: 20px;
+  height: 20px;
+}
+.btn-install.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Success message */
+/* Install / Saved result: a native <dialog> (showModal) centred on the screen,
+   phones and PCs; the browser gives it the top layer, backdrop, focus and Esc */
+.result {
+  width: min(440px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  color: var(--text);
+  background-color: var(--card);
+  background-image: linear-gradient(var(--green-bg), var(--green-bg));
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  outline: none;
+}
+.result[open] { animation: resultIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.result::backdrop {
+  background: rgba(5, 5, 18, 0.62);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+/* Content wrapper: a click on the dialog element itself is the backdrop */
+.result-body {
+  position: relative;
+  padding: 22px 18px 18px;
+}
+@keyframes resultIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.result-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.result-close svg { width: 18px; height: 18px; }
+.result-close:hover, .result-close:focus-visible { background: rgba(255,255,255,0.08); color: var(--text); }
+.result-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.result-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--green);
+  margin-bottom: 12px;
+  padding-right: 36px; /* room for the close button */
+}
+.result-title svg {
+  width: 18px;
+  height: 18px;
+}
+.result-url {
+  width: 100%;
+  padding: 11px 12px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  outline: none;
+  margin-bottom: 12px;
+}
+.result-btns {
+  display: flex;
+  gap: 8px;
+}
+.btn-sm {
+  flex: 1;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-sm svg { width: 15px; height: 15px; }
+.btn-copy {
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+}
+.btn-copy:active { background: rgba(255,255,255,0.14); }
+.btn-open {
+  background: var(--green);
+  color: #000;
+}
+.btn-open:active { opacity: 0.8; }
+
+#restartHint { white-space: pre-line; } /* savedHint's second line (Nuvio) */
+.result-hint {
+  margin-top: 12px;
+  font-size: 0.76rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+}
+/* Last line of the result (install and every save): set apart from the setup steps */
+.result-support {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+/* The quietest action: outlined, after Copy / Open in app */
+.support-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.support-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.support-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.support-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+/* After Save changes the tip comes first: these people already use StreamVault */
+.saved-support {
+  margin-bottom: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  text-align: center;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.saved-support span { color: var(--muted); font-size: 0.78rem; }
+/* A shade deeper than --accent: white text needs 4.5:1 (5.4:1, hover 7:1) */
+.support-btn-filled { background: color-mix(in srgb, var(--accent) 88%, #000); color: #fff; }
+.support-btn-filled:hover { background: color-mix(in srgb, var(--accent) 75%, #000); color: #fff; }
+
+/* Error toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--red);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 100;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Responsive */
+@media (prefers-reduced-motion: reduce) {
+  .result[open] { animation: none; }
+}
+
+@media (max-width: 480px) {
+  body { padding: 20px 16px; }
+  .card { padding: 24px 20px; border-radius: 18px; }
+  .wrapper { max-width: 100%; }
+  .brand h1 { font-size: 1.35rem; }
+  .input-wrap input { font-size: 16px; } /* prevents iOS zoom */
+}
+
+html.light {
+  --bg: #f5f5fa;
+  --card: #ffffff;
+  --card-glow: rgba(123, 91, 245, 0.06);
+  --border: #d8d8e8;
+  --accent: #6c4ce0;
+  --accent-glow: rgba(108, 76, 224, 0.2);
+  --accent-hover: #8565ff;
+  --green: #16a34a;
+  --green-bg: rgba(22, 163, 74, 0.08);
+  --red: #dc2626;
+  --text: #1a1a2e;
+  --muted: #6b6b8a;
+  --input-bg: #eeeef5;
+  --input-focus: #e0e0ed;
+}
+
+html.light .tab-btn { color: #6b6b8a; }
+html.light .input-wrap input::placeholder { color: #a3a3bd; }
+html.light .tab-btn.active { color: #1a1a2e; }
+html.light .toast { background: #1a1a2e; }
+
+.theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  transition: all 0.2s;
+  z-index: 100;
+}
+.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.theme-toggle svg { width: 20px; height: 20px; }

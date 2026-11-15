@@ -552,7 +552,29 @@ http://example.com/1.m3u8`));
     const page = (await request(app).get("/configure").set("Fly-Client-IP", "198.51.100.71")).text;
     expect(page).toContain("Watching on a TV?");
     expect(page).toMatch(/id="tileBanner" style="display: none;/);
-    expect(page).toContain("get('from') === 'tile'");
+    const script = (await request(app).get("/public/configure.js")).text;
+    expect(script).toContain("get('from') === 'tile'");
+  });
+
+  test("the configure page's CSS and JS load from both page addresses and are re-checked every visit", async () => {
+    for (const pagePath of ["/configure", "/s-abcdefghijkl/configure"]) {
+      const html = (await request(app).get(pagePath)).text;
+      // absolute links: a relative one would resolve to /s-…/configure.js on the edit page
+      expect(html).toContain('<link rel="stylesheet" href="/public/configure.css" />');
+      expect(html).toContain('<script src="/public/configure.js"></script>');
+      expect(html).not.toMatch(/<style>|<script>\s*\S/);
+    }
+    for (const [file, type] of [["/public/configure.css", /text\/css/], ["/public/configure.js", /javascript/]]) {
+      const res = await request(app).get(file);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(type);
+      expect(res.headers["cache-control"]).toMatch(/max-age=0/); // not the 7-day static cache
+      expect(res.headers.etag).toBeTruthy();
+      const again = await request(app).get(file).set("If-None-Match", res.headers.etag);
+      expect(again.status).toBe(304);
+    }
+    // other static files keep the long cache
+    expect((await request(app).get("/public/img/logo.png")).headers["cache-control"]).toMatch(/max-age=604800/);
   });
 
   test("subtitle requests (apps asking every addon) get an empty list, not a 404", async () => {
