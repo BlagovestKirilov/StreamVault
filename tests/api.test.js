@@ -349,6 +349,35 @@ describe("/api/encrypt input validation", () => {
   });
 });
 
+// ─── Home-rows list usage (configure page) ───
+
+describe("saves count whether the home-rows order was changed", () => {
+  const { dayRow } = require("../src/stats");
+  const counts = () => {
+    const row = dayRow();
+    return [row.multiCategorySaves || 0, row.rowReorders || 0, row.rowsMovedToTop || 0];
+  };
+  const save = (body) => request(app).post("/api/link").send(body);
+  const xt = (c, extra) => ({ t: "xtream", s: "http://rows.example.com", u: "u", p: "p", c, ...extra });
+
+  test("2+ categories counted; reorders and move-to-top counted; 1 category ignored", async () => {
+    const [saves, reorders, tops] = counts();
+    await save(xt("1,2"));
+    await save(xt("1,2,3", { rowsMoved: "yes" }));
+    await save(xt("3,1,2", { rowsMoved: "top" }));
+    await save({ t: "m3u", m: "http://rows.example.com/l.m3u", g: JSON.stringify(["A", "B"]), rowsMoved: "yes" });
+    await save(xt("1", { rowsMoved: "yes" })); // one category: no list shown, not counted
+    await save(xt("1,2", { rowsMoved: "<script>" })); // unknown value: a save, not a reorder
+    expect(counts()).toEqual([saves + 5, reorders + 3, tops + 1]);
+  });
+
+  test("the flag is not kept in the saved settings", async () => {
+    const id = (await save(xt("1,2", { rowsMoved: "top" }))).body.config;
+    const back = (await request(app).get(`/api/config/${id}`)).body;
+    expect(JSON.stringify(back)).not.toMatch(/rowsMoved|top/);
+  });
+});
+
 // ─── Xtream server typed without http:// or https:// ───
 
 describe("Test Connection: Xtream server without a scheme", () => {

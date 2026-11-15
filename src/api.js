@@ -40,6 +40,21 @@ function sanitizeConfig(configObj) {
   return { sanitized };
 }
 
+// Is the home-rows list on the configure page used? Saves with 2+ categories (the
+// list was shown), of those the ones whose order was changed, and the ones that
+// used "Move to the top". Numbers only; which categories or what order is not kept.
+// rowsMoved comes from the page: "top", "yes" or nothing (never stored in settings).
+function countRowUse(config, rowsMoved) {
+  const picked = config.type === "xtream"
+    ? String(config.country || "").split(",").filter(Boolean).length
+    : (config.groups || []).length;
+  if (picked < 2) return;
+  countToday("multiCategorySaves");
+  if (rowsMoved !== "yes" && rowsMoved !== "top") return;
+  countToday("rowReorders");
+  if (rowsMoved === "top") countToday("rowsMovedToTop");
+}
+
 // "Account: Active · expires 2026-12-01 · 1/2 connections" (parts the provider omits are skipped)
 function formatAccountInfo(info) {
   if (!info || typeof info !== "object") return "";
@@ -340,6 +355,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
         stats.reinstalls++;
         countToday("reinstalls");
       }
+      countRowUse(config, req.body.rowsMoved);
       if (linkStore.isId(editing)) {
         if (linkStore.update(editing, encrypted)) return res.json({ config: editing, updated: true });
       } else if (editing && isUsableOldLink(editing) && linkStore.setOverride(editing, encrypted)) {

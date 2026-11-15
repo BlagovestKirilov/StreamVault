@@ -38,6 +38,10 @@ kept for 90 days. The total number of installs is public (the README badge) — 
 Clicks on the configure page's Ko-fi links are counted the same way — just a number per day and in
 total, nothing about who clicked.
 
+When you save settings with two or more categories, StreamVault also counts whether you changed their
+order (and whether you used "Move to the top") — just numbers per day, not which categories or what
+order.
+
 ## Server logs
 
 The server logs events such as "new install", "configure page opened" or "provider returned an error",
