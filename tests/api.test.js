@@ -286,7 +286,7 @@ describe("API SSRF protection", () => {
       .post("/api/test")
       .send({ type: "xtream", server: "http://127.0.0.1:8080", username: "user", password: "pass" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/blocked/i);
+    expect(res.body.error).toMatch(/local network address/); // refused before any connection
   });
 
   test("POST /api/test blocks private M3U URL", async () => {
@@ -294,7 +294,7 @@ describe("API SSRF protection", () => {
       .post("/api/test")
       .send({ type: "m3u", m3uUrl: "http://192.168.1.1/playlist.m3u" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/blocked/i);
+    expect(res.body.error).toMatch(/local network address/); // refused before any connection
   });
 
   test("POST /api/categories blocks private server URL", async () => {
@@ -310,7 +310,7 @@ describe("API SSRF protection", () => {
       .post("/api/test")
       .send({ type: "xtream", server: "http://169.254.169.254/latest/meta-data/", username: "u", password: "p" });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/blocked/i);
+    expect(res.body.error).toMatch(/local network address/); // refused before any connection
   });
 });
 
@@ -375,6 +375,33 @@ describe("saves count whether the home-rows order was changed", () => {
     const id = (await save(xt("1,2", { rowsMoved: "top" }))).body.config;
     const back = (await request(app).get(`/api/config/${id}`)).body;
     expect(JSON.stringify(back)).not.toMatch(/rowsMoved|top/);
+  });
+});
+
+// ─── Why an address can't be used (Test Connection) ───
+
+describe("Test Connection says why an address can't be used", () => {
+  const { dayRow } = require("../src/stats");
+  const xt = (server) => request(app).post("/api/test").send({ type: "xtream", server, username: "u", password: "p" });
+  const m3uTest = (m3uUrl) => request(app).post("/api/test").send({ type: "m3u", m3uUrl });
+
+  test.each([
+    ["a name that doesn't exist", "http://no-such-provider.invalid:8080", "not_found", /^Can't find this server: check the spelling/],
+    ["localhost", "http://localhost:8080", "private", /^This is a local network address/],
+    ["a local-network IP", "192.168.1.20:8080", "private", /^This is a local network address/],
+    ["another scheme", "ftp://provider.example", "malformed", /^Check the server address, for example http:\/\//],
+  ])("Xtream: %s", async (_name, server, reason, message) => {
+    const before = dayRow().testRejects?.["test (xtream)"]?.[reason] || 0;
+    const res = await xt(server);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(message);
+    expect(dayRow().testRejects["test (xtream)"][reason]).toBe(before + 1);
+  });
+
+  test("M3U: a playlist link on a name that doesn't exist", async () => {
+    const res = await m3uTest("http://no-such-provider.invalid/list.m3u");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/^Can't find this server/);
   });
 });
 

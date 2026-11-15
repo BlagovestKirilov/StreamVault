@@ -7,7 +7,7 @@
 const xtream = require("./xtream");
 const m3u = require("./m3u");
 const { safeError } = require("./util");
-const { validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
+const { checkExternalUrl, validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
 const {
   encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme,
 } = require("./configlink");
@@ -148,6 +148,17 @@ function isOwnAddress(address, req) {
   }
 }
 
+// Why an address can't be used, in plain words (checkExternalUrl's reasons). Used to
+// be one "Invalid or blocked … URL" for all of them (54 a day): mostly server names
+// that don't exist — a typo or a provider domain that's gone.
+function urlProblemHint(problem, source) {
+  if (problem === "not_found") return "Can't find this server: check the spelling, or ask your provider for the current address";
+  if (problem === "private") return "This is a local network address: StreamVault runs on the internet and can't reach it";
+  return source === "xtream"
+    ? "Check the server address, for example http://provider.com:8080"
+    : "Check the playlist link: it should start with http:// or https://";
+}
+
 // Test Connection input rejected before the provider is contacted (400): counted by
 // reason per day (stats history "testRejects"), so a jump in 400s shows what new
 // users trip over (placeholder left in, playlist link in the server field, …)
@@ -207,8 +218,9 @@ async function testXtream(body, res) {
   if (!server || !username || !password) {
     return rejectTest(res, "xtream", "missing", "Missing credentials");
   }
-  if (!(await validateExternalUrl(server))) {
-    return rejectTest(res, "xtream", "invalid_url", "Invalid or blocked server URL");
+  const serverProblem = await checkExternalUrl(server);
+  if (serverProblem !== "ok") {
+    return rejectTest(res, "xtream", serverProblem, urlProblemHint(serverProblem, "xtream"));
   }
   const { config, cats, account } = await loginWithEitherScheme(body.server, { server, username, password });
   const failure = xtreamTestProblem(cats, account);
@@ -236,8 +248,9 @@ async function testM3u(m3uUrl, res) {
   if (PLACEHOLDER_RE.test(m3uUrl)) {
     return rejectTest(res, "m3u", "placeholder", PLACEHOLDER_HINT);
   }
-  if (!(await validateExternalUrl(m3uUrl))) {
-    return rejectTest(res, "m3u", "invalid_url", "Invalid or blocked M3U URL");
+  const linkProblem = await checkExternalUrl(m3uUrl);
+  if (linkProblem !== "ok") {
+    return rejectTest(res, "m3u", linkProblem, urlProblemHint(linkProblem, "m3u"));
   }
   // Group counts only (no channel list in memory); shared with /api/m3u-groups,
   // so test + group picker cost one download

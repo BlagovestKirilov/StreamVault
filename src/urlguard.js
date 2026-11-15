@@ -67,22 +67,39 @@ function isExternalUrlSyntax(urlStr) {
   return parseExternalUrl(urlStr) !== null;
 }
 
-async function validateExternalUrl(urlStr) {
-  const parsed = parseExternalUrl(urlStr);
-  if (!parsed) return false;
-  const hostname = parsed.hostname;
-  const okUntil = okHosts.get(hostname);
-  if (okUntil && okUntil > Date.now()) return true;
+// Why an address can or can't be used, so Test Connection can say it plainly:
+// "ok", "malformed" (not an http(s) URL / too long), "private" (localhost, a
+// local-network or internal address, or a name that resolves to one) or
+// "not_found" (the name doesn't resolve: a typo or a provider domain that's gone).
+async function checkExternalUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== "string" || urlStr.length > 2048) return "malformed";
+  let parsed;
   try {
-    // Check every resolved address — one private A/AAAA record is enough to reject
-    const addresses = await dns.promises.lookup(hostname, { all: true });
-    if (addresses.length === 0 || addresses.some(a => isPrivateIp(a.address))) return false;
+    parsed = new URL(urlStr);
   } catch (_) {
-    return false; // name doesn't resolve: there's nothing to connect to
+    return "malformed";
   }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "malformed";
+  const hostname = parsed.hostname;
+  if (isBlockedHostname(hostname)) return "private";
+  const okUntil = okHosts.get(hostname);
+  if (okUntil && okUntil > Date.now()) return "ok";
+  let addresses;
+  try {
+    addresses = await dns.promises.lookup(hostname, { all: true });
+  } catch (_) {
+    return "not_found"; // name doesn't resolve: there's nothing to connect to
+  }
+  if (addresses.length === 0) return "not_found";
+  // Check every resolved address — one private A/AAAA record is enough to reject
+  if (addresses.some(a => isPrivateIp(a.address))) return "private";
   okHosts.set(hostname, Date.now() + OK_HOST_TTL);
   if (okHosts.size > 1000) okHosts.delete(okHosts.keys().next().value);
-  return true;
+  return "ok";
+}
+
+async function validateExternalUrl(urlStr) {
+  return (await checkExternalUrl(urlStr)) === "ok";
 }
 
 async function assertExternalUrl(urlStr) {
@@ -151,6 +168,6 @@ function trimTrailingSlashes(url) {
 }
 
 module.exports = {
-  isPrivateIp, validateExternalUrl, isExternalUrlSyntax, assertExternalUrl, blockPrivateRedirects,
+  isPrivateIp, checkExternalUrl, validateExternalUrl, isExternalUrlSyntax, assertExternalUrl, blockPrivateRedirects,
   guardedLookup, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes,
 };
