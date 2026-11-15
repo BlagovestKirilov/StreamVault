@@ -37,7 +37,7 @@
     },
     {
       "type": "stat",
-      "title": "All-time installs",
+      "title": "Installs (all time)",
       "id": 2,
       "datasource": {
         "type": "prometheus",
@@ -89,8 +89,8 @@
     },
     {
       "type": "stat",
-      "title": "Setups today",
-      "id": 67,
+      "title": "Installs today",
+      "id": 11,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -107,7 +107,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_today{counter=\"activeSetups\"}) or vector(0)",
+          "expr": "sum(streamvault_today{counter=\"installs\"})",
           "refId": "A",
           "instant": true
         }
@@ -137,12 +137,11 @@
           }
         },
         "overrides": []
-      },
-      "description": "Different setups (install links) the apps loaded today (UTC). Active users counts networks (one setup at home + mobile = 2); this counts each setup once."
+      }
     },
     {
       "type": "stat",
-      "title": "Setups saved (all time)",
+      "title": "Setups (all time)",
       "id": 7,
       "datasource": {
         "type": "prometheus",
@@ -195,8 +194,8 @@
     },
     {
       "type": "stat",
-      "title": "New installs today",
-      "id": 11,
+      "title": "Setups today",
+      "id": 67,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -213,7 +212,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_today{counter=\"installs\"})",
+          "expr": "sum(streamvault_today{counter=\"activeSetups\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -243,7 +242,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Different setups (install links) the apps loaded today (UTC). Active users counts networks (one setup at home + mobile = 2); this counts each setup once."
     },
     {
       "type": "stat",
@@ -459,7 +459,7 @@
     },
     {
       "type": "stat",
-      "title": "App launches",
+      "title": "App launches today",
       "id": 12,
       "datasource": {
         "type": "prometheus",
@@ -511,7 +511,7 @@
     },
     {
       "type": "stat",
-      "title": "Streams",
+      "title": "Streams today",
       "id": 13,
       "datasource": {
         "type": "prometheus",
@@ -563,7 +563,7 @@
     },
     {
       "type": "stat",
-      "title": "Searches",
+      "title": "Searches today",
       "id": 14,
       "datasource": {
         "type": "prometheus",
@@ -1426,7 +1426,7 @@
     },
     {
       "type": "stat",
-      "title": "Failed providers (2 min cache)",
+      "title": "Failed providers (now)",
       "id": 19,
       "datasource": {
         "type": "prometheus",
@@ -1483,7 +1483,7 @@
     },
     {
       "type": "stat",
-      "title": "Downloads waiting",
+      "title": "Downloads waiting (now)",
       "id": 18,
       "datasource": {
         "type": "prometheus",
@@ -1544,7 +1544,7 @@
     },
     {
       "type": "stat",
-      "title": "RAM (RSS)",
+      "title": "Peak RAM (24 h)",
       "id": 17,
       "datasource": {
         "type": "prometheus",
@@ -1562,7 +1562,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_memory_bytes{kind=\"rss\"})",
+          "expr": "max_over_time(sum(streamvault_memory_bytes{kind=\"rss\"})[24h:1m])",
           "refId": "A",
           "instant": true
         }
@@ -1602,7 +1602,7 @@
         },
         "overrides": []
       },
-      "description": "Orange: heap watchdog starts evicting (450 MiB); red: it clears all caches (550 MiB)"
+      "description": "Highest memory use (RSS) in the last 24 hours, sampled every minute. Orange from 450 MiB, red from 550 MiB (the watchdog's eviction levels)."
     },
     {
       "type": "stat",
