@@ -45,7 +45,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
+        "w": 4,
         "x": 0,
         "y": 1
       },
@@ -89,16 +89,16 @@
     },
     {
       "type": "stat",
-      "title": "Viewers today",
-      "id": 3,
+      "title": "Setups today",
+      "id": 67,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 3,
+        "w": 4,
+        "x": 4,
         "y": 1
       },
       "targets": [
@@ -107,7 +107,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_today{counter=\"viewers\"}) or vector(0)",
+          "expr": "sum(streamvault_today{counter=\"activeSetups\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -138,20 +138,20 @@
         },
         "overrides": []
       },
-      "description": "Unique users who opened a channel today and got something to play"
+      "description": "Different setups (install links) the apps loaded today (UTC). Active users counts networks (one setup at home + mobile = 2); this counts each setup once."
     },
     {
       "type": "stat",
-      "title": "Reconfigures (all time)",
-      "id": 4,
+      "title": "New installs today",
+      "id": 11,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 6,
+        "w": 4,
+        "x": 8,
         "y": 1
       },
       "targets": [
@@ -160,7 +160,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_reconfigures_total)",
+          "expr": "sum(streamvault_today{counter=\"installs\"})",
           "refId": "A",
           "instant": true
         }
@@ -190,73 +190,19 @@
           }
         },
         "overrides": []
-      },
-      "description": "Configure opened from an installed StreamVault (the app's Configure button)"
+      }
     },
     {
       "type": "stat",
-      "title": "Saved changes (all time)",
-      "id": 5,
+      "title": "Configure page opens (all time)",
+      "id": 59,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 9,
-        "y": 1
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_reinstalls_total)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Save changes pressed on the configure page"
-    },
-    {
-      "type": "stat",
-      "title": "Saved changes today",
-      "id": 6,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
+        "w": 4,
         "x": 12,
         "y": 1
       },
@@ -266,7 +212,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_today{counter=\"reinstalls\"}) or vector(0)",
+          "expr": "sum(streamvault_configures_total)",
           "refId": "A",
           "instant": true
         }
@@ -297,7 +243,60 @@
         },
         "overrides": []
       },
-      "description": "Save changes pressed on the configure page (also reloads that user's channel list)"
+      "description": "Configure page loads (fresh + from an installed StreamVault), one per IP per 10 s, HEAD not counted. Reconfigures are a part of this."
+    },
+    {
+      "type": "stat",
+      "title": "Configure page opens today",
+      "id": 60,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"configures\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Configure page loads today (UTC), same counting as the all-time tile."
     },
     {
       "type": "stat",
@@ -309,8 +308,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 15,
+        "w": 4,
+        "x": 20,
         "y": 1
       },
       "targets": [
@@ -354,113 +353,7 @@
     },
     {
       "type": "stat",
-      "title": "Empty streams today",
-      "id": 8,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 18,
-        "y": 1
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"emptyStreams\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Stream requests for channels no longer in the user's playlist / selection"
-    },
-    {
-      "type": "stat",
-      "title": "Cached failures today",
-      "id": 9,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 3,
-        "x": 21,
-        "y": 1
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"cachedFailures\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Repeats answered from the failure cache or a shared failed download — the provider wasn't contacted again"
-    },
-    {
-      "type": "stat",
-      "title": "Active users",
+      "title": "Active users today",
       "id": 10,
       "datasource": {
         "type": "prometheus",
@@ -513,8 +406,8 @@
     },
     {
       "type": "stat",
-      "title": "New installs",
-      "id": 11,
+      "title": "Viewers today",
+      "id": 3,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -531,7 +424,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(streamvault_today{counter=\"installs\"})",
+          "expr": "sum(streamvault_today{counter=\"viewers\"}) or vector(0)",
           "refId": "A",
           "instant": true
         }
@@ -561,7 +454,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Unique users who opened a channel today and got something to play"
     },
     {
       "type": "stat",
@@ -721,8 +615,8 @@
     },
     {
       "type": "stat",
-      "title": "Provider errors today",
-      "id": 15,
+      "title": "Reconfigures (all time)",
+      "id": 4,
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -732,6 +626,589 @@
         "w": 4,
         "x": 0,
         "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_reconfigures_total)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Configure opened from an installed StreamVault (the app's Configure button)"
+    },
+    {
+      "type": "stat",
+      "title": "Saved changes (all time)",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_reinstalls_total)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Save changes pressed on the configure page"
+    },
+    {
+      "type": "stat",
+      "title": "Saved changes today",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"reinstalls\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Save changes pressed on the configure page (also reloads that user's channel list)"
+    },
+    {
+      "type": "stat",
+      "title": "Saves with 2+ categories today",
+      "id": 64,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"multiCategorySaves\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Install / Save changes with two or more categories picked today (UTC): the people who saw the home-rows list on the configure page."
+    },
+    {
+      "type": "stat",
+      "title": "Home rows reordered today",
+      "id": 65,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"rowReorders\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Of those saves, how many changed the order of the home rows (up/down/move to the top) before saving. Numbers only."
+    },
+    {
+      "type": "stat",
+      "title": "Moved to the top today",
+      "id": 66,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"rowsMovedToTop\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Of the reordered saves, how many used \"Move to the top\"."
+    },
+    {
+      "type": "stat",
+      "title": "Catch-up plays (all time)",
+      "id": 61,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_catchup_plays_total) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Catch-up programmes started (TS through /play; HLS goes to the provider directly and is not counted). Once per person and programme per 10 min."
+    },
+    {
+      "type": "stat",
+      "title": "Catch-up plays today",
+      "id": 62,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"catchupPlays\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Catch-up programmes started today (UTC), counted like the all-time tile."
+    },
+    {
+      "type": "stat",
+      "title": "Catch-up users today",
+      "id": 63,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"catchupUsers\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Different people (one-way IP codes, like Viewers) who started catch-up today (UTC)."
+    },
+    {
+      "type": "stat",
+      "title": "Ko-fi clicks (all time)",
+      "id": 57,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_kofi_clicks_total) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Every click on the configure page Ko-fi links (result dialog + footer), not unique people. Tips themselves are on Ko-fi."
+    },
+    {
+      "type": "stat",
+      "title": "Ko-fi clicks today",
+      "id": 58,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=~\"kofiClicks.*\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Ko-fi link clicks today (UTC): result dialog + footer, every click counted."
+    },
+    {
+      "type": "stat",
+      "title": "Provider errors today",
+      "id": 15,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 17
       },
       "targets": [
         {
@@ -790,9 +1267,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 9
+        "w": 3,
+        "x": 3,
+        "y": 17
       },
       "targets": [
         {
@@ -843,6 +1320,230 @@
     },
     {
       "type": "stat",
+      "title": "Empty streams today",
+      "id": 8,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 6,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"emptyStreams\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Stream requests for channels no longer in the user's playlist / selection"
+    },
+    {
+      "type": "stat",
+      "title": "Cached failures today",
+      "id": 9,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 9,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_today{counter=\"cachedFailures\"}) or vector(0)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Repeats answered from the failure cache or a shared failed download — the provider wasn't contacted again"
+    },
+    {
+      "type": "stat",
+      "title": "Failed providers (2 min cache)",
+      "id": 19,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 12,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_failed_providers)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Users' providers that just failed and aren't retried for 2 minutes — their side, not ours"
+    },
+    {
+      "type": "stat",
+      "title": "Downloads waiting",
+      "id": 18,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 15,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(streamvault_downloads_waiting)",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Big provider downloads queued for one of the 4 slots"
+    },
+    {
+      "type": "stat",
       "title": "RAM (RSS)",
       "id": 17,
       "datasource": {
@@ -851,9 +1552,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 9
+        "w": 3,
+        "x": 18,
+        "y": 17
       },
       "targets": [
         {
@@ -905,124 +1606,6 @@
     },
     {
       "type": "stat",
-      "title": "Downloads waiting",
-      "id": 18,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_downloads_waiting)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Big provider downloads queued for one of the 4 slots"
-    },
-    {
-      "type": "stat",
-      "title": "Failed providers (2 min cache)",
-      "id": 19,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_failed_providers)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Users' providers that just failed and aren't retried for 2 minutes — their side, not ours"
-    },
-    {
-      "type": "stat",
       "title": "Uptime",
       "id": 20,
       "datasource": {
@@ -1031,9 +1614,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 9
+        "w": 3,
+        "x": 21,
+        "y": 17
       },
       "targets": [
         {
@@ -1080,536 +1663,6 @@
       "description": "Orange for 10 minutes after a restart/deploy"
     },
     {
-      "type": "stat",
-      "title": "Configure page opens (all time)",
-      "id": 59,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_configures_total)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Configure page loads (fresh + from an installed StreamVault), one per IP per 10 s, HEAD not counted. Reconfigures are a part of this."
-    },
-    {
-      "type": "stat",
-      "title": "Configure page opens today",
-      "id": 60,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"configures\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Configure page loads today (UTC), same counting as the all-time tile."
-    },
-    {
-      "type": "stat",
-      "title": "Ko-fi clicks (all time)",
-      "id": 57,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_kofi_clicks_total) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Every click on the configure page Ko-fi links (result dialog + footer), not unique people. Tips themselves are on Ko-fi."
-    },
-    {
-      "type": "stat",
-      "title": "Ko-fi clicks today",
-      "id": 58,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 13
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=~\"kofiClicks.*\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Ko-fi link clicks today (UTC): result dialog + footer, every click counted."
-    },
-    {
-      "type": "stat",
-      "title": "Catch-up plays (all time)",
-      "id": 61,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 17
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_catchup_plays_total) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Catch-up programmes started (TS through /play; HLS goes to the provider directly and is not counted). Once per person and programme per 10 min."
-    },
-    {
-      "type": "stat",
-      "title": "Catch-up plays today",
-      "id": 62,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 17
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"catchupPlays\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Catch-up programmes started today (UTC), counted like the all-time tile."
-    },
-    {
-      "type": "stat",
-      "title": "Catch-up users today",
-      "id": 63,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 17
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"catchupUsers\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Different people (one-way IP codes, like Viewers) who started catch-up today (UTC)."
-    },
-    {
-      "type": "stat",
-      "title": "Saves with 2+ categories today",
-      "id": 64,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 21
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"multiCategorySaves\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Install / Save changes with two or more categories picked today (UTC): the people who saw the home-rows list on the configure page."
-    },
-    {
-      "type": "stat",
-      "title": "Home rows reordered today",
-      "id": 65,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 21
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"rowReorders\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Of those saves, how many changed the order of the home rows (up/down/move to the top) before saving. Numbers only."
-    },
-    {
-      "type": "stat",
-      "title": "Moved to the top today",
-      "id": 66,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 21
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(streamvault_today{counter=\"rowsMovedToTop\"}) or vector(0)",
-          "refId": "A",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "area"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "description": "Of the reordered saves, how many used \"Move to the top\"."
-    },
-    {
       "type": "row",
       "title": "Server health",
       "id": 21,
@@ -1618,7 +1671,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 21
       },
       "panels": []
     },
@@ -1634,7 +1687,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 26
+        "y": 22
       },
       "targets": [
         {
@@ -1719,7 +1772,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 26
+        "y": 22
       },
       "targets": [
         {
@@ -1798,7 +1851,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 26
+        "y": 22
       },
       "targets": [
         {
@@ -1844,7 +1897,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 30
       },
       "panels": []
     },
@@ -1860,7 +1913,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 31
       },
       "targets": [
         {
@@ -2213,7 +2266,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 31
       },
       "targets": [
         {
@@ -2567,7 +2620,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 39
       },
       "targets": [
         {
@@ -2676,7 +2729,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 39
       },
       "targets": [
         {
@@ -2751,7 +2804,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 47
       },
       "panels": []
     },
@@ -2767,7 +2820,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 48
       },
       "targets": [
         {
@@ -2926,7 +2979,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 48
       },
       "targets": [
         {
@@ -3098,7 +3151,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 56
       },
       "targets": [
         {
@@ -3172,7 +3225,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 56
       },
       "targets": [
         {
@@ -3225,7 +3278,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 68
+        "y": 64
       },
       "panels": []
     },
@@ -3241,7 +3294,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 69
+        "y": 65
       },
       "targets": [
         {
@@ -3289,7 +3342,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 69
+        "y": 65
       },
       "targets": [
         {
@@ -3333,7 +3386,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 73
       },
       "panels": []
     },
@@ -3349,7 +3402,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 78
+        "y": 74
       },
       "targets": [
         {
@@ -3457,7 +3510,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 78
+        "y": 74
       },
       "targets": [
         {
@@ -3528,7 +3581,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 82
       },
       "panels": []
     },
@@ -3544,7 +3597,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 87
+        "y": 83
       },
       "targets": [
         {
@@ -3618,7 +3671,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 83
       },
       "targets": [
         {
@@ -3692,7 +3745,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 95
+        "y": 91
       },
       "targets": [
         {
@@ -3765,7 +3818,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 95
+        "y": 91
       },
       "targets": [
         {
@@ -3840,7 +3893,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 103
+        "y": 99
       },
       "targets": [
         {
@@ -3914,7 +3967,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 103
+        "y": 99
       },
       "targets": [
         {
@@ -3987,7 +4040,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 111
+        "y": 107
       },
       "targets": [
         {
@@ -4056,7 +4109,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 119
+        "y": 115
       },
       "panels": []
     },
@@ -4072,7 +4125,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 120
+        "y": 116
       },
       "targets": [
         {
@@ -4212,7 +4265,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 120
+        "y": 116
       },
       "targets": [
         {
@@ -4269,7 +4322,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 128
+        "y": 124
       },
       "targets": [
         {
@@ -4318,7 +4371,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 128
+        "y": 124
       },
       "targets": [
         {
@@ -4428,7 +4481,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 128
+        "y": 124
       },
       "targets": [
         {
@@ -4485,7 +4538,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 136
+        "y": 132
       },
       "targets": [
         {
@@ -4533,7 +4586,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 136
+        "y": 132
       },
       "targets": [
         {
