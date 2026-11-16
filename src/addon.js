@@ -427,6 +427,12 @@ app.get(["/:config/configure/manifest.json", "/:config/manifest/manifest.json"],
   req.url = `/${req.params.config}/manifest.json`;
   next();
 });
+// …and builds every other request from that link too ("…/<link>/manifest/catalog/
+// tv/…json", whole category bursts, all 404 before): drop the extra "/manifest"
+app.get(/^\/[^/]+\/manifest\/(catalog|meta|stream)\//, (req, _res, next) => {
+  req.url = req.url.replace(/^(\/[^/]+)\/manifest\//, "$1/");
+  next();
+});
 // The install link pasted twice into an app ("…/manifest.jsonhttps://<this
 // server>/<link>/manifest.json"): use the second copy. Apps build every request
 // from that doubled link, so the channel list, channel pages and streams arrive

@@ -394,6 +394,14 @@ describe("speed", () => {
     expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
   });
 
+  test("channel lists asked through that extra /manifest work too", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://nuvio-manifest-catalog.example.com/list.m3u" });
+    const res = await request(app).get(`/${cfg}/manifest/catalog/tv/iptv_live.json?x=1`);
+    expect(res.status).toBe(200);
+    expect(res.body.metas.map(m => m.name)).toEqual(["One"]);
+  });
+
   test("a request on a connection the provider already closed is retried once", async () => {
     const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
     const flaky = jest.fn().mockRejectedValueOnce(reset).mockResolvedValue("ok");

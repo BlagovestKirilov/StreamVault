@@ -16,13 +16,21 @@ const IPV6 = /\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){3,7}\b/gi; // 3+ colons: not a c
 function maskIps(msg) {
   return msg.replaceAll(IPV4_PORT, "$1.x").replaceAll(IPV6, "<ip>");
 }
+// DNS and certificate errors name the provider's host by name
+// ("getaddrinfo ENOTFOUND tv.example.com", "Host: tv.example.com. is not in the
+// cert's altnames: DNS:…"): hidden too
+const DNS_HOST = /\b(ENOTFOUND|EAI_AGAIN)\s+\S+/g;
+const CERT_HOST = /Host: \S+ is not in the cert's altnames:.*/;
+function maskHosts(msg) {
+  return msg.replaceAll(DNS_HOST, "$1 <host>").replace(CERT_HOST, "Host is not in the cert's altnames");
+}
 
 function safeError(e) {
   const msg = e.message || "Unknown error";
   if (msg.includes("://")) return "Connection failed";
   // axios: "maxContentLength size of 52428800 exceeded" — say it in plain words
   if (/maxContentLength|maxBodyLength/.test(msg)) return "Playlist too big (over 50 MB)";
-  return maskIps(msg).slice(0, 100);
+  return maskIps(maskHosts(msg)).slice(0, 100);
 }
 
 // Which app/browser sent the request (to tell e.g. an old Stremio TV build from a bot)

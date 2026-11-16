@@ -60,6 +60,13 @@ describe("safeError", () => {
     expect(safeError(new Error("connect ECONNREFUSED 2001:db8:85a3::8a2e:370:7334"))).toBe("connect ECONNREFUSED <ip>");
   });
 
+  test("hides a provider's hostname in DNS and certificate errors", () => {
+    expect(safeError(new Error("getaddrinfo ENOTFOUND tv.example.com"))).toBe("getaddrinfo ENOTFOUND <host>");
+    expect(safeError(new Error("getaddrinfo EAI_AGAIN tv.example.com"))).toBe("getaddrinfo EAI_AGAIN <host>");
+    expect(safeError(new Error("Hostname/IP does not match certificate's altnames: Host: tv.example.com. is not in the cert's altnames: DNS:other.example.net")))
+      .toBe("Hostname/IP does not match certificate's altnames: Host is not in the cert's altnames");
+  });
+
   test("leaves clock times and status codes alone", () => {
     expect(safeError(new Error("Request failed with status code 503"))).toBe("Request failed with status code 503");
     expect(safeError(new Error("expired at 12:30:45"))).toBe("expired at 12:30:45");
