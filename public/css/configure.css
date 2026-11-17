@@ -231,6 +231,11 @@ body {
 .input-wrap input:-webkit-autofill:hover,
 .input-wrap input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  /* The browser's light autofill colour is painted under the border too and showed
+     through the rounded corners as white specks: keep it inside the border, and
+     delay it so it never appears */
+  background-clip: padding-box;
+  transition: background-color 9999s 0s;
   -webkit-text-fill-color: var(--text);
   caret-color: var(--text);
   border-color: var(--border);
