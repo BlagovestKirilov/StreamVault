@@ -218,7 +218,7 @@ describe("home rows, merged versions, clean names", () => {
     expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "IT: SPORT", "UK: SPORT", "CINEMA"]);
   });
 
-  test("channels keep their country tags only when the list mixes countries", async () => {
+  test("tiles keep their country tags only on the main row of a mixed list; pages and streams never", async () => {
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: "1", category_name: "MIX" }]);
     jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
       { stream_id: 1, name: "[IT] ALPHA ONE", category_id: "1" }, { stream_id: 2, name: "UK: ALPHA ONE", category_id: "1" },
@@ -227,9 +227,9 @@ describe("home rows, merged versions, clean names", () => {
     jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
     const cfg = enc({ t: "xtream", s: `http://rows-${++setups}.example.com`, u: "u", p: "p", c: "1" });
     expect(await names(`/${cfg}/catalog/tv/iptv_live.json`)).toEqual(expect.arrayContaining(["[IT] ALPHA ONE", "UK: ALPHA ONE"]));
-    expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_1.json`)).body.meta.name).toBe("[IT] ALPHA ONE");
+    expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_1.json`)).body.meta.name).toBe("ALPHA ONE");
     const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_2.json`)).body.streams;
-    expect(streams[0].title.split("\n")[0]).toBe("UK: ALPHA ONE");
+    expect(streams[0].title.split("\n")[0]).toBe("ALPHA ONE");
     // One category (category filter) is one country: short names there
     expect(await names(`/${cfg}/catalog/tv/iptv_live/genre=MIX.json`)).toEqual(["ALPHA ONE", "ALPHA ONE"]);
     // The generated name tile never shows the tag (no logo here)

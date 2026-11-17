@@ -713,8 +713,9 @@ async function catalogHandler(req, res) {
     const mixedCountries = keepsTags(metas);
     metas = catalogView(metas).display;
     if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
-    // Tags only where countries meet: the main row and search. One category (a home
-    // row, or the category filter) is one country — its tiles show short names
+    // Tags only on tiles where countries meet: the main row and search. One category
+    // (a home row, or the category filter) is one country; the channel page and its
+    // streams show the category, so they never need the tag either
     const keepTags = mixedCountries && !extra.genre;
     const stale = staleCategoryAnswer(extra, metas, skip, type);
     if (stale) return res.json(stale);
