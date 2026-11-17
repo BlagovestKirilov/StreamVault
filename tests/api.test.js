@@ -40,10 +40,10 @@ describe("configure page API", () => {
     const xt = await request(app).post("/api/encrypt").send({ t: "xtream", s: "http://example.com", u: "u", p: "p", c: "1,2" });
     const r1 = await request(app).get(`/api/config/${xt.body.config}`);
     expect(r1.headers["cache-control"]).toBe("no-store");
-    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"] });
+    expect(r1.body).toEqual({ type: "xtream", server: "http://example.com", username: "u", password: "p", categories: ["1", "2"], homeRows: 8 });
 
     const r2 = await request(app).get(`/api/config/${enc({ t: "m3u", m: "http://e.com/x.m3u", g: JSON.stringify(["News"]) })}`);
-    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"] });
+    expect(r2.body).toEqual({ type: "m3u", m3uUrl: "http://e.com/x.m3u", categories: ["News"], homeRows: 8 });
   });
 
   test("GET /api/config rejects an invalid link", async () => {
@@ -375,6 +375,35 @@ describe("saves count whether the home-rows order was changed", () => {
     const id = (await save(xt("1,2", { rowsMoved: "top" }))).body.config;
     const back = (await request(app).get(`/api/config/${id}`)).body;
     expect(JSON.stringify(back)).not.toMatch(/rowsMoved|top/);
+  });
+});
+
+// ─── How many home rows (configure page) ───
+
+describe("home rows chosen on the configure page", () => {
+  const { dayRow } = require("../src/stats");
+  const save = (body) => request(app).post("/api/link").send(body);
+  const xt = (c, extra) => ({ t: "xtream", s: "http://home-rows.example.com", u: "u", p: "p", c, ...extra });
+
+  test("0–7 is saved and read back; 8 or anything odd is not stored (= 8)", async () => {
+    for (const [r, expected] of [["0", 0], ["3", 3], ["8", 8], ["9", 8], ["x", 8], [undefined, 8]]) {
+      const id = (await save(xt("1,2", r === undefined ? {} : { r }))).body.config;
+      expect((await request(app).get(`/api/config/${id}`)).body.homeRows).toBe(expected);
+    }
+  });
+
+  test("each save with 2+ categories counts its choice; fewer than 8 counted apart", async () => {
+    const before = { ...dayRow().homeRowCounts };
+    const fewer = dayRow().fewerRowSaves || 0;
+    await save(xt("1,2", { r: "0" }));
+    await save(xt("1,2,3", { r: "3" }));
+    await save(xt("1,2"));
+    await save(xt("1", { r: "0" })); // one category: no list shown, not counted
+    const row = dayRow();
+    expect(row.homeRowCounts["0"]).toBe((before["0"] || 0) + 1);
+    expect(row.homeRowCounts["3"]).toBe((before["3"] || 0) + 1);
+    expect(row.homeRowCounts["8"]).toBe((before["8"] || 0) + 1);
+    expect(row.fewerRowSaves).toBe(fewer + 2);
   });
 });
 

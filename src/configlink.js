@@ -51,14 +51,22 @@ function parseGroups(g) {
   }
 }
 
+// How many picked categories get their own home row / catalog: "r" = 0–8 (chosen
+// on the configure page); missing or anything else = 8, the most there can be
+const MAX_HOME_ROWS = 8;
+function homeRowsFrom(r) {
+  return /^[0-8]$/.test(String(r ?? "")) ? Number(r) : MAX_HOME_ROWS;
+}
+
 // Settings object (short keys) → config the handlers use; null if not a StreamVault setup
 function configFromSettings(obj) {
   if (!obj) return null;
+  const homeRows = homeRowsFrom(obj.r);
   if (obj.t === "xtream") {
-    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "" };
+    return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "", homeRows };
   }
   if (obj.t === "m3u") {
-    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g) };
+    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g), homeRows };
   }
   return null;
 }
@@ -164,5 +172,5 @@ function normalizeXtreamLogin(server, username, password) {
 
 module.exports = {
   CONFIG_SECRET, encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
-  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin, hasScheme,
+  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS,
 };

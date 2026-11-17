@@ -32,6 +32,7 @@ const stats = {
   dailySetupMeta: {},   // users whose app asked for the setup tile's details (meta)
   dailySetupStream: {}, // users whose app asked for the setup tile's play options (stream)
   dailyNewSetups: {},   // { day: Set([setup codes]) } — setups created that day (Install with a new setup)
+  dailyFewerRows: {},   // { day: Set([setup codes]) } — setups loaded that day that chose fewer than 8 home rows
   bareUsers: new Set(), // seen without settings and not set up since — bareConverted when they are
   history: {},      // { "2026-05-31": { launches, installs, ..., catalogErrors, dau, viewers } }
 };
@@ -105,6 +106,7 @@ try {
   if (!stats.dailySetupMeta) stats.dailySetupMeta = {};
   if (!stats.dailySetupStream) stats.dailySetupStream = {};
   if (!stats.dailyNewSetups) stats.dailyNewSetups = {};
+  if (!stats.dailyFewerRows) stats.dailyFewerRows = {};
   stats.bareUsers = toUserKeys(saved.bareUsers);
   if (!stats.history) stats.history = {};
   // All-time totals started after the daily counters: seed them from the rows
@@ -114,7 +116,7 @@ try {
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream, stats.dailyNewSetups]) {
+  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream, stats.dailyNewSetups, stats.dailyFewerRows]) {
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
 } catch (_) {
@@ -151,6 +153,7 @@ function saveStatsData() {
     dailySetupMeta: lastDays(stats.dailySetupMeta, 30),
     dailySetupStream: lastDays(stats.dailySetupStream, 30),
     dailyNewSetups: lastDays(stats.dailyNewSetups, 30),
+    dailyFewerRows: lastDays(stats.dailyFewerRows, 30),
   };
 }
 
@@ -176,6 +179,7 @@ function uniqueCounts(day) {
   if (stats.dailySetupMeta[day]) counts.setupMetaUsers = stats.dailySetupMeta[day].size;
   if (stats.dailySetupStream[day]) counts.setupStreamUsers = stats.dailySetupStream[day].size;
   if (stats.dailySetups[day]) counts.reusedSetups = reusedSetups(day);
+  if (stats.dailyFewerRows[day]) counts.fewerRowSetups = stats.dailyFewerRows[day].size;
   return counts;
 }
 

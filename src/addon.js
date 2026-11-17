@@ -12,7 +12,7 @@ const crypto = require("node:crypto");
 const { ROOT, safeError, userAgent, parseExtra, maskPath, trimPathSpaces, withinMs } = require("./util");
 const {
   encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted, settingsFromBase64,
-  configFromQueryString, normalizeXtreamLogin,
+  configFromQueryString, normalizeXtreamLogin, MAX_HOME_ROWS,
 } = require("./configlink");
 const {
   STATS_DIR, stats, userKey, setupKey, knownUser, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteSetupDone, countToday,
@@ -481,14 +481,15 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
-  let { names: genres, rows } = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
+  let { names: genres, picks } = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
   // Channel list not ready in time (e.g. right after Save changes added a category):
   // the picked categories still go into the manifest — apps keep it until restart
   if (genres.length === 0) {
     genres = await withinMs(pickedCategoryNames(req.userConfig), PICKED_NAMES_TIMEOUT_MS, []);
-    rows = genres.slice(0, MAX_CATEGORY_ROWS);
+    picks = genres.slice(0, MAX_HOME_ROWS);
   }
-  res.json({ ...configuredManifest(genres, cType, req.userConfig, rows), version: manifestVersion(req.configRevision) });
+  if (req.userConfig.homeRows < MAX_HOME_ROWS) addDailyUser(stats.dailyFewerRows, setupKey(req.params.config));
+  res.json({ ...configuredManifest(genres, cType, req.userConfig, picks), version: manifestVersion(req.configRevision) });
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
@@ -511,19 +512,20 @@ const MAX_GENRE_OPTIONS = 300;
 const genresCache = new Map();       // config path -> { data: [names], ts }
 
 // One extra home-screen row per category the user picked (pick order), after the
-// main row: the first MAX_CATEGORY_ROWS picks (the configure page's list above its
-// divider) that have channels — a pick with none gets no row and does NOT pull a
-// pick from below the divider up. Ids come from the name, so an app's row settings
-// survive edits.
-const MAX_CATEGORY_ROWS = 8;
+// main row: the first N picks (N = the user's home rows, 0–8, chosen on the
+// configure page) that have channels — a pick with none gets no row and does NOT
+// pull a later pick up. Ids come from the name, so an app's row settings survive edits.
 const MAIN_CATALOG_ID = "iptv_live";
 function categoryCatalogId(name) {
   return `iptv_cat_${crypto.createHash("sha256").update(name).digest("hex").slice(0, 12)}`;
 }
 
-function categoryRows(genres, config, rows) {
+function categoryRows(genres, config, picks) {
   const picked = config.type === "xtream" ? xtreamCategoryIds(config).length : (config.groups || []).length;
   if (picked < 2 || genres.length < 2) return [];
+  // The user's own number of rows (0–8, configure page); older links: 8
+  const present = new Set(genres);
+  const rows = picks.slice(0, config.homeRows ?? MAX_HOME_ROWS).filter(name => present.has(name));
   // A tag is kept where hiding it would make two rows look the same ("IT: SPORT"
   // and "UK: SPORT" both "SPORT")
   const shown = rows.map(name => cleanName(name));
@@ -540,7 +542,7 @@ function manifestVersion(revision) {
   return revision ? BASE_MANIFEST.version.replace(/\.\d+$/, `.${revision}`) : BASE_MANIFEST.version;
 }
 
-function configuredManifest(genres, type, config, rows) {
+function configuredManifest(genres, type, config, picks) {
   const extra = [{ name: "search" }];
   // A single group (e.g. everything "Uncategorized") makes a useless dropdown
   if (genres.length > 1) extra.push({ name: "genre", options: genres, isRequired: false });
@@ -551,7 +553,7 @@ function configuredManifest(genres, type, config, rows) {
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
     description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
-    catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config, rows)],
+    catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config, picks)],
     behaviorHints: { configurable: true },
   };
 }
@@ -566,18 +568,18 @@ async function getGenres(config, cacheKey) {
     : await getM3UCatalog(config, "tv");
   const names = [...new Set(metas.map(m => m.genres?.[0]).filter(Boolean))]
     .slice(0, MAX_GENRE_OPTIONS);
-  const present = new Set(names);
   const picked = config.type === "xtream" ? metas.pickedCategories || [] : config.groups || [];
-  const rows = picked.slice(0, MAX_CATEGORY_ROWS).filter(name => present.has(name));
+  // The first 8 picks in pick order (home rows are the first N of them that have channels)
+  const picks = picked.slice(0, MAX_HOME_ROWS);
 
-  const data = { names, rows };
+  const data = { names, picks };
   setCapped(genresCache, cacheKey, { data, ts: Date.now() }, GENRES_CACHE_MAX);
   return data;
 }
 
 // Slow/broken provider must not block the manifest — return [] (no filter) instead
 function getGenresWithin(config, cacheKey, ms) {
-  return withinMs(getGenres(config, cacheKey), ms, { names: [], rows: [] });
+  return withinMs(getGenres(config, cacheKey), ms, { names: [], picks: [] });
 }
 
 // --- Stats dashboard (protected by STATS_SECRET env var) ---

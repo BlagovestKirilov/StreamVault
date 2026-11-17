@@ -230,7 +230,7 @@ function buildInstallSettings(body) {
   if (source === 'xtream') {
     const categoryIds = [...selectedCategories].join(',');
     if (categoryIds.length > 2048) return { error: 'Too many categories selected — pick fewer' };
-    return { settings: { t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds } };
+    return { settings: withHomeRows({ t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds }) };
   }
   const settings = { t: 'm3u', m: body.m3uUrl, c: '' };
   // Selected group-titles (empty = whole playlist)
@@ -239,7 +239,13 @@ function buildInstallSettings(body) {
     if (g.length > 2048) return { error: 'Too many groups selected — pick fewer' };
     settings.g = g;
   }
-  return { settings };
+  return { settings: withHomeRows(settings) };
+}
+
+// Home rows chosen below 8 (only shown, and only saved, with 2+ categories)
+function withHomeRows(settings) {
+  if (selectedCategories.size >= 2 && homeRows < MAX_HOME_ROWS) settings.r = String(homeRows);
+  return settings;
 }
 
 // Viewer's timezone so TV guide times show in local time ('' when unknown)
@@ -518,9 +524,11 @@ function toggleCategory(id) {
   renderSelectedTags();
 }
 
-// Same as MAX_CATEGORY_ROWS in addon.js: the first 8 picked categories become
-// home-screen rows; the rest are only in Discover's category dropdown
+// Same as MAX_HOME_ROWS on the server: up to 8 picked categories become home-screen
+// rows (each its own catalog); the rest are only in StreamVault Live's category filter.
+// homeRows = how many the user wants (0–8; 0 = only StreamVault Live)
 const MAX_HOME_ROWS = 8;
+let homeRows = MAX_HOME_ROWS;
 const categoryName = (id) => (allCategories.find(c => c.id === id) || {}).name || id;
 
 function renderSelectedTags(focus) {
@@ -545,15 +553,18 @@ function renderSelectedTags(focus) {
   }
   // Two or more: the order decides the home rows (and the channel order), so
   // show it as a list that can be reordered
+  container.appendChild(homeRowsPicker());
   const hint = document.createElement('p');
   hint.className = 'row-hint';
-  hint.textContent = `Your home rows: the first ${MAX_HOME_ROWS} become rows on the app's home screen, in this order.`;
+  hint.textContent = homeRows === 0
+    ? 'Only StreamVault Live — every category is in its category filter.'
+    : `The first ${homeRows} also get their own row (and catalog) in the app, in this order.`;
   container.appendChild(hint);
   const list = document.createElement('ol');
   list.className = 'row-list';
   const order = [...selectedCategories];
   order.forEach((id, i) => {
-    if (i === MAX_HOME_ROWS) {
+    if (i === homeRows) {
       const divider = document.createElement('li');
       divider.className = 'row-divider';
       divider.textContent = 'Below: no home row, still in the category filter';
@@ -561,7 +572,7 @@ function renderSelectedTags(focus) {
     }
     const name = categoryName(id);
     const item = document.createElement('li');
-    item.className = 'row-item' + (i < MAX_HOME_ROWS ? '' : ' row-extra');
+    item.className = 'row-item' + (i < homeRows ? '' : ' row-extra');
     item.dataset.id = id;
     const num = document.createElement('span');
     num.className = 'row-num';
@@ -583,6 +594,32 @@ function renderSelectedTags(focus) {
     const btn = item && item.querySelector(`[data-dir="${focus.dir}"]`);
     if (btn && !btn.disabled) btn.focus();
   }
+}
+
+// "Home rows: [0–8]" — how many categories get their own row / catalog
+function homeRowsPicker() {
+  const wrap = document.createElement('label');
+  wrap.className = 'row-count';
+  wrap.textContent = 'Home rows ';
+  const select = document.createElement('select');
+  select.id = 'homeRows';
+  for (let n = 0; n <= MAX_HOME_ROWS; n++) {
+    const option = document.createElement('option');
+    option.value = String(n);
+    option.textContent = n === 0 ? '0 (none)' : String(n);
+    select.appendChild(option);
+  }
+  select.value = String(homeRows);
+  select.onchange = () => {
+    homeRows = Number(select.value);
+    renderSelectedTags();
+    document.getElementById('homeRows').focus();
+    document.getElementById('rowLive').textContent = homeRows === 0
+      ? 'No home rows: only StreamVault Live'
+      : `${homeRows} home rows`;
+  };
+  wrap.appendChild(select);
+  return wrap;
 }
 
 function rowButton(text, dir, label, disabled, onClick) {
@@ -613,7 +650,7 @@ function moveCategory(id, delta, dir, toTop) {
   selectedCategories = new Set(order);
   renderSelectedTags({ id, dir });
   document.getElementById('rowLive').textContent =
-    `${categoryName(id)}: now ${j + 1} of ${order.length}${j < MAX_HOME_ROWS ? '' : ', no home row'}`;
+    `${categoryName(id)}: now ${j + 1} of ${order.length}${j < homeRows ? '' : ', no home row'}`;
 }
 
 function removeCategory(id) {
@@ -693,6 +730,7 @@ void (async function prefillInstalledSetup() {
       document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
     }
     selectedCategories = new Set((cfg.categories || []).map(String));
+    if (Number.isInteger(cfg.homeRows)) homeRows = cfg.homeRows;
     updateButtons();
     // Editing an installed StreamVault: saving updates it in place, nothing to install
     document.getElementById('btnInstallText').textContent = 'Save changes';

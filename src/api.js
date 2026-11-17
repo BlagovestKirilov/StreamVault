@@ -9,17 +9,17 @@ const m3u = require("./m3u");
 const { safeError } = require("./util");
 const { checkExternalUrl, validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
 const {
-  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme,
+  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS,
 } = require("./configlink");
 const {
-  stats, countToday, countCode, providerErrorKey, noteRecent, recentTestFailures, noteNewInstall,
+  stats, countToday, countCode, countKey, providerErrorKey, noteRecent, recentTestFailures, noteNewInstall,
 } = require("./stats");
 const { once, withDownloadSlot } = require("./cache");
 const { accountProblem } = require("./notices");
 const { forceRefresh } = require("./xtream-addon");
 
 // --- API: Encrypt config for secure URL ---
-const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g"]);
+const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g", "r"]);
 
 // Settings from the configure page → only known fields, nothing cut off silently
 function sanitizeConfig(configObj) {
@@ -37,12 +37,15 @@ function sanitizeConfig(configObj) {
   // keep a cut-off list of category ids (Xtream)
   if (sanitized.g && String(configObj.g).length > 2048) return { error: "Too many groups selected — pick fewer" };
   if (sanitized.c && String(configObj.c).length > 2048) return { error: "Too many categories selected — pick fewer" };
+  // Home rows 0–8; 8 (the default) or anything odd isn't stored
+  if (!/^[0-7]$/.test(sanitized.r ?? "")) delete sanitized.r;
   return { sanitized };
 }
 
 // Is the home-rows list on the configure page used? Saves with 2+ categories (the
-// list was shown), of those the ones whose order was changed, and the ones that
-// used "Move to the top". Numbers only; which categories or what order is not kept.
+// list was shown), how many home rows each chose (homeRowCounts: { "0": n, …, "8": n }),
+// of those the ones whose order was changed, and the ones that used "Move to the
+// top". Numbers only; which categories or what order is not kept.
 // rowsMoved comes from the page: "top", "yes" or nothing (never stored in settings).
 function countRowUse(config, rowsMoved) {
   const picked = config.type === "xtream"
@@ -50,6 +53,8 @@ function countRowUse(config, rowsMoved) {
     : (config.groups || []).length;
   if (picked < 2) return;
   countToday("multiCategorySaves");
+  countKey("homeRowCounts", String(config.homeRows));
+  if (config.homeRows < MAX_HOME_ROWS) countToday("fewerRowSaves");
   if (rowsMoved !== "yes" && rowsMoved !== "top") return;
   countToday("rowReorders");
   if (rowsMoved === "top") countToday("rowsMovedToTop");
@@ -393,10 +398,10 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
     if (c.type === "xtream") {
       return res.json({
         type: "xtream", server: c.server, username: c.username, password: c.password,
-        categories: (c.country || "").split(",").filter(Boolean),
+        categories: (c.country || "").split(",").filter(Boolean), homeRows: c.homeRows,
       });
     }
-    res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [] });
+    res.json({ type: "m3u", m3uUrl: c.url, categories: c.groups || [], homeRows: c.homeRows });
   });
 
   app.post("/api/test", limitProviderChecks, async (req, res) => {

@@ -377,7 +377,23 @@ body {
 }
 .cat-tag .remove-tag:hover { opacity: 1; }
 
-/* Picked categories in order: the first 8 are the app's home rows */
+/* Picked categories in order: the first N (Home rows, 0–8) are the app's home rows */
+/* Looks like the other field labels (uppercase, small) — only laid out here */
+.row-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.row-count select {
+  padding: 6px 10px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.row-count select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cat-selected:has(.row-list) { display: block; }
 .row-hint {
   font-size: 0.8rem;

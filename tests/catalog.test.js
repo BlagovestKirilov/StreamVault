@@ -190,6 +190,29 @@ describe("home rows, merged versions, clean names", () => {
     expect(await names(`/${cfg}/catalog/tv/iptv_cat_000000000000.json`)).toEqual(["⚠️ No channels in this category"]); // old row
   });
 
+  test("the user's number of home rows: 0 = only the main catalog (filter keeps every category)", async () => {
+    const cfg0 = xtreamSetup("2,1,3");
+    const withRows = (r) => enc({ ...JSON.parse(Buffer.from(cfg0.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()), r });
+    const manifest = async (cfg) => (await request(app).get(`/${cfg}/manifest.json`)).body;
+    const none = await manifest(withRows("0"));
+    expect(none.catalogs.map(c => c.name)).toEqual(["StreamVault Live"]);
+    expect(none.catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND", "KIDS"]);
+    expect((await manifest(withRows("2"))).catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "NORTHLAND"]);
+    expect((await manifest(withRows("1"))).catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS"]);
+    expect((await manifest(cfg0)).catalogs).toHaveLength(4); // older links: up to 8
+  });
+
+  test("setups that chose fewer home rows are counted per day", async () => {
+    const { stats, todayKey, setupKey } = require("../src/stats");
+    const cfg = xtreamSetup("2,1");
+    const fewer = enc({ ...JSON.parse(Buffer.from(cfg.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()), r: "0" });
+    await request(app).get(`/${fewer}/manifest.json`);
+    await request(app).get(`/${cfg}/manifest.json`);
+    const day = stats.dailyFewerRows[todayKey()];
+    expect(day.has(setupKey(fewer))).toBe(true);
+    expect(day.has(setupKey(cfg))).toBe(false);
+  });
+
   test("a picked category without channels gets no row and doesn't pull up a pick from below the 8", async () => {
     const cats = Array.from({ length: 10 }, (_, i) => ({ category_id: String(i + 1), category_name: `CAT ${i + 1}` }));
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
