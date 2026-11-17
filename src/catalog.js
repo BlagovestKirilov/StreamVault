@@ -73,9 +73,11 @@ function squareLogo(logo, fallback) {
     `&default=${encodeURIComponent(fallback)}`;
 }
 
-// Poster for a channel: its logo fitted into a square, or a generated name tile
+// Poster for a channel: its logo fitted into a square, or a generated name tile.
+// The tile never shows a country tag, even where the name keeps it (a mixed-country
+// list): the tile has room for a few letters only, "[BG] ALPHA TV" came out as "[ATV"
 function channelPoster(logo, name) {
-  const nameTile = makePosterUrl(name);
+  const nameTile = makePosterUrl(cleanName(name));
   return squareLogo(logo, nameTile) || nameTile;
 }
 

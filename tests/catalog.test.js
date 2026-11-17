@@ -230,6 +230,10 @@ describe("home rows, merged versions, clean names", () => {
     expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_1.json`)).body.meta.name).toBe("[IT] ALPHA ONE");
     const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_2.json`)).body.streams;
     expect(streams[0].title.split("\n")[0]).toBe("UK: ALPHA ONE");
+    // The generated name tile never shows the tag (no logo here)
+    const tiles = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.map(m => m.poster);
+    expect(tiles).toEqual([makePosterUrl("ALPHA ONE"), makePosterUrl("ALPHA ONE")]);
+    expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_1.json`)).body.meta.poster).toBe(makePosterUrl("ALPHA ONE"));
   });
 
   test("a category the app still lists from an older setup explains itself instead of an empty screen", async () => {
