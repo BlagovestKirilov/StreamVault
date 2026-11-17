@@ -164,7 +164,7 @@ describe("home rows, merged versions, clean names", () => {
   const STREAMS = {
     1: [{ stream_id: 11, name: "[BG] ALPHA", category_id: "1" }, { stream_id: 12, name: "[BG] ALPHA UHD", category_id: "1" },
       { stream_id: 13, name: "[BG] ALPHA HD", category_id: "1" }, { stream_id: 14, name: "[BG] NORTH", category_id: "1" }],
-    2: [{ stream_id: 21, name: "UK: Beacon News", category_id: "2" }],
+    2: [{ stream_id: 21, name: "BG: Beacon News", category_id: "2" }],
     3: [{ stream_id: 31, name: "Kiddo Jr", category_id: "3" }],
   };
   let setups = 0; // own provider address per setup: no cached account/list shared between tests
@@ -202,6 +202,34 @@ describe("home rows, merged versions, clean names", () => {
     expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "CAT 2", "CAT 3", "CAT 4", "CAT 5", "CAT 6", "CAT 7", "CAT 8"]);
     // all categories with channels stay in the category filter
     expect(catalogs[0].extra.find(e => e.name === "genre").options).toHaveLength(9);
+  });
+
+  test("rows that would look the same without their tag keep it; the rest stay short", async () => {
+    const cats = [
+      { category_id: "1", category_name: "IT: SPORT" }, { category_id: "2", category_name: "UK: SPORT" },
+      { category_id: "3", category_name: "IT: CINEMA" },
+    ];
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_cfg, catId) =>
+      [{ stream_id: Number(catId), name: `Ch ${catId}`, category_id: catId }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const cfg = enc({ t: "xtream", s: `http://rows-${++setups}.example.com`, u: "u", p: "p", c: "1,2,3" });
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "IT: SPORT", "UK: SPORT", "CINEMA"]);
+  });
+
+  test("channels keep their country tags only when the list mixes countries", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([{ category_id: "1", category_name: "MIX" }]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([
+      { stream_id: 1, name: "[IT] ALPHA ONE", category_id: "1" }, { stream_id: 2, name: "UK: ALPHA ONE", category_id: "1" },
+    ]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    const cfg = enc({ t: "xtream", s: `http://rows-${++setups}.example.com`, u: "u", p: "p", c: "1" });
+    expect(await names(`/${cfg}/catalog/tv/iptv_live.json`)).toEqual(expect.arrayContaining(["[IT] ALPHA ONE", "UK: ALPHA ONE"]));
+    expect((await request(app).get(`/${cfg}/meta/tv/iptv_tv_1.json`)).body.meta.name).toBe("[IT] ALPHA ONE");
+    const streams = (await request(app).get(`/${cfg}/stream/tv/iptv_tv_2.json`)).body.streams;
+    expect(streams[0].title.split("\n")[0]).toBe("UK: ALPHA ONE");
   });
 
   test("a category the app still lists from an older setup explains itself instead of an empty screen", async () => {
@@ -343,7 +371,14 @@ http://example.com/fhd.m3u8`));
 // ─── cleanName ───
 
 describe("cleanName", () => {
-  const { cleanName } = require("../src/catalog");
+  const { cleanName, keepsTags } = require("../src/catalog");
+
+  test("a list mixes countries when its channels carry 2+ different country tags", () => {
+    expect(keepsTags([{ name: "[BG] ALPHA" }, { name: "BG: BETA" }, { name: "BG | GAMMA" }, { name: "NO TAG" }])).toBe(false);
+    expect(keepsTags([{ name: "[BG] ALPHA" }, { name: "[UK] ALPHA" }])).toBe(true);
+    expect(keepsTags([{ name: "VIP| ALPHA" }, { name: "HD| GAMMA" }, { name: "[BG] BETA" }])).toBe(false); // "VIP" isn't a country
+    expect(keepsTags([])).toBe(false);
+  });
 
   test("drops up to two leading provider tags", () => {
     expect(cleanName("[BG] ALPHA")).toBe("ALPHA");
@@ -351,8 +386,12 @@ describe("cleanName", () => {
     expect(cleanName("|AR| VIP| NORTH")).toBe("NORTH");
   });
 
+  test("keepTags returns the name as written", () => {
+    expect(cleanName(" [BG] ALPHA ", true)).toBe("[BG] ALPHA");
+  });
+
   test("keeps a tag that is part of the name (what follows starts with a separator)", () => {
-    expect(cleanName("IT: [F1] / MOTOGP [1080p]")).toBe("[F1] / MOTOGP [1080p]");
-    expect(cleanName("[F1] - Practice")).toBe("[F1] - Practice");
+    expect(cleanName("IT: [X1] / NORTHRACE [1080p]")).toBe("[X1] / NORTHRACE [1080p]");
+    expect(cleanName("[X1] - Practice")).toBe("[X1] - Practice");
   });
 });

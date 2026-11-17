@@ -23,7 +23,7 @@ then browse, search and play your channels like any other content.
 - **Your categories, your order** — pick the categories (Xtream) or playlist groups (M3U) you want; they show in
   the order you picked them, and with 2 or more picked each gets its own home-screen row (up to 8)
 - **Search** — by channel name; ignores accents and works in Latin or Cyrillic (`kanal` finds `Канал`)
-- **One tile per channel** — "Channel One", "Channel One HD" and "Channel One UHD" are one tile; its play list offers every version,
+- **One tile per channel** — "Alpha", "Alpha HD" and "Alpha UHD" are one tile; its play list offers every version,
   best quality first
 - **TV guide** — what's on now and next for Xtream channels, in your own time zone
 - **Catch-up** — on Xtream channels your provider records, watch what already aired, right in the play

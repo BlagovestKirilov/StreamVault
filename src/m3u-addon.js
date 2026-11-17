@@ -5,7 +5,7 @@
 
 const { getCachedM3U } = require("./cache");
 const {
-  channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels,
+  channelPoster, nameKey, cleanName, keepsTags, catalogView, channelTitle, sortChannels,
 } = require("./catalog");
 
 // --- M3U handlers ---
@@ -70,7 +70,7 @@ function findM3UChannel(channels, channelId) {
   return nearest(ch => slugBase(ch.name) === base);
 }
 
-// "TR: beIN Sports 1 4K" / "tr_bein_sports_1_4k" → "tr bein sports 1"
+// "TR: North Sports 1 4K" / "tr_north_sports_1_4k" → "tr north sports 1"
 function slugBase(text) {
   const words = String(text).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return words ? nameKey(words).mergeBase : "";
@@ -88,7 +88,7 @@ async function getM3UMeta(config, type, id) {
 
   const catalog = await getM3UCatalog(config, type);
   const item = catalog.find(m => m.id === id);
-  const name = cleanName(item ? channelTitle(catalog, item) : channel.name);
+  const name = cleanName(item ? channelTitle(catalog, item) : channel.name, keepsTags(catalog));
   return {
     id,
     type,
@@ -125,7 +125,8 @@ async function getM3UStreams(config, id) {
   const versions = [...new Set([channel, ...sameName, ...sameTvgId].filter(Boolean))];
   // Best quality first (stable: equal quality keeps the order above)
   const quality = (ch) => nameKey(ch.name).quality;
-  return versions.toSorted((a, b) => quality(b) - quality(a)).map(m3uStream);
+  const keepTags = keepsTags(catalog);
+  return versions.toSorted((a, b) => quality(b) - quality(a)).map(ch => m3uStream(ch, keepTags));
 }
 
 const MAX_M3U_VARIANTS = 5;
@@ -137,13 +138,13 @@ function streamFormat(url) {
   return "Live";
 }
 
-function m3uStream(ch) {
+function m3uStream(ch, keepTags) {
   const behaviorHints = { notWebReady: true, bingeGroup: "streamvault-live" };
   // Playlist-provided User-Agent/Referer — some providers reject requests without them
   if (ch.headers) behaviorHints.proxyHeaders = { request: ch.headers };
   return {
     name: `StreamVault\n${streamFormat(ch.url)}`,
-    title: ch.group ? `${cleanName(ch.name)}\n${ch.group}` : cleanName(ch.name),
+    title: ch.group ? `${cleanName(ch.name, keepTags)}\n${ch.group}` : cleanName(ch.name, keepTags),
     url: ch.url,
     behaviorHints,
   };

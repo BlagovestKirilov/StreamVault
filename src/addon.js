@@ -37,7 +37,7 @@ const { registerApiRoutes, formatAccountInfo } = require("./api");
 const prometheus = require("./prometheus");
 const xtream = require("./xtream");
 const {
-  makePosterUrl, cleanName, catalogView, catalogMeta, searchKey, channelSearchKey,
+  makePosterUrl, cleanName, keepsTags, catalogView, catalogMeta, searchKey, channelSearchKey,
 } = require("./catalog");
 const STATS_SECRET = process.env.STATS_SECRET || "";
 
@@ -516,8 +516,12 @@ function categoryCatalogId(name) {
 function categoryRows(genres, config, rows) {
   const picked = config.type === "xtream" ? xtreamCategoryIds(config).length : (config.groups || []).length;
   if (picked < 2 || genres.length < 2) return [];
-  return rows.map(name => ({
-    type: "tv", id: categoryCatalogId(name), name: cleanName(name), extra: [{ name: "skip" }],
+  // A tag is kept where hiding it would make two rows look the same ("IT: SPORT"
+  // and "UK: SPORT" both "SPORT")
+  const shown = rows.map(name => cleanName(name));
+  const clash = (title) => shown.filter(s => s === title).length > 1;
+  return rows.map((name, i) => ({
+    type: "tv", id: categoryCatalogId(name), name: clash(shown[i]) ? name.trim() : shown[i], extra: [{ name: "skip" }],
   }));
 }
 
@@ -706,13 +710,14 @@ async function catalogHandler(req, res) {
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
     }
+    const keepTags = keepsTags(metas);
     metas = catalogView(metas).display;
     if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
     const stale = staleCategoryAnswer(extra, metas, skip, type);
     if (stale) return res.json(stale);
 
     // Filter, paginate; channels carry the raw logo — posters built for this page only
-    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(catalogMeta);
+    metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(m => catalogMeta(m, keepTags));
     if (notice) metas.unshift(notice);
 
     res.json({ metas });

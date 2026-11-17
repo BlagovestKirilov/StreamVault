@@ -13,7 +13,7 @@ const {
   setCapped, touch, once, withDownloadSlot, failCache, withFailureCache, usableEntry, m3uCacheKey,
 } = require("./cache");
 const {
-  makePosterUrl, channelPoster, cleanName, catalogView, channelTitle, sortChannels,
+  makePosterUrl, channelPoster, cleanName, keepsTags, catalogView, channelTitle, sortChannels,
 } = require("./catalog");
 
 // --- Xtream Codes handlers ---
@@ -201,7 +201,7 @@ async function getXtreamMeta(config, type, id) {
   const catalog = await getXtreamCatalog(config, type);
   const item = catalog.find(m => m.id === id);
 
-  const name = item ? cleanName(channelTitle(catalog, item)) : `Stream ${streamId}`;
+  const name = item ? cleanName(channelTitle(catalog, item), keepsTags(catalog)) : `Stream ${streamId}`;
   const poster = item ? channelPoster(item.logo, name) : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
@@ -321,10 +321,10 @@ function hourlySlots(archiveDays, offsetMin) {
 }
 
 // One stream per past programme: /timeshift/<user>/<pass>/<minutes>/<start>/<id>.<ext>
-function catchupStreams(config, channel, programs, { baseUrl, configPath }, formats) {
+function catchupStreams(config, channel, programs, { baseUrl, configPath }, formats, keepTags) {
   const streamId = channel.id.replace("iptv_tv_", "");
   const server = trimTrailingSlashes(config.server);
-  const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
+  const tvName = (channel.name && cleanName(channel.name, keepTags)) || `Channel ${streamId}`;
   const ext = formats.ts ? "ts" : "m3u8";
   const nowSec = Date.now() / 1000;
   return programs.map(p => {
@@ -373,14 +373,15 @@ async function getXtreamStreams(config, type, id, play = {}) {
   // Usually cached already (catalog / expiry tile); a slow provider gets both formats
   const account = await withinMs(getXtreamAccount(config), ACCOUNT_WAIT_MS, null);
   const formats = allowedFormats(account);
-  const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats));
+  const keepTags = keepsTags(catalog);
+  const live = versions.flatMap(channel => xtreamStreamPair(config, channel, play, formats, keepTags));
   if (!archived) return live;
   // Catch-up is extra: whatever goes wrong building it (odd guide data, a bug),
   // the live streams are still answered
   try {
     const programs = await programsPromise;
     const entries = programs.length ? programs : hourlySlots(archived.archiveDays, account?.serverUtcOffsetMin);
-    return [...live, ...catchupStreams(config, archived, entries, play, formats)];
+    return [...live, ...catchupStreams(config, archived, entries, play, formats, keepTags)];
   } catch (e) {
     console.warn(`[CATCHUP] skipped for one channel: ${safeError(e)}`);
     return live;
@@ -408,13 +409,13 @@ function allowedFormats(info) {
 }
 
 // TS + HLS for one Xtream channel (only the formats the account allows)
-function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
+function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats, keepTags) {
   // id format: iptv_tv_<streamId>
   const streamId = channel.id.replace("iptv_tv_", "");
   const server = trimTrailingSlashes(config.server);
 
   // Live TV: notWebReady hints Stremio to prefer external player (VLC/MX)
-  const tvName = (channel.name && cleanName(channel.name)) || `Channel ${streamId}`;
+  const tvName = (channel.name && cleanName(channel.name, keepTags)) || `Channel ${streamId}`;
   const safeName = encodeURIComponent(tvName.toWellFormed());
   // TS goes through the /play redirect so VLC shows the channel name (last path
   // segment). HLS goes straight to the provider: its playlist lists segments as

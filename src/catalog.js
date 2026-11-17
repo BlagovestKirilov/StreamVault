@@ -168,11 +168,12 @@ const NAME_PREFIXES = [
   /^[A-Z]{2} ?: */,           // "UK: "
   /^[A-Z]{2} - */,            // "BG - "
 ];
-// A tag is only a prefix if a name follows it: "IT: [F1] / MOTOGP" keeps "[F1]"
-// (what's left would start with "/"), so it shows "[F1] / MOTOGP", not "/ MOTOGP"
+// A tag is only a prefix if a name follows it: "IT: [X1] / NORTHRACE" keeps "[X1]"
+// (what's left would start with "/"), so it shows "[X1] / NORTHRACE", not "/ NORTHRACE"
 const STARTS_WITH_SEPARATOR = /^[/\\\-–—|&+:,.]/;
-function cleanName(name) {
+function cleanName(name, keepTags = false) {
   let out = String(name || "").trim();
+  if (keepTags) return out;
   for (let i = 0; i < 2; i++) {
     const match = NAME_PREFIXES.map(re => re.exec(out)).find(Boolean);
     if (!match || match[0].length >= out.length) break;
@@ -181,6 +182,36 @@ function cleanName(name) {
     out = rest;
   }
   return out;
+}
+
+// Country tags only matter when a list mixes countries: "[IT] ALPHA ONE" and "[UK] ALPHA ONE"
+// would both show as "ALPHA ONE". A list whose channels carry 2+ different country tags
+// (2 letters, any shape: "[IT]", "IT:", "IT |"; not HD/SD/TV) keeps every name as the provider
+// wrote it. Worked out once per cached list (WeakMap: dropped with it).
+const COUNTRY_TAG = /^(?!HD$|SD$|TV$)[A-Z]{2}$/;
+const mixedLists = new WeakMap();
+function leadingCountryTag(name) {
+  const text = String(name || "").trim();
+  const match = NAME_PREFIXES.map(re => re.exec(text)).find(Boolean);
+  const tag = match ? match[0].replaceAll(/[^A-Za-z]/g, "").toUpperCase() : "";
+  return COUNTRY_TAG.test(tag) ? tag : null;
+}
+function keepsTags(list) {
+  if (!Array.isArray(list)) return false;
+  let mixed = mixedLists.get(list);
+  if (mixed !== undefined) return mixed;
+  const tags = new Set();
+  mixed = false;
+  for (const meta of list) {
+    const tag = leadingCountryTag(meta?.name);
+    if (tag) tags.add(tag);
+    if (tags.size > 1) {
+      mixed = true;
+      break;
+    }
+  }
+  mixedLists.set(list, mixed);
+  return mixed;
 }
 
 // One tile per channel: versions of a channel in the same category that differ
@@ -242,12 +273,12 @@ function sortChannels(metas, picked = []) {
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
 // only for the channels actually sent (one page), so the long poster links are
 // never built for a whole 10k-channel list or kept in the caches.
-function catalogMeta({ logo, ...item }) {
-  const name = cleanName(item.name);
+function catalogMeta({ logo, ...item }, keepTags = false) {
+  const name = cleanName(item.name, keepTags);
   return { ...item, name, poster: channelPoster(logo, name), posterShape: "square" };
 }
 
 module.exports = {
-  makePosterUrl, channelPoster, nameKey, cleanName, catalogView, channelTitle, sortChannels,
+  makePosterUrl, channelPoster, nameKey, cleanName, keepsTags, catalogView, channelTitle, sortChannels,
   searchKey, channelSearchKey, catalogMeta,
 };
