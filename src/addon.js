@@ -710,9 +710,12 @@ async function catalogHandler(req, res) {
     } else if (config.type === "m3u") {
       metas = await getM3UCatalog(config, type);
     }
-    const keepTags = keepsTags(metas);
+    const mixedCountries = keepsTags(metas);
     metas = catalogView(metas).display;
     if (!mainRow) extra.genre = categoryForRow(req.params.id, metas);
+    // Tags only where countries meet: the main row and search. One category (a home
+    // row, or the category filter) is one country — its tiles show short names
+    const keepTags = mixedCountries && !extra.genre;
     const stale = staleCategoryAnswer(extra, metas, skip, type);
     if (stale) return res.json(stale);
 
