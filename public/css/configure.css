@@ -378,22 +378,45 @@ body {
 .cat-tag .remove-tag:hover { opacity: 1; }
 
 /* Picked categories in order: the first N (Home rows, 0–8) are the app's home rows */
-/* Looks like the other field labels (uppercase, small) — only laid out here */
-.row-count {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.row-count { margin-bottom: 10px; }
+.row-count-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
   margin-bottom: 6px;
 }
-.row-count select {
-  padding: 6px 10px;
+/* Same track as the Xtream/M3U tabs: the chosen number is the filled one */
+.row-count-track {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
   background: var(--input-bg);
-  color: var(--text);
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.85rem;
+  border-radius: 12px;
+  margin-bottom: 6px;
 }
-.row-count select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row-count-opt {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.row-count-opt:first-child { flex: 1.8; }
+.row-count-opt:hover:not(.active) { color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.row-count-opt.active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+.row-count-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .row-count-opt { transition: none; } }
 .cat-selected:has(.row-list) { display: block; }
 .row-hint {
   font-size: 0.8rem;

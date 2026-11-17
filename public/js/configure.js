@@ -553,13 +553,7 @@ function renderSelectedTags(focus) {
   }
   // Two or more: the order decides the home rows (and the channel order), so
   // show it as a list that can be reordered
-  container.appendChild(homeRowsPicker());
-  const hint = document.createElement('p');
-  hint.className = 'row-hint';
-  hint.textContent = homeRows === 0
-    ? 'Only StreamVault Live — every category is in its category filter.'
-    : `The first ${homeRows} also get their own row (and catalog) in the app, in this order.`;
-  container.appendChild(hint);
+  container.appendChild(homeRowsPicker(selectedCategories.size));
   const list = document.createElement('ol');
   list.className = 'row-list';
   const order = [...selectedCategories];
@@ -567,7 +561,7 @@ function renderSelectedTags(focus) {
     if (i === homeRows) {
       const divider = document.createElement('li');
       divider.className = 'row-divider';
-      divider.textContent = 'Below: no home row, still in the category filter';
+      divider.textContent = "No own row below, still in StreamVault Live's category filter";
       list.appendChild(divider);
     }
     const name = categoryName(id);
@@ -596,30 +590,55 @@ function renderSelectedTags(focus) {
   }
 }
 
-// "Home rows: [0–8]" — how many categories get their own row / catalog
-function homeRowsPicker() {
-  const wrap = document.createElement('label');
-  wrap.className = 'row-count';
-  wrap.textContent = 'Home rows ';
-  const select = document.createElement('select');
-  select.id = 'homeRows';
-  for (let n = 0; n <= MAX_HOME_ROWS; n++) {
-    const option = document.createElement('option');
-    option.value = String(n);
-    option.textContent = n === 0 ? '0 (none)' : String(n);
-    select.appendChild(option);
-  }
-  select.value = String(homeRows);
-  select.onchange = () => {
-    homeRows = Number(select.value);
+// "Rows in the app": None, 1 … 8 as one segmented track (like the Xtream/M3U tabs).
+// A radio group: arrow keys move the choice (also a TV remote's D-pad), one tab stop.
+function homeRowsPicker(picked) {
+  const box = document.createElement('div');
+  box.className = 'row-count';
+  const title = document.createElement('p');
+  title.className = 'row-count-title';
+  title.id = 'homeRowsTitle';
+  title.textContent = 'Rows in the app';
+  const track = document.createElement('div');
+  track.className = 'row-count-track';
+  track.setAttribute('role', 'radiogroup');
+  track.setAttribute('aria-labelledby', 'homeRowsTitle');
+  const choose = (n) => {
+    homeRows = n;
     renderSelectedTags();
-    document.getElementById('homeRows').focus();
-    document.getElementById('rowLive').textContent = homeRows === 0
-      ? 'No home rows: only StreamVault Live'
-      : `${homeRows} home rows`;
+    document.querySelector(`.row-count-track [data-n="${n}"]`)?.focus();
+    document.getElementById('rowLive').textContent = n === 0 ? 'No extra rows' : `${n} rows in the app`;
   };
-  wrap.appendChild(select);
-  return wrap;
+  for (let n = 0; n <= MAX_HOME_ROWS; n++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'row-count-opt' + (n === homeRows ? ' active' : '');
+    b.textContent = n === 0 ? 'None' : String(n);
+    b.dataset.n = String(n);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(n === homeRows));
+    b.tabIndex = n === homeRows ? 0 : -1;
+    b.onclick = () => choose(n);
+    b.onkeydown = (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      choose(Math.min(MAX_HOME_ROWS, Math.max(0, homeRows + step)));
+    };
+    track.appendChild(b);
+  }
+  const help = document.createElement('p');
+  help.className = 'row-hint';
+  help.textContent = rowsHelp(homeRows, picked);
+  box.append(title, track, help);
+  return box;
+}
+
+// What the chosen number gives, in the app's terms
+function rowsHelp(n, picked) {
+  if (n === 0) return 'No extra rows. All categories are inside StreamVault Live: open it and pick one from its category filter.';
+  if (n >= picked) return "Each of your categories gets its own row on the app's home screen and in its catalog list, in this order.";
+  return `Your first ${n} ${n === 1 ? 'category gets its' : 'categories each get their'} own row on the app's home screen and in its catalog list. The rest are only in StreamVault Live's category filter.`;
 }
 
 function rowButton(text, dir, label, disabled, onClick) {
