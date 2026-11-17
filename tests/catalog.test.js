@@ -325,3 +325,20 @@ http://example.com/fhd.m3u8`));
     expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND"]);
   });
 });
+
+// ─── cleanName ───
+
+describe("cleanName", () => {
+  const { cleanName } = require("../src/catalog");
+
+  test("drops up to two leading provider tags", () => {
+    expect(cleanName("[BG] ALPHA")).toBe("ALPHA");
+    expect(cleanName("UK: Beacon News")).toBe("Beacon News");
+    expect(cleanName("|AR| VIP| NORTH")).toBe("NORTH");
+  });
+
+  test("keeps a tag that is part of the name (what follows starts with a separator)", () => {
+    expect(cleanName("IT: [F1] / MOTOGP [1080p]")).toBe("[F1] / MOTOGP [1080p]");
+    expect(cleanName("[F1] - Practice")).toBe("[F1] - Practice");
+  });
+});

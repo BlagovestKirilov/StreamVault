@@ -168,12 +168,17 @@ const NAME_PREFIXES = [
   /^[A-Z]{2} ?: */,           // "UK: "
   /^[A-Z]{2} - */,            // "BG - "
 ];
+// A tag is only a prefix if a name follows it: "IT: [F1] / MOTOGP" keeps "[F1]"
+// (what's left would start with "/"), so it shows "[F1] / MOTOGP", not "/ MOTOGP"
+const STARTS_WITH_SEPARATOR = /^[/\\\-–—|&+:,.]/;
 function cleanName(name) {
   let out = String(name || "").trim();
   for (let i = 0; i < 2; i++) {
     const match = NAME_PREFIXES.map(re => re.exec(out)).find(Boolean);
     if (!match || match[0].length >= out.length) break;
-    out = out.slice(match[0].length);
+    const rest = out.slice(match[0].length);
+    if (STARTS_WITH_SEPARATOR.test(rest)) break;
+    out = rest;
   }
   return out;
 }
