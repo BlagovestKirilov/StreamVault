@@ -419,18 +419,26 @@ app.get("/manifest.json", limitAddon, (_req, res) => {
 });
 
 // Configured manifest (user completed install)
-// Some users paste the configure page's link ("…/<link>/configure") into the app
-// and it adds /manifest.json: answer it as the install link it was meant to be
-// Nuvio 1.1.0-beta.13 asks for "…/<link>/manifest/manifest.json" (an extra
-// "/manifest"): same install link
-app.get(["/:config/configure/manifest.json", "/:config/manifest/manifest.json"], (req, _res, next) => {
-  req.url = `/${req.params.config}/manifest.json`;
+// Install links that reach us slightly wrong, all answered as the install link:
+// - the configure page's link pasted into an app, which adds /manifest.json
+//   ("…/<link>/configure/manifest.json")
+// - Nuvio 1.1.0-beta.13 adds an extra "/manifest" ("…/<link>/manifest/manifest.json")
+// - a link cut off while copying ("…/<link>/manifest.jso", "manifest.", …): opened
+//   as it is, or with the app's own /manifest.json after it
+// MANIFEST_PART = "manifest" plus any cut-off start of ".json" (or all of it)
+const MANIFEST_PART = String.raw`manifest(?:\.(?:j(?:s(?:on?)?)?)?)?`;
+const WRONG_MANIFEST = new RegExp(String.raw`^/([^/]+)/(?:configure|${MANIFEST_PART})/manifest\.json$`);
+const CUT_MANIFEST = /^\/([^/]+)\/manifest\.(?:j(?:so?)?)?$/;
+app.get([WRONG_MANIFEST, CUT_MANIFEST], (req, _res, next) => {
+  const [, config] = WRONG_MANIFEST.exec(req.path) || CUT_MANIFEST.exec(req.path);
+  req.url = `/${config}/manifest.json`;
   next();
 });
-// …and builds every other request from that link too ("…/<link>/manifest/catalog/
-// tv/…json", whole category bursts, all 404 before): drop the extra "/manifest"
-app.get(/^\/[^/]+\/manifest\/(catalog|meta|stream)\//, (req, _res, next) => {
-  req.url = req.url.replace(/^(\/[^/]+)\/manifest\//, "$1/");
+// …and apps build every other request from that link too ("…/<link>/manifest/
+// catalog/tv/…json", whole category bursts, all 404 before): drop the extra part
+const EXTRA_BEFORE_ROUTE = new RegExp(String.raw`^(/[^/]+)/${MANIFEST_PART}/(?=(?:catalog|meta|stream)/)`);
+app.get(EXTRA_BEFORE_ROUTE, (req, _res, next) => {
+  req.url = req.url.replace(EXTRA_BEFORE_ROUTE, "$1/");
   next();
 });
 // The install link pasted twice into an app ("…/manifest.jsonhttps://<this

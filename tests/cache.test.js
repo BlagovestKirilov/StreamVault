@@ -394,6 +394,20 @@ describe("speed", () => {
     expect(res.body.behaviorHints.configurationRequired).toBeUndefined();
   });
 
+  test("an install link cut off while copying still works", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://cut-link.example.com/list.m3u" });
+    for (const path of [`/${cfg}/manifest.jso`, `/${cfg}/manifest.`, `/${cfg}/manifest.jso/manifest.json`, `/${cfg}/manifest./manifest.json`]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe("community.streamvault.addon");
+    }
+    const res = await request(app).get(`/${cfg}/manifest.jso/catalog/tv/iptv_live.json`);
+    expect(res.body.metas.map(m => m.name)).toEqual(["One"]);
+    // A subtitle probe next to the link stays a 404
+    expect((await request(app).get(`/${cfg}/manifest.srt`)).status).toBe(404);
+  });
+
   test("channel lists asked through that extra /manifest work too", async () => {
     jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
     const cfg = enc({ t: "m3u", m: "http://nuvio-manifest-catalog.example.com/list.m3u" });
