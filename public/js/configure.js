@@ -590,7 +590,7 @@ function renderSelectedTags(focus) {
   }
 }
 
-// "Rows in the app": None, 1 … 8 as one segmented track (like the Xtream/M3U tabs).
+// "Home screen rows": None, 1 … 8 as one segmented track (like the Xtream/M3U tabs).
 // A radio group: arrow keys move the choice (also a TV remote's D-pad), one tab stop.
 function homeRowsPicker(picked) {
   const box = document.createElement('div');
@@ -598,7 +598,7 @@ function homeRowsPicker(picked) {
   const title = document.createElement('p');
   title.className = 'row-count-title';
   title.id = 'homeRowsTitle';
-  title.textContent = 'Rows in the app';
+  title.textContent = 'Home screen rows';
   const track = document.createElement('div');
   track.className = 'row-count-track';
   track.setAttribute('role', 'radiogroup');
@@ -607,7 +607,7 @@ function homeRowsPicker(picked) {
     homeRows = n;
     renderSelectedTags();
     document.querySelector(`.row-count-track [data-n="${n}"]`)?.focus();
-    document.getElementById('rowLive').textContent = n === 0 ? 'No extra rows' : `${n} rows in the app`;
+    document.getElementById('rowLive').textContent = n === 0 ? 'No home screen rows' : `${n} home screen rows`;
   };
   for (let n = 0; n <= MAX_HOME_ROWS; n++) {
     const b = document.createElement('button');
