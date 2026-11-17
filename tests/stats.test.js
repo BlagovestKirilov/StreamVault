@@ -83,7 +83,8 @@ describe("stats file saving", () => {
           .then(() => r(app).post('/api/link').send({ ...settings, editing: x.body.config })))
         .then(() => r(app).get('/stats'))
         .then(x => { console.log(JSON.stringify({ rc: x.body.reconfiguresTotal, ri: x.body.reinstallsTotal })); process.exit(0); });`);
-    expect(JSON.parse(r.stdout.trim().split("\n").pop())).toEqual({ rc: 14 + 41 + 1, ri: 9 + 23 + 1 });
+    // The JSON line, not just the last one: the child's own log lines can come after it
+    expect(JSON.parse(r.stdout.split("\n").findLast(line => line.startsWith("{")))).toEqual({ rc: 14 + 41 + 1, ri: 9 + 23 + 1 });
   });
 
   test("shutdown save writes a complete stats.json and leaves no temp files", () => {

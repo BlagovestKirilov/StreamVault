@@ -865,6 +865,7 @@ describe("installs badge", () => {
     const path = require("node:path");
     const dir = require("node:fs").mkdtempSync(path.join(require("node:os").tmpdir(), "sv-badge-"));
     const run = spawnSync(process.execPath, ["-e", script], { cwd: path.join(__dirname, "..", "src"), env: { ...process.env, STATS_DIR: dir, FORCE_COLOR: "0" }, encoding: "utf8", timeout: 15000 });
-    expect(JSON.parse(run.stdout.trim().split("\n").pop())).toEqual(["999", "1k+", "2.7k+", "2.9k+", "3k+", "3k+", "12.3k+"]);
+    // The JSON line, not just the last one: the child's own log lines can come after it
+    expect(JSON.parse(run.stdout.split("\n").findLast(line => line.startsWith("[\"")))).toEqual(["999", "1k+", "2.7k+", "2.9k+", "3k+", "3k+", "12.3k+"]);
   });
 });
