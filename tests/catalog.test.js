@@ -202,6 +202,20 @@ describe("home rows, merged versions, clean names", () => {
     expect((await manifest(cfg0)).catalogs).toHaveLength(4); // older links: up to 8
   });
 
+  test("M3U: the user's number of home rows works the same", async () => {
+    jest.spyOn(m3u, "parseM3U").mockResolvedValue(m3u.parseM3UContent("#EXTM3U\n"
+      + "#EXTINF:-1 group-title=\"Sport\",Arc Sport\nhttp://example.com/1.m3u8\n"
+      + "#EXTINF:-1 group-title=\"News\",Beacon News\nhttp://example.com/2.m3u8\n"
+      + "#EXTINF:-1 group-title=\"Kids\",Kiddo Jr\nhttp://example.com/3.m3u8\n"));
+    const cfg = (r) => enc({ t: "m3u", m: `http://m3u-rows-${r}.example.com/list.m3u`, g: JSON.stringify(["News", "Sport", "Kids"]), r });
+    const names = async (r) => (await request(app).get(`/${cfg(r)}/manifest.json`)).body.catalogs.map(c => c.name);
+    expect(await names("0")).toEqual(["StreamVault Live"]);
+    expect(await names("2")).toEqual(["StreamVault Live", "News", "Sport"]);
+    expect(await names(undefined)).toEqual(["StreamVault Live", "News", "Sport", "Kids"]);
+    const live = (await request(app).get(`/${cfg("0")}/manifest.json`)).body.catalogs[0];
+    expect(live.extra.find(e => e.name === "genre").options).toEqual(["News", "Sport", "Kids"]);
+  });
+
   test("setups that chose fewer home rows are counted per day", async () => {
     const { stats, todayKey, setupKey } = require("../src/stats");
     const cfg = xtreamSetup("2,1");
