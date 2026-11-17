@@ -75,7 +75,7 @@ function squareLogo(logo, fallback) {
 
 // Poster for a channel: its logo fitted into a square, or a generated name tile.
 // The tile never shows a country tag, even where the name keeps it (a mixed-country
-// list): the tile has room for a few letters only, "[BG] ALPHA TV" came out as "[ATV"
+// list): the tile has room for a few letters only, "[BG] NORTH" came out as "[BG] NO…"
 function channelPoster(logo, name) {
   const nameTile = makePosterUrl(cleanName(name));
   return squareLogo(logo, nameTile) || nameTile;
@@ -133,7 +133,7 @@ function nameKey(name) {
   }
   const mergeBase = mergeWords(normalized.split(" "));
   // A trailing "TV" doesn't count either: "NORTH TV" sorts with "NORTH", not after
-  // "NORTH SPORT" ("ALPHATV", "TVX", "TV 9000" keep theirs)
+  // "NORTH SPORT" ("BRIXTV", "TVX", "TV 9000" keep theirs)
   if (kept.length > 1 && kept.at(-1) === "tv") kept.pop();
   return { base: kept.join(" ") || normalized, mergeBase, quality };
 }
