@@ -473,11 +473,14 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
-  let genres = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
+  let { names: genres, rows } = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
   // Channel list not ready in time (e.g. right after Save changes added a category):
   // the picked categories still go into the manifest — apps keep it until restart
-  if (genres.length === 0) genres = await withinMs(pickedCategoryNames(req.userConfig), PICKED_NAMES_TIMEOUT_MS, []);
-  res.json({ ...configuredManifest(genres, cType, req.userConfig), version: manifestVersion(req.configRevision) });
+  if (genres.length === 0) {
+    genres = await withinMs(pickedCategoryNames(req.userConfig), PICKED_NAMES_TIMEOUT_MS, []);
+    rows = genres.slice(0, MAX_CATEGORY_ROWS);
+  }
+  res.json({ ...configuredManifest(genres, cType, req.userConfig, rows), version: manifestVersion(req.configRevision) });
 });
 
 // --- Category filter: the user's own groups become the catalog's "genre" options ---
@@ -500,17 +503,20 @@ const MAX_GENRE_OPTIONS = 300;
 const genresCache = new Map();       // config path -> { data: [names], ts }
 
 // One extra home-screen row per category the user picked (pick order), after the
-// main row. Ids come from the name, so an app's row settings survive edits.
+// main row: the first MAX_CATEGORY_ROWS picks (the configure page's list above its
+// divider) that have channels — a pick with none gets no row and does NOT pull a
+// pick from below the divider up. Ids come from the name, so an app's row settings
+// survive edits.
 const MAX_CATEGORY_ROWS = 8;
 const MAIN_CATALOG_ID = "iptv_live";
 function categoryCatalogId(name) {
   return `iptv_cat_${crypto.createHash("sha256").update(name).digest("hex").slice(0, 12)}`;
 }
 
-function categoryRows(genres, config) {
+function categoryRows(genres, config, rows) {
   const picked = config.type === "xtream" ? xtreamCategoryIds(config).length : (config.groups || []).length;
   if (picked < 2 || genres.length < 2) return [];
-  return genres.slice(0, MAX_CATEGORY_ROWS).map(name => ({
+  return rows.map(name => ({
     type: "tv", id: categoryCatalogId(name), name: cleanName(name), extra: [{ name: "skip" }],
   }));
 }
@@ -522,7 +528,7 @@ function manifestVersion(revision) {
   return revision ? BASE_MANIFEST.version.replace(/\.\d+$/, `.${revision}`) : BASE_MANIFEST.version;
 }
 
-function configuredManifest(genres, type, config = {}) {
+function configuredManifest(genres, type, config, rows) {
   const extra = [{ name: "search" }];
   // A single group (e.g. everything "Uncategorized") makes a useless dropdown
   if (genres.length > 1) extra.push({ name: "genre", options: genres, isRequired: false });
@@ -533,7 +539,7 @@ function configuredManifest(genres, type, config = {}) {
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
     description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
-    catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config)],
+    catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config, rows)],
     behaviorHints: { configurable: true },
   };
 }
@@ -548,14 +554,18 @@ async function getGenres(config, cacheKey) {
     : await getM3UCatalog(config, "tv");
   const names = [...new Set(metas.map(m => m.genres?.[0]).filter(Boolean))]
     .slice(0, MAX_GENRE_OPTIONS);
+  const present = new Set(names);
+  const picked = config.type === "xtream" ? metas.pickedCategories || [] : config.groups || [];
+  const rows = picked.slice(0, MAX_CATEGORY_ROWS).filter(name => present.has(name));
 
-  setCapped(genresCache, cacheKey, { data: names, ts: Date.now() }, GENRES_CACHE_MAX);
-  return names;
+  const data = { names, rows };
+  setCapped(genresCache, cacheKey, { data, ts: Date.now() }, GENRES_CACHE_MAX);
+  return data;
 }
 
 // Slow/broken provider must not block the manifest — return [] (no filter) instead
 function getGenresWithin(config, cacheKey, ms) {
-  return withinMs(getGenres(config, cacheKey), ms, []);
+  return withinMs(getGenres(config, cacheKey), ms, { names: [], rows: [] });
 }
 
 // --- Stats dashboard (protected by STATS_SECRET env var) ---

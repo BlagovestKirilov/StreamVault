@@ -190,6 +190,20 @@ describe("home rows, merged versions, clean names", () => {
     expect(await names(`/${cfg}/catalog/tv/iptv_cat_000000000000.json`)).toEqual(["⚠️ No channels in this category"]); // old row
   });
 
+  test("a picked category without channels gets no row and doesn't pull up a pick from below the 8", async () => {
+    const cats = Array.from({ length: 10 }, (_, i) => ({ category_id: String(i + 1), category_name: `CAT ${i + 1}` }));
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue(cats);
+    // CAT 1 has no channels; every other category has one
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_cfg, catId) =>
+      (catId === "1" ? [] : [{ stream_id: Number(catId) * 10, name: `Ch ${catId}`, category_id: catId }]));
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const cfg = enc({ t: "xtream", s: `http://rows-${++setups}.example.com`, u: "u", p: "p", c: cats.map(c => c.category_id).join(",") });
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "CAT 2", "CAT 3", "CAT 4", "CAT 5", "CAT 6", "CAT 7", "CAT 8"]);
+    // all categories with channels stay in the category filter
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toHaveLength(9);
+  });
+
   test("a category the app still lists from an older setup explains itself instead of an empty screen", async () => {
     const cfg = xtreamSetup("2,1"); // KIDS isn't picked any more
     const path = `/${cfg}/catalog/tv/iptv_live/genre=KIDS.json`;

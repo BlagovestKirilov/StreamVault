@@ -74,7 +74,10 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     if (Number(item.tv_archive) === 1 && archiveDays > 0) meta.archiveDays = Math.min(archiveDays, 30);
     return meta;
   });
-  sortChannels(result, categoryIds.map(id => categoryNames.get(id)).filter(Boolean));
+  const pickedNames = categoryIds.map(id => categoryNames.get(id)).filter(Boolean);
+  sortChannels(result, pickedNames);
+  // Picked categories by name, in pick order (home rows come from the first ones)
+  result.pickedCategories = pickedNames;
 
   setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
   return result;
