@@ -416,6 +416,23 @@ describe("speed", () => {
     expect(res.body.metas.map(m => m.name)).toEqual(["One"]);
   });
 
+  test("channel pages and play options through an extra /manifest (or a cut-off one) work too", async () => {
+    jest.spyOn(m3u, "parseM3U").mockImplementation(async () => playlist("One"));
+    const cfg = enc({ t: "m3u", m: "http://nuvio-manifest-meta.example.com/list.m3u" });
+    const { metas } = (await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body;
+    const id = metas[0].id;
+    for (const prefix of ["manifest", "manifest.jso", "manifest."]) {
+      const meta = await request(app).get(`/${cfg}/${prefix}/meta/tv/${encodeURIComponent(id)}.json`);
+      expect(meta.status).toBe(200);
+      expect(meta.body.meta.name).toBe("One");
+      const stream = await request(app).get(`/${cfg}/${prefix}/stream/tv/${encodeURIComponent(id)}.json`);
+      expect(stream.status).toBe(200);
+      expect(stream.body.streams.length).toBeGreaterThan(0);
+    }
+    // only a "manifest" part is dropped: anything else before the route stays a 404
+    expect((await request(app).get(`/${cfg}/other/meta/tv/${encodeURIComponent(id)}.json`)).status).toBe(404);
+  });
+
   test("a request on a connection the provider already closed is retried once", async () => {
     const reset = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
     const flaky = jest.fn().mockRejectedValueOnce(reset).mockResolvedValue("ok");

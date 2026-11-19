@@ -436,7 +436,7 @@ app.get([WRONG_MANIFEST, CUT_MANIFEST], (req, _res, next) => {
 });
 // …and apps build every other request from that link too ("…/<link>/manifest/
 // catalog/tv/…json", whole category bursts, all 404 before): drop the extra part
-const EXTRA_BEFORE_ROUTE = new RegExp(String.raw`^(/[^/]+)/${MANIFEST_PART}/(?=(?:catalog|meta|stream)/)`);
+const EXTRA_BEFORE_ROUTE = new RegExp(`^(/[^/]+)/${MANIFEST_PART}/(?=(?:catalog|meta|stream)/)`);
 app.get(EXTRA_BEFORE_ROUTE, (req, _res, next) => {
   req.url = req.url.replace(EXTRA_BEFORE_ROUTE, "$1/");
   next();
