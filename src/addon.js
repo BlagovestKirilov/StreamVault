@@ -937,6 +937,32 @@ function playRejectReason(config, streamType, streamId, ext) {
   return null;
 }
 
+// Some providers answer the .ts link with an HLS playlist whose parts are relative
+// ("tracks-v1a1/mono.m3u8", "seg-1.ts"). Some players (LG webOS Stremio) resolve
+// those against the /play link they were given instead of the provider's address,
+// so they land here: …/play/<link>/live/<id>/ts/tracks-v1a1/mono.m3u8. Send each
+// to where a correct player would have gone — the same path next to the stream on
+// the provider (<server>/live/<user>/<pass>/<part>). Only safe path characters,
+// no "..", and only parts that look like media files, so a channel name is never
+// mistaken for one; the query string (provider tokens) is kept.
+const RELATIVE_PART = /^\/play\/([^/]+)\/live\/([A-Za-z0-9_-]{1,40})\/(?:ts|m3u8)\/((?:[A-Za-z0-9_~-][A-Za-z0-9._~-]*\/)*[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.(?:m3u8|ts|aac|m4s|mp4|vtt|key))$/;
+app.get(RELATIVE_PART, limitAddon, (req, res, next) => {
+  const [, configStr, , part] = RELATIVE_PART.exec(req.path);
+  if (part.split("/").includes("..")) return next();
+  let config;
+  try {
+    config = parseConfigPath(configStr);
+  } catch (_) {
+    return next(); // not a valid link: the normal /play checks or 404 answer it
+  }
+  if (config?.type !== "xtream") return next();
+  Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
+  if (!config.username || !config.password || !isExternalUrlSyntax(config.server)) return next();
+  countToday("playRelativeParts");
+  const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  res.redirect(302, `${trimTrailingSlashes(config.server)}/live/${config.username}/${config.password}/${part}${query}`);
+});
+
 app.get("/play/:config/:streamType/:streamId/:ext/:name", limitAddon, notePlayRejects, extractConfig, async (req, res) => {
   const config = req.userConfig;
   const { streamType, streamId, ext } = req.params;

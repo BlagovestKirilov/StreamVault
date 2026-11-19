@@ -774,6 +774,35 @@ describe("/play redirect", () => {
     expect(res.headers.location).toBe("http://example.com:8080/live/user/pass/123.ts");
   });
 
+  test("relative parts of a provider's HLS answer are sent to the provider (webOS players)", async () => {
+    for (const [part, expected] of [
+      ["tracks-v1a1/mono.m3u8", "http://example.com:8080/live/user/pass/tracks-v1a1/mono.m3u8"],
+      ["tracks-v1a1/2026/11/19/seg-1.ts?token=abc", "http://example.com:8080/live/user/pass/tracks-v1a1/2026/11/19/seg-1.ts?token=abc"],
+      ["mono.m3u8", "http://example.com:8080/live/user/pass/mono.m3u8"],
+    ]) {
+      const res = await request(app).get(`/play/${xt}/live/123/ts/${part}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(expected);
+    }
+    // a channel name (no media extension) is still the normal play redirect
+    const name = await request(app).get(`/play/${xt}/live/123/ts/Delta%20Sport`);
+    expect(name.headers.location).toBe("http://example.com:8080/live/user/pass/123.ts");
+  });
+
+  test("relative parts: no way out of the stream folder, no other installs", async () => {
+    for (const path of [
+      `/play/${xt}/live/123/ts/../../../etc/passwd.ts`,
+      `/play/${xt}/live/123/ts/a/%2e%2e/b.m3u8`,
+      `/play/${xt}/live/123/ts/tracks/page.html`,
+      `/play/${enc({ t: "m3u", m: "http://example.com/l.m3u" })}/live/123/ts/tracks/mono.m3u8`,
+      `/play/${enc({ t: "xtream", s: "http://192.168.1.1", u: "u", p: "p" })}/live/123/ts/tracks/mono.m3u8`,
+      `/play/garbage/live/123/ts/tracks/mono.m3u8`,
+    ]) {
+      const res = await request(app).get(path);
+      expect(res.status).not.toBe(302);
+    }
+  });
+
   test("a failing DNS lookup on our side doesn't block play (the player connects, not us)", async () => {
     const dns = require("node:dns");
     const lookup = jest.spyOn(dns.promises, "lookup").mockRejectedValue(new Error("getaddrinfo EAI_AGAIN"));
