@@ -942,13 +942,12 @@ function playRejectReason(config, streamType, streamId, ext) {
 // those against the /play link they were given instead of the provider's address,
 // so they land here: …/play/<link>/live/<id>/ts/tracks-v1a1/mono.m3u8. Send each
 // to where a correct player would have gone — the same path next to the stream on
-// the provider (<server>/live/<user>/<pass>/<part>). Only safe path characters,
-// no "..", and only parts that look like media files, so a channel name is never
+// the provider (<server>/live/<user>/<pass>/<part>). Only safe path characters
+// (no part starts with a dot, so no ".."), and only parts that look like media files, so a channel name is never
 // mistaken for one; the query string (provider tokens) is kept.
-const RELATIVE_PART = /^\/play\/([^/]+)\/live\/([A-Za-z0-9_-]{1,40})\/(?:ts|m3u8)\/((?:[A-Za-z0-9_~-][A-Za-z0-9._~-]*\/)*[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.(?:m3u8|ts|aac|m4s|mp4|vtt|key))$/;
+const RELATIVE_PART = /^\/play\/([^/]+)\/live\/[A-Za-z0-9_-]{1,40}\/(?:ts|m3u8)\/((?:[A-Za-z0-9_~-][A-Za-z0-9._~-]*\/)*[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.(?:m3u8|ts|aac|m4s|mp4|vtt|key))$/;
 app.get(RELATIVE_PART, limitAddon, (req, res, next) => {
-  const [, configStr, , part] = RELATIVE_PART.exec(req.path);
-  if (part.split("/").includes("..")) return next();
+  const [, configStr, part] = RELATIVE_PART.exec(req.path);
   let config;
   try {
     config = parseConfigPath(configStr);
