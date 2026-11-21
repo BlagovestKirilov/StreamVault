@@ -611,33 +611,38 @@ function homeRowsPicker(picked) {
   track.className = 'row-count-track';
   track.setAttribute('role', 'radiogroup');
   track.setAttribute('aria-labelledby', 'homeRowsTitle');
+  // Only numbers that change something: with 3 categories, None/1/2/3 (4–8 would
+  // look the same as 3). The highest one means "every category" and is kept as the
+  // default 8, so categories added later get their rows too.
+  const top = Math.min(MAX_HOME_ROWS, picked);
+  const shown = Math.min(homeRows, top);
   const choose = (n) => {
-    homeRows = n;
+    homeRows = n >= top ? MAX_HOME_ROWS : n;
     renderSelectedTags();
     document.querySelector(`.row-count-track [data-n="${n}"]`)?.focus();
     document.getElementById('rowLive').textContent = n === 0 ? 'No home screen rows' : `${n} home screen rows`;
   };
-  for (let n = 0; n <= MAX_HOME_ROWS; n++) {
+  for (let n = 0; n <= top; n++) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'row-count-opt' + (n === homeRows ? ' active' : '');
+    b.className = 'row-count-opt' + (n === shown ? ' active' : '');
     b.textContent = n === 0 ? 'None' : String(n);
     b.dataset.n = String(n);
     b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(n === homeRows));
-    b.tabIndex = n === homeRows ? 0 : -1;
+    b.setAttribute('aria-checked', String(n === shown));
+    b.tabIndex = n === shown ? 0 : -1;
     b.onclick = () => choose(n);
     b.onkeydown = (e) => {
       const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
       if (!step) return;
       e.preventDefault();
-      choose(Math.min(MAX_HOME_ROWS, Math.max(0, homeRows + step)));
+      choose(Math.min(top, Math.max(0, shown + step)));
     };
     track.appendChild(b);
   }
   const help = document.createElement('p');
   help.className = 'row-hint';
-  help.textContent = rowsHelp(homeRows, picked);
+  help.textContent = rowsHelp(shown, picked);
   box.append(title, track, help);
   return box;
 }
