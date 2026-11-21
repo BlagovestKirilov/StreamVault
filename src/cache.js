@@ -251,14 +251,18 @@ setInterval(() => {
 // MEMORY_WAIT_MAX_MS: a slow answer is better than none. Counted as memoryWaits.
 const MEMORY_WAIT_MAX_MS = 15000;
 const MEMORY_WAIT_STEP_MS = 500;
-async function waitForMemory() {
-  if (memoryInUseMB() <= HEAP_WARN_MB) return;
+function waitForMemory() {
+  if (memoryInUseMB() <= HEAP_WARN_MB) return Promise.resolve();
   countToday("memoryWaits");
   checkMemory(memoryInUseMB());
   const until = Date.now() + MEMORY_WAIT_MAX_MS;
-  while (memoryInUseMB() > HEAP_WARN_MB && Date.now() < until) {
-    await new Promise(resolve => setTimeout(resolve, MEMORY_WAIT_STEP_MS));
-  }
+  return new Promise(resolve => {
+    const timer = setInterval(() => {
+      if (memoryInUseMB() > HEAP_WARN_MB && Date.now() < until) return;
+      clearInterval(timer);
+      resolve();
+    }, MEMORY_WAIT_STEP_MS);
+  });
 }
 
 // Watchdog step for a measured heap size (MB)
