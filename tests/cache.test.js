@@ -449,3 +449,82 @@ describe("speed", () => {
     expect(slow).toHaveBeenCalledTimes(1); // other errors aren't retried
   });
 });
+
+// ─── Xtream channel lists read as they download (2026-11-21 out-of-memory crash) ───
+
+describe("Xtream channel lists are read channel by channel", () => {
+  const { Readable } = require("node:stream");
+  const { readLiveStreamList } = require("../src/xtream");
+  const { providerErrorKey } = require("../src/stats");
+  // A body cut into small pieces, so channels, strings and multi-byte letters are split
+  const chunked = (text, size = 7) => {
+    const buf = Buffer.from(text);
+    const parts = [];
+    for (let i = 0; i < buf.length; i += size) parts.push(buf.subarray(i, i + size));
+    return Readable.from(parts);
+  };
+  const channel = (i) => ({
+    num: i, name: `Ch ${i} "q" {a} [b] \\ é 😀`, stream_type: "live", stream_id: i, stream_icon: `http://x/${i}.png`,
+    epg_channel_id: null, category_id: String(i % 3), tv_archive: i % 2, tv_archive_duration: 3, extra: { nested: [1, { s: "]}" }] },
+  });
+  const kept = ({ stream_id, name, stream_icon, category_id, tv_archive, tv_archive_duration }) =>
+    ({ stream_id, name, stream_icon, category_id, tv_archive, tv_archive_duration });
+
+  test("gives the same channels as reading the whole list, keeping only the fields used", async () => {
+    const list = Array.from({ length: 300 }, (_, i) => channel(i));
+    for (const size of [1, 7, 64, 100000]) {
+      expect(await readLiveStreamList(chunked(JSON.stringify(list), size))).toEqual(list.map(kept));
+    }
+  });
+
+  test("whatever isn't a JSON array is answered as before", async () => {
+    expect(await readLiveStreamList(chunked(""))).toEqual([]);
+    expect(await readLiveStreamList(chunked(" [ ] "))).toEqual([]);
+    expect(await readLiveStreamList(chunked('{"user_info":{"auth":0}}'))).toEqual({ user_info: { auth: 0 } });
+    expect(await readLiveStreamList(chunked("<html>blocked</html>"))).toBe("<html>blocked</html>");
+    expect(await readLiveStreamList(chunked('[{"stream_id":1}, {broken}]'))).toEqual([]); // unreadable list = no list
+  });
+
+  test("a list over 50 MB is refused with the usual 'too big' error", async () => {
+    const huge = Readable.from((function* () { // 51 MB, never held in memory at once
+      yield Buffer.from("[");
+      const piece = Buffer.from(`${JSON.stringify(channel(1))},`.repeat(500));
+      for (let sent = 0; sent < 51 * 1024 * 1024; sent += piece.length) yield piece;
+    })());
+    const error = await readLiveStreamList(huge).catch(e => e);
+    expect(error.message).toMatch(/maxContentLength/);
+    expect(providerErrorKey(error)).toBe("too_big");
+  });
+});
+
+describe("big downloads wait while memory is high", () => {
+  const { waitForMemory } = require("../src/cache");
+  const { dayRow } = require("../src/stats");
+  const MB = 1024 * 1024;
+  afterEach(() => jest.restoreAllMocks());
+
+  test("starts at once when memory is normal", async () => {
+    jest.spyOn(process, "memoryUsage").mockReturnValue({ heapUsed: 200 * MB, external: 10 * MB, rss: 300 * MB });
+    const before = dayRow().memoryWaits || 0;
+    const started = Date.now();
+    await waitForMemory();
+    expect(Date.now() - started).toBeLessThan(100);
+    expect(dayRow().memoryWaits || 0).toBe(before);
+  });
+
+  test("waits until memory is back under the warning level (heap and Buffers count)", async () => {
+    let high = true;
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+    jest.spyOn(process, "memoryUsage").mockImplementation(() => (high
+      ? { heapUsed: 300 * MB, external: 200 * MB, rss: 800 * MB } // 500 MB in use: over 450
+      : { heapUsed: 150 * MB, external: 10 * MB, rss: 600 * MB }));
+    const before = dayRow().memoryWaits || 0;
+    let done = false;
+    const waiting = waitForMemory().then(() => { done = true; });
+    await new Promise(r => setTimeout(r, 700));
+    expect(done).toBe(false);
+    high = false;
+    await waiting;
+    expect(dayRow().memoryWaits).toBe(before + 1);
+  });
+});

@@ -5,6 +5,7 @@
  * movies/series natively, and live-only keeps responses small and memory low.
  */
 
+const { StringDecoder } = require("node:string_decoder");
 const axios = require("axios");
 const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes } = require("./urlguard");
 
@@ -56,8 +57,126 @@ async function getLiveCategories(config) {
 async function getLiveStreams(config, categoryId) {
   let url = `${baseUrl(config)}&action=get_live_streams`;
   if (categoryId) url += `&category_id=${categoryId}`;
-  const { data } = await http.get(url);
-  return data || [];
+  await assertExternalUrl(url);
+  const response = await retryOnClosedConnection(() => client.get(url, { responseType: "stream" }));
+  return readLiveStreamList(response.data);
+}
+
+// A provider's full channel list can be a 50 MB JSON array. Parsed in one go it
+// briefly took 300–500 MB of memory (and crashed the 1 GB machine, 2026-11-21).
+// Read as it downloads instead: each channel is parsed on its own and only the
+// fields StreamVault uses are kept, so the peak is about the size of the result.
+// Same answers as before: an array of channels; anything that isn't a JSON array
+// (an error object, empty or broken JSON) gives what the parsed body was, or [].
+const LIVE_FIELDS = ["stream_id", "name", "title", "stream_icon", "cover", "category_id", "tv_archive", "tv_archive_duration"];
+const LIST_TIME_LIMIT_MS = 60000; // the whole list; the client's 15 s covers the start
+function pickLiveFields(item) {
+  if (!item || typeof item !== "object") return item;
+  const kept = {};
+  for (const key of LIVE_FIELDS) if (item[key] !== undefined) kept[key] = item[key];
+  return kept;
+}
+
+function createArraySplitter(onItem) {
+  const s = { mode: "start", other: "", depth: 0, inString: false, escaped: false, pending: "", start: -1 };
+  const stringChar = (ch) => {
+    if (s.escaped) s.escaped = false;
+    else if (ch === "\\") s.escaped = true;
+    else if (ch === '"') s.inString = false;
+  };
+  const structuralChar = (ch, i, text) => {
+    if (ch === '"') {
+      s.inString = true;
+    } else if (ch === "{" || ch === "[") {
+      if (s.depth === 1) s.start = i;
+      s.depth++;
+    } else if (ch === "}" || ch === "]") {
+      s.depth--;
+      if (s.depth === 1 && s.start >= 0) {
+        onItem(s.pending + text.slice(s.start, i + 1));
+        s.pending = "";
+        s.start = -1;
+      }
+    }
+  };
+  // First non-space character: "[" starts the array, anything else isn't one.
+  // Returns where scanning goes on, or -1 when the body isn't an array.
+  const begin = (text) => {
+    const i = text.search(/\S/);
+    if (i < 0) return text.length;
+    if (text[i] !== "[") {
+      s.mode = "other";
+      s.other = text.slice(i);
+      return -1;
+    }
+    s.mode = "array";
+    s.depth = 1;
+    return i + 1;
+  };
+  return {
+    push(text) {
+      if (s.mode === "other") {
+        s.other += text;
+        return;
+      }
+      const from = s.mode === "start" ? begin(text) : 0;
+      if (from < 0) return;
+      for (let i = from; i < text.length; i++) {
+        if (s.inString) stringChar(text[i]);
+        else structuralChar(text[i], i, text);
+      }
+      if (s.start >= 0) {
+        s.pending += text.slice(s.start);
+        s.start = 0; // the channel goes on at the start of the next chunk
+      }
+    },
+    get isArray() { return s.mode === "array"; },
+    get other() { return s.other; },
+  };
+}
+
+function readLiveStreamList(stream) {
+  return new Promise((resolve, reject) => {
+    const decoder = new StringDecoder("utf8");
+    const items = [];
+    let broken = false; // a channel that isn't valid JSON: the list counts as unreadable
+    const splitter = createArraySplitter((text) => {
+      try {
+        items.push(pickLiveFields(JSON.parse(text)));
+      } catch (_) {
+        broken = true;
+      }
+    });
+    let bytes = 0;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+    const fail = (message) => {
+      stream.destroy();
+      finish(reject, new Error(message));
+    };
+    const timer = setTimeout(() => fail(`timeout of ${LIST_TIME_LIMIT_MS}ms exceeded`), LIST_TIME_LIMIT_MS);
+
+    stream.on("data", (chunk) => {
+      bytes += chunk.length;
+      if (bytes > MAX_RESPONSE_BYTES) return fail(`maxContentLength size of ${MAX_RESPONSE_BYTES} exceeded`);
+      splitter.push(decoder.write(chunk));
+    });
+    stream.on("end", () => {
+      splitter.push(decoder.end());
+      if (splitter.isArray) return finish(resolve, broken ? [] : items);
+      try {
+        finish(resolve, JSON.parse(splitter.other) || []);
+      } catch (_) {
+        finish(resolve, splitter.other || []); // not JSON: as before, the raw text (callers treat it as no list)
+      }
+    });
+    stream.on("error", (e) => finish(reject, e));
+  });
 }
 
 /**
@@ -113,6 +232,7 @@ module.exports = {
   getAccountInfo,
   getLiveCategories,
   getLiveStreams,
+  readLiveStreamList,
   getShortEPG,
   getEpgTable,
   serverUtcOffsetMin,

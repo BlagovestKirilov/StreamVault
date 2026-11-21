@@ -90,6 +90,7 @@ async function withDownloadSlot(download) {
     downloadsRunning++;
   }
   try {
+    await waitForMemory();
     return await download();
   } finally {
     // Hand the slot straight to the next waiter (running count unchanged), or free it
@@ -231,11 +232,34 @@ function evictOldestHalf(cache) {
   keys.slice(0, Math.ceil(keys.length / 2)).forEach(k => cache.delete(k));
 }
 
+// Memory in use (MB): the JS heap plus Buffers outside it — a download's body sits
+// in Buffers, and the 2026-11-21 crash reached 833 MB while the heap read less
+function memoryInUseMB() {
+  const { heapUsed, external } = process.memoryUsage();
+  return (heapUsed + external) / 1024 / 1024;
+}
+
 setInterval(() => {
-  const { heapUsed, rss } = process.memoryUsage();
-  memStats.rssPeakMB = Math.max(memStats.rssPeakMB, Math.round(rss / 1024 / 1024));
-  checkMemory(heapUsed / 1024 / 1024);
+  memStats.rssPeakMB = Math.max(memStats.rssPeakMB, Math.round(process.memoryUsage().rss / 1024 / 1024));
+  checkMemory(memoryInUseMB());
 }, 10 * 1000);
+
+// Before a big download: if memory is already over the warning level, free what the
+// watchdog would free now (it only looks every 10 s) and wait a moment for it to go
+// down, so several big lists don't pile up at once (the crash: the same huge list
+// loaded again right after the caches were cleared). Never waits more than
+// MEMORY_WAIT_MAX_MS: a slow answer is better than none. Counted as memoryWaits.
+const MEMORY_WAIT_MAX_MS = 15000;
+const MEMORY_WAIT_STEP_MS = 500;
+async function waitForMemory() {
+  if (memoryInUseMB() <= HEAP_WARN_MB) return;
+  countToday("memoryWaits");
+  checkMemory(memoryInUseMB());
+  const until = Date.now() + MEMORY_WAIT_MAX_MS;
+  while (memoryInUseMB() > HEAP_WARN_MB && Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, MEMORY_WAIT_STEP_MS));
+  }
+}
 
 // Watchdog step for a measured heap size (MB)
 function checkMemory(mb) {
@@ -266,5 +290,5 @@ module.exports = {
   ACCOUNT_RETRY_MS, XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache,
   accountCache, setCapped, touch, inflight, once, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow,
   downloadQueue, withDownloadSlot, failCache, withFailureCache, handleProviderError, usableEntry,
-  m3uCacheKey, getCachedM3U, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory,
+  m3uCacheKey, getCachedM3U, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory, waitForMemory,
 };
