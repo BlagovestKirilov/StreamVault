@@ -138,6 +138,9 @@ const limitStats = rateLimit("stats", 5, MINUTE);                    // slows gu
 // Stremio requests are cheap (served from cache) but bursty: some apps preload the
 // channel page of every channel in a catalog page. 300/min blocked real users.
 const limitAddon = rateLimit("addon", 1500, MINUTE);
+// The configure/setup pages, their files, icons, robots.txt, the Ko-fi link and
+// unknown paths: cheap, but were open to anyone. A page visit is ~6 files.
+const limitPages = rateLimit("pages", 120, MINUTE);
 
 // --- SSRF protection: see urlguard.js (also enforced inside m3u.js / xtream.js) ---
 
@@ -157,6 +160,7 @@ function sendPageFile(req, res, file) {
   if (known.includes(tag)) return res.status(304).end();
   res.type(path.extname(file)).send(body);
 }
+app.use("/public", limitPages);
 app.use("/public", (req, res, next) => {
   const file = req.path.slice(1);
   if (PAGE_FILES.has(file)) return sendPageFile(req, res, file);
@@ -171,7 +175,7 @@ app.use("/public", express.static(path.join(ROOT, "public"), { maxAge: "7d" }));
 const ICON_FILE = path.join(ROOT, "public", "img", "logo.png");
 // (iPhones also try sized names like /apple-touch-icon-240x240-precomposed.png;
 // Nuvio asks for /favicon.png)
-app.get(["/favicon.ico", "/favicon.png", /^\/apple-touch-icon[\w-]*\.png$/], (_req, res) => {
+app.get(["/favicon.ico", "/favicon.png", /^\/apple-touch-icon[\w-]*\.png$/], limitPages, (_req, res) => {
   res.sendFile(ICON_FILE, { maxAge: "7d" });
 });
 
@@ -367,21 +371,21 @@ function serveConfigure(req, res) {
 }
 // Crawlers may index the configure page (people find the addon) but nothing
 // else — install links carry users' (encrypted) settings
-app.get("/robots.txt", (_req, res) => {
+app.get("/robots.txt", limitPages, (_req, res) => {
   res.type("text/plain").set("Cache-Control", "public, max-age=86400")
     .send("User-agent: *\nAllow: /configure\nAllow: /public/\nDisallow: /\n");
 });
 
-app.get("/configure", serveConfigure);
+app.get("/configure", limitPages, serveConfigure);
 // Target of the QR code on the "Set up StreamVault first" tile (a short link keeps
 // the code coarse enough to scan off a TV). Counted per day as setupScans.
 // "?via=play|link" = tapped on a phone (Play button / link chip) rather than
 // scanned: counted as setupTaps.
-app.get("/setup", (req, res) => {
+app.get("/setup", limitPages, (req, res) => {
   countToday(req.query.via ? "setupTaps" : "setupScans");
   res.redirect(302, "/configure?from=tile");
 });
-app.get("/:config/configure", serveConfigure);
+app.get("/:config/configure", limitPages, serveConfigure);
 
 // Live installs badge for the README (shields.io "endpoint" format). Only this one
 // total is public — /stats stays behind STATS_SECRET. Rounded down with a "+", so the
@@ -399,7 +403,7 @@ app.get("/badge/installs.json", limitConfig, (_req, res) => {
 // time + per day, by where it was: the result dialog or the footer), then the
 // browser goes on to Ko-fi. Only numbers — nothing about who clicked.
 const KOFI_URL = "https://ko-fi.com/streamvaultaddon";
-app.get("/go/kofi", (req, res) => {
+app.get("/go/kofi", limitPages, (req, res) => {
   if (req.method === "GET") { // not link previews (HEAD)
     const from = ["dialog", "footer"].includes(req.query.from) ? req.query.from : "other";
     stats.kofiClicks[from] = (stats.kofiClicks[from] || 0) + 1;
@@ -1059,7 +1063,7 @@ app.get(/^\/[0-9a-f]{40}\/\d+\/stats\.json$/i, (_req, res) => {
 // --- Fallback: people opening the site in a browser land on the configure page ---
 // ("/" or any unknown page). Unknown API/addon (.json) calls get a JSON 404 instead,
 // so Stremio and the configure page still see a real error.
-app.use((req, res) => {
+app.use(limitPages, (req, res) => {
   const isApiCall = req.path.startsWith("/api/") || req.path.startsWith("/public/") || req.path.endsWith(".json");
   // Only page-like paths redirect; a missing file (robots.txt, some-icon.png, ...)
   // is a plain 404 rather than a second download of the configure page
@@ -1075,11 +1079,25 @@ app.use((req, res) => {
 // --- Metrics (Prometheus text) for Fly's built-in Grafana: prometheus.js ---
 const buildMetricsText = () => prometheus.buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX });
 
+// --- Server time limits ---
+// Node's defaults let one request take 5 minutes. No StreamVault answer needs more
+// than a minute (provider downloads stop at 15–60 s, a queued download or a memory
+// wait adds at most ~15 s more): a connection quiet for 60 s is closed, and the
+// request itself (headers and the small JSON bodies) must arrive within 20 s.
+const RESPONSE_LIMIT_MS = 60000;
+const REQUEST_LIMIT_MS = 20000;
+function applyServerLimits(server) {
+  server.setTimeout(RESPONSE_LIMIT_MS);
+  server.requestTimeout = REQUEST_LIMIT_MS;
+  server.headersTimeout = REQUEST_LIMIT_MS;
+  return server;
+}
+
 // --- Start server ---
 if (require.main === module) {
-  app.listen(PORT, "0.0.0.0", () => {
+  applyServerLimits(app.listen(PORT, "0.0.0.0", () => {
     console.log(`StreamVault IPTV running on 0.0.0.0:${PORT}`);
-  });
+  }));
   // Internal only: fly.toml exposes 7000 to the internet, this port just to Fly's scraper
   require("node:http").createServer((req, res) => {
     if (req.url !== "/metrics") {
@@ -1095,4 +1113,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats, buildMetricsText, checkMemory };
+module.exports = { app, applyServerLimits, parseConfigPath, parseExtra, makePosterUrl, encryptConfig, decryptConfig, isPrivateIp, validateExternalUrl, safeError, formatAccountInfo, epgTimeRange, saveStats, buildMetricsText, checkMemory };

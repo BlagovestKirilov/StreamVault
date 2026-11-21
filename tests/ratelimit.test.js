@@ -47,3 +47,47 @@ describe("rate limiting", () => {
     expect(getIp(req({ "x-forwarded-for": "1.2.3.4" }))).toBe("10.0.0.1");
   });
 });
+
+// ─── Pages, their files and unknown paths have a limit too ───
+
+describe("page rate limit", () => {
+  test("121st page-type request from one IP in a minute gets 429; addon routes unaffected", async () => {
+    const ip = "203.0.113.120";
+    const paths = ["/configure", "/public/css/configure.css", "/robots.txt", "/favicon.ico", "/go/kofi", "/setup", "/no-such-page"];
+    for (let i = 0; i < 120; i++) {
+      const res = await request(app).get(paths[i % paths.length]).set("Fly-Client-IP", ip);
+      expect(res.status).not.toBe(429);
+    }
+    for (const path of paths) {
+      expect((await request(app).get(path).set("Fly-Client-IP", ip)).status).toBe(429);
+    }
+    expect((await request(app).get("/manifest.json").set("Fly-Client-IP", ip)).status).toBe(200); // own budget
+    expect((await request(app).get("/health").set("Fly-Client-IP", ip)).status).toBe(200);         // never limited
+  });
+});
+
+describe("server time limits", () => {
+  const { applyServerLimits } = require("../src/addon");
+
+  test("a quiet connection is closed after 60 s; the request must arrive within 20 s", () => {
+    const server = applyServerLimits(require("node:http").createServer());
+    expect(server.timeout).toBe(60000);
+    expect(server.requestTimeout).toBe(20000);
+    expect(server.headersTimeout).toBe(20000);
+  });
+
+  test("a client that never sends its full request is cut off", async () => {
+    const net = require("node:net");
+    const server = require("node:http").createServer(app);
+    applyServerLimits(server);
+    server.setTimeout(300); // same mechanism, short for the test
+    await new Promise(r => server.listen(0, "127.0.0.1", r));
+    const closed = await new Promise((resolve) => {
+      const socket = net.connect(server.address().port, "127.0.0.1", () => socket.write("GET /health HTTP/1.1\r\nHost: x\r\n")); // headers never finished
+      socket.on("close", () => resolve(true));
+      setTimeout(() => resolve(false), 3000);
+    });
+    await new Promise(r => server.close(r));
+    expect(closed).toBe(true);
+  });
+});
