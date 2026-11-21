@@ -1076,6 +1076,18 @@ app.use(limitPages, (req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
+// --- Last resort for an unexpected error in a handler ---
+// Express 5 passes errors from async handlers here (Express 4 left them unhandled,
+// which stopped the process). Without this, Express's own page would show the
+// error's stack trace (NODE_ENV isn't "production" on Fly). Logged without URLs or
+// logins; the client gets a short JSON answer.
+// (4 parameters: that is how Express tells an error handler apart)
+app.use((err, req, res, _next) => {
+  console.error(`[ERROR] ${req.method} ${req.route?.path || "unmatched"}: ${safeError(err)}`);
+  if (res.headersSent) return res.end();
+  res.status(500).json({ error: "Something went wrong" });
+});
+
 // --- Metrics (Prometheus text) for Fly's built-in Grafana: prometheus.js ---
 const buildMetricsText = () => prometheus.buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX });
 

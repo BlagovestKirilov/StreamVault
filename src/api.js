@@ -16,10 +16,11 @@ const {
 // as they are saved (short keys): cleaned the same way before anything uses them
 const LOGIN_FIELDS = ["server", "username", "password", "m3uUrl", "s", "u", "p", "m"];
 function cleanLoginFields(req, _res, next) {
+  // Express 5 leaves req.body undefined when nothing (or no JSON) was sent:
+  // every handler here reads it as an object, as Express 4 gave
+  if (!req.body || typeof req.body !== "object") req.body = {};
   const body = req.body;
-  if (body && typeof body === "object") {
-    for (const key of LOGIN_FIELDS) if (typeof body[key] === "string") body[key] = cleanField(body[key]);
-  }
+  for (const key of LOGIN_FIELDS) if (typeof body[key] === "string") body[key] = cleanField(body[key]);
   next();
 }
 const {
@@ -327,7 +328,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
   // Counts only — no channels are kept in memory, and concurrent clicks share one download
   app.post("/api/m3u-groups", limitProviderChecks, async (req, res) => {
     try {
-      const { m3uUrl } = req.body || {};
+      const { m3uUrl } = req.body;
       if (!m3uUrl) {
         return res.status(400).json({ error: "Missing M3U URL" });
       }
@@ -417,7 +418,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
   });
 
   app.post("/api/test", limitProviderChecks, async (req, res) => {
-    const body = req.body || {};
+    const { body } = req;
     try {
       if (isOwnAddress(body.type === "xtream" ? body.server : body.m3uUrl, req)) {
         return rejectTest(res, body.type === "xtream" ? "xtream" : "m3u", "own_address", OWN_ADDRESS_HINT);

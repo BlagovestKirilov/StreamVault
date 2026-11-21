@@ -567,3 +567,24 @@ describe("failed tests record the address shape (private parts hidden)", () => {
     expect(JSON.stringify(f)).not.toMatch(/example\.com|token123abc|key=abc/);
   });
 });
+
+// ─── Requests without a JSON body (Express 5 leaves req.body undefined) ───
+
+describe("API calls without a body or with broken JSON", () => {
+  test("are answered like a missing field, never with a crash or a stack trace", async () => {
+    const noBody = await request(app).post("/api/categories");
+    expect(noBody.status).toBe(400);
+    expect(noBody.body.error).toBe("Missing credentials");
+    expect((await request(app).post("/api/m3u-groups")).status).toBe(400);
+    expect((await request(app).post("/api/link")).status).toBe(400);
+    expect((await request(app).post("/api/test")).status).toBe(400);
+
+    const broken = await request(app).post("/api/test").set("Content-Type", "application/json").send("{not json");
+    expect(broken.status).toBe(400);
+    expect(broken.body).toEqual({ ok: false, error: "Invalid request" });
+    expect(broken.text).not.toMatch(/at .*\.js/); // no stack trace
+
+    const tooBig = await request(app).post("/api/test").set("Content-Type", "application/json").send(JSON.stringify({ m3uUrl: "x".repeat(20000) }));
+    expect(tooBig.status).toBe(413);
+  });
+});
