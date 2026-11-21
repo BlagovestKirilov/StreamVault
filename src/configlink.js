@@ -58,6 +58,15 @@ function homeRowsFrom(r) {
   return /^[0-8]$/.test(String(r ?? "")) ? Number(r) : MAX_HOME_ROWS;
 }
 
+// A typed or pasted login field without what can't be part of it: spaces at either
+// end and invisible characters anywhere (zero-width space/joiners, word joiner,
+// byte-order mark, soft hyphen) — they come along when a login is copied from a
+// chat app or web page, look like nothing, and make the provider refuse the login
+const INVISIBLE_CHARS = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;
+function cleanField(value) {
+  return String(value ?? "").replaceAll(INVISIBLE_CHARS, "").trim();
+}
+
 // Settings object (short keys) → config the handlers use; null if not a StreamVault setup
 function configFromSettings(obj) {
   if (!obj) return null;
@@ -66,7 +75,7 @@ function configFromSettings(obj) {
     return { type: "xtream", server: obj.s || "", username: obj.u || "", password: obj.p || "", country: obj.c || "", timezone: obj.z || "", homeRows };
   }
   if (obj.t === "m3u") {
-    return { type: "m3u", url: obj.m || "", country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g), homeRows };
+    return { type: "m3u", url: cleanField(obj.m), country: obj.c || "", timezone: obj.z || "", groups: parseGroups(obj.g), homeRows };
   }
   return null;
 }
@@ -147,9 +156,9 @@ function hasScheme(server) {
 // before the fix are repaired too.
 function normalizeXtreamLogin(server, username, password) {
   const out = {
-    server: String(server || "").trim(),
-    username: String(username || "").trim(),
-    password: String(password || "").trim(),
+    server: cleanField(server),
+    username: cleanField(username),
+    password: cleanField(password),
   };
   // Providers often give the server without a scheme ("provider.com:8080"): plain
   // http is what Xtream panels speak. Test Connection also tries https (api.js).
@@ -172,5 +181,5 @@ function normalizeXtreamLogin(server, username, password) {
 
 module.exports = {
   CONFIG_SECRET, encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted,
-  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS,
+  settingsFromBase64, configFromQueryString, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS, cleanField,
 };

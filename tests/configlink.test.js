@@ -137,3 +137,35 @@ describe("Xtream server address in its parsed form", () => {
     expect(catchup.headers.location).toBe("http://provider.example:8080/timeshift/u1/p1/60/2026-11-01:07-00/12.ts");
   });
 });
+
+// ─── Invisible characters in pasted logins ───
+
+describe("login fields lose invisible characters and outer spaces", () => {
+  const { cleanField, normalizeXtreamLogin } = require("../src/configlink");
+  const zw = "\u200B"; // zero-width space, as copied from chat apps
+
+  test("cleanField drops zero-width space/joiners, word joiner, BOM and soft hyphen", () => {
+    expect(cleanField(` u${zw}ser\u200C\u200D\u2060\uFEFF\u00AD `)).toBe("user");
+    expect(cleanField(undefined)).toBe("");
+    expect(cleanField("p@ss word")).toBe("p@ss word"); // inner spaces are kept
+  });
+
+  test("normalizeXtreamLogin cleans server, username and password", () => {
+    expect(normalizeXtreamLogin(`${zw}http://example.com:8080${zw}`, `\uFEFFuser`, `pass\u00AD `))
+      .toEqual({ server: "http://example.com:8080", username: "user", password: "pass" });
+  });
+
+  test("saved settings and the M3U link come back clean (saved via /api/link)", async () => {
+    const xt = await request(app).post("/api/link").send({ t: "xtream", s: `http://example.com${zw}`, u: `${zw}user`, p: `pa${zw}ss`, c: "" });
+    const back = (await request(app).get(`/api/config/${xt.body.config}`)).body;
+    expect([back.server, back.username, back.password]).toEqual(["http://example.com", "user", "pass"]);
+    const m3u = await request(app).post("/api/link").send({ t: "m3u", m: `\uFEFFhttp://example.com/list.m3u${zw}`, c: "" });
+    expect((await request(app).get(`/api/config/${m3u.body.config}`)).body.m3uUrl).toBe("http://example.com/list.m3u");
+  });
+
+  test("Test Connection gets the cleaned login", async () => {
+    const res = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: `${zw}https://${zw}` });
+    // only invisible characters around an empty address: refused as an address problem, not sent anywhere
+    expect(res.status).toBe(400);
+  });
+});

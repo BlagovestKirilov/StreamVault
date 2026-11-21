@@ -9,8 +9,19 @@ const m3u = require("./m3u");
 const { safeError } = require("./util");
 const { checkExternalUrl, validateExternalUrl, trimTrailingSlashes } = require("./urlguard");
 const {
-  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS,
+  encryptConfig, configFromSettings, isPlaylistLink, normalizeXtreamLogin, hasScheme, MAX_HOME_ROWS, cleanField,
 } = require("./configlink");
+
+// Login fields as the configure page sends them (Test Connection, categories) and
+// as they are saved (short keys): cleaned the same way before anything uses them
+const LOGIN_FIELDS = ["server", "username", "password", "m3uUrl", "s", "u", "p", "m"];
+function cleanLoginFields(req, _res, next) {
+  const body = req.body;
+  if (body && typeof body === "object") {
+    for (const key of LOGIN_FIELDS) if (typeof body[key] === "string") body[key] = cleanField(body[key]);
+  }
+  next();
+}
 const {
   stats, countToday, countCode, countKey, providerErrorKey, noteRecent, recentTestFailures, noteNewInstall,
 } = require("./stats");
@@ -293,6 +304,7 @@ function answerTestFailure(body, res, e) {
 // Registered by addon.js at the same point as before (Express matches routes in
 // order). The install-link helpers come from addon.js (they need its link store).
 function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, limitProviderChecks, limitConfig }) {
+  app.use("/api", cleanLoginFields);
   // --- API: Fetch categories from provider ---
   app.post("/api/categories", limitProviderChecks, async (req, res) => {
     try {

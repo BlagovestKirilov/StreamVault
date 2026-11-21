@@ -57,15 +57,23 @@ const PASTED_PLAYLIST_TEXT = 'Paste the playlist link (http://…), not the play
 const looksLikePlaylistText = (v) => /#EXT(M3U|INF)/i.test(v) || v.length > 2048;
 
 // Validates the form; returns the /api/test body, or null (showing why unless quiet)
+// A field's value without spaces at either end or invisible characters anywhere
+// (zero-width space/joiners, word joiner, byte-order mark, soft hyphen): they come
+// along when a login is copied from a chat app or web page and look like nothing
+const INVISIBLE_CHARS = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;
+function fieldValue(id) {
+  return document.getElementById(id).value.replaceAll(INVISIBLE_CHARS, '').trim();
+}
+
 function getCheckBody(quiet) {
   const fail = (msg) => {
     if (!quiet) showToast(msg);
     return null;
   };
   if (source === 'xtream') {
-    const server = document.getElementById('server').value.trim();
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value.trim();
+    const server = fieldValue('server');
+    const username = fieldValue('username');
+    const password = fieldValue('password');
     if (!server || !username || !password) return fail('Fill in server, username and password first');
     // Without http:// is fine: the server tries http and https and the field
     // gets the address that worked. Only checks the address can be parsed, never
@@ -74,7 +82,7 @@ function getCheckBody(quiet) {
     if (!isValidUrl(server) && !isValidUrl('http://' + server)) return fail('Server URL must be a valid URL (http://...)');
     return { type: 'xtream', server, username, password };
   }
-  const m3uUrl = document.getElementById('m3uUrl').value.trim();
+  const m3uUrl = fieldValue('m3uUrl');
   if (!m3uUrl) return fail('Enter the playlist URL first');
   if (looksLikePlaylistText(m3uUrl)) return fail(PASTED_PLAYLIST_TEXT);
   if (!isValidUrl(m3uUrl)) return fail('Playlist URL must be a valid URL (http://...)');
@@ -87,7 +95,7 @@ function getCheckBody(quiet) {
 // What's missing in the form, for the hint under the button
 function missingDetailsHint() {
   if (source === 'xtream') return 'Enter a valid server URL (http://...), username and password';
-  if (looksLikePlaylistText(document.getElementById('m3uUrl').value.trim())) return PASTED_PLAYLIST_TEXT;
+  if (looksLikePlaylistText(fieldValue('m3uUrl'))) return PASTED_PLAYLIST_TEXT;
   return 'Enter a valid playlist URL (http://...)';
 }
 
@@ -121,14 +129,14 @@ function splitXtreamLink() {
   const serverEl = document.getElementById('server');
   let u;
   try {
-    u = new URL(serverEl.value.trim());
+    u = new URL(fieldValue('server'));
   } catch (_) {
     return; // not a full URL yet: nothing to split
   }
   // A playlist link (".../index.m3u") belongs in the M3U tab
   // (checks the path, or the host when there's no path: "http://name.m3u")
   if (/\.m3u8?$/i.test(u.pathname === '/' ? u.hostname : u.pathname)) {
-    const link = serverEl.value.trim();
+    const link = fieldValue('server');
     serverEl.value = '';
     setTab('m3u');
     document.getElementById('m3uUrl').value = link;
@@ -140,8 +148,8 @@ function splitXtreamLink() {
   if (!isFullLink) return;
   const userEl = document.getElementById('username');
   const passEl = document.getElementById('password');
-  if (!userEl.value.trim() && u.searchParams.get('username')) userEl.value = u.searchParams.get('username');
-  if (!passEl.value.trim() && u.searchParams.get('password')) passEl.value = u.searchParams.get('password');
+  if (!fieldValue('username') && u.searchParams.get('username')) userEl.value = u.searchParams.get('username');
+  if (!fieldValue('password') && u.searchParams.get('password')) passEl.value = u.searchParams.get('password');
   serverEl.value = u.origin;
   showToast('Filled in server, username and password from your link', true);
 }
@@ -158,7 +166,7 @@ function m3uLinkToXtream() {
   if (editingLink) return;
   let u;
   try {
-    u = new URL(document.getElementById('m3uUrl').value.trim());
+    u = new URL(fieldValue('m3uUrl'));
   } catch (_) {
     return;
   }
