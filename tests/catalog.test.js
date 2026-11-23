@@ -300,6 +300,29 @@ describe("home rows, merged versions, clean names", () => {
     expect((await request(app).get(`/${enc(settings)}/manifest.json`)).body.version).toBe("1.2.0");
   });
 
+  test("cold app start with a slow channel list: quick category names, the list keeps loading", async () => {
+    const cfg = xtreamSetup("2,1");
+    let release;
+    xtream.getLiveStreams.mockImplementation((_cfg, catId) => new Promise(r => {
+      const prev = release;
+      release = () => { prev?.(); r(STREAMS[catId]); };
+    }));
+    const started = Date.now();
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(Date.now() - started).toBeLessThan(3000); // was: waited for the whole list (up to 8 s)
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["UK| NEWS", "[BU] NORTHLAND"]);
+    expect(catalogs.map(c => c.name)).toEqual(["StreamVault Live", "NEWS", "NORTHLAND"]);
+    release(); // the list arrives: the channel list is served from it
+    expect((await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`)).body.metas.length).toBeGreaterThan(0);
+  });
+
+  test("cold app start, Xtream with no categories picked: every category, A–Z", async () => {
+    const cfg = xtreamSetup("");
+    xtream.getLiveStreams.mockImplementation(() => new Promise(() => {})); // never arrives
+    const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;
+    expect(catalogs[0].extra.find(e => e.name === "genre").options).toEqual(["[BU] NORTHLAND", "KIDS", "UK| NEWS"]);
+  });
+
   test("channel list not ready: the manifest still lists the picked categories (Xtream and M3U)", async () => {
     const cfg = xtreamSetup("2,1");
     xtream.getLiveStreams.mockRejectedValue(new Error("timeout of 15000ms exceeded")); // list not available

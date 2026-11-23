@@ -22,7 +22,7 @@ const {
 const {
   m3uCache, M3U_CACHE_MAX, xtreamCache, XTREAM_CACHE_MAX, EPG_CACHE_MAX, epgCache, accountCache,
   setCapped, touch, inflight, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow, downloadQueue,
-  failCache, handleProviderError, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory,
+  failCache, handleProviderError, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory, m3uCacheKey,
 } = require("./cache");
 const {
   NOTICES, classifyError, SETUP_PLAY_STREAM, noticeMeta, ACCOUNT_WAIT_MS, accountNotice,
@@ -30,7 +30,7 @@ const {
 } = require("./notices");
 const {
   xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, getXtreamMeta, incompleteMetas,
-  getXtreamStreams,
+  getXtreamStreams, xtreamCacheKey,
 } = require("./xtream-addon");
 const { getM3UCatalog, getM3UMeta, getM3UStreams } = require("./m3u-addon");
 const { registerApiRoutes, formatAccountInfo } = require("./api");
@@ -490,7 +490,7 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
   // Returning users aren't logged (apps re-read the manifest constantly — it was
   // most of the log); they're counted in /stats as launches / dau
   if (isNew) console.log(`[INSTALL] ${maskIp(ip)} NEW install — type: ${cType}`);
-  let { names: genres, picks } = await getGenresWithin(req.userConfig, req.configKey, GENRES_TIMEOUT_MS);
+  let { names: genres, picks } = await manifestCategories(req.userConfig, req.configKey);
   // Channel list not ready in time (e.g. right after Save changes added a category):
   // the picked categories still go into the manifest — apps keep it until restart
   if (genres.length === 0) {
@@ -505,13 +505,49 @@ app.get("/:config/manifest.json", limitAddon, extractConfig, async (req, res) =>
 const PICKED_NAMES_TIMEOUT_MS = 3000;
 // Picked categories by name in pick order, without the channel list: M3U group
 // names are in the settings; Xtream ids → names via the (small) category list
+// (an Xtream setup with no categories picked: all of them, A–Z like the channel list)
+const BY_NAME = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 async function pickedCategoryNames(config) {
   if (config.type === "m3u") return (config.groups || []).slice(0, MAX_GENRE_OPTIONS);
   const ids = xtreamCategoryIds(config);
-  if (ids.length === 0) return [];
   const categories = await xtream.getLiveCategories(config);
-  const names = new Map((Array.isArray(categories) ? categories : []).map(c => [String(c.category_id), c.category_name]));
+  const list = Array.isArray(categories) ? categories : [];
+  if (ids.length === 0) {
+    return list.map(c => c.category_name).filter(Boolean).toSorted(BY_NAME.compare).slice(0, MAX_GENRE_OPTIONS);
+  }
+  const names = new Map(list.map(c => [String(c.category_id), c.category_name]));
   return ids.map(id => names.get(id)).filter(Boolean).slice(0, MAX_GENRE_OPTIONS);
+}
+
+// Category names for the manifest (app start). When neither they nor the channel
+// list are in memory (after a restart, or every 6 h), the whole list had to be
+// downloaded first: app start took 2+ s for those users. Now the full list and the
+// small category list (Xtream: one quick call; M3U: the picked groups are in the
+// settings) are asked for together. The full list is still preferred — only it
+// knows which picks have channels (a pick without any gets no row) — if it comes
+// within QUICK_MANIFEST_WAIT_MS; otherwise the quick names answer and the list
+// keeps loading for the channel list the app asks for next. An M3U playlist with
+// all groups has no quick names: the full list, as before. Counted as quickManifests.
+const QUICK_MANIFEST_WAIT_MS = 1500;
+const STILL_LOADING = Symbol("still loading");
+function categoriesInMemory(config, cacheKey) {
+  const genres = genresCache.get(cacheKey);
+  if (genres && Date.now() - genres.ts < GENRES_CACHE_TTL) return true;
+  return config.type === "xtream"
+    ? xtreamCache.has(xtreamCacheKey(config, "tv", xtreamCategoryIds(config)))
+    : m3uCache.has(m3uCacheKey(config));
+}
+async function manifestCategories(config, cacheKey) {
+  if (categoriesInMemory(config, cacheKey)) return getGenresWithin(config, cacheKey, GENRES_TIMEOUT_MS);
+  const full = getGenres(config, cacheKey);
+  const quick = withinMs(pickedCategoryNames(config), PICKED_NAMES_TIMEOUT_MS, []);
+  const early = await withinMs(full, QUICK_MANIFEST_WAIT_MS, STILL_LOADING);
+  if (early !== STILL_LOADING && early.names.length > 0) return early;
+  const names = await quick;
+  if (names.length === 0) return getGenresWithin(config, cacheKey, GENRES_TIMEOUT_MS);
+  countToday("quickManifests");
+  full.catch(() => null); // keeps loading for the channel list; a failure shows there
+  return { names, picks: names.slice(0, MAX_HOME_ROWS) };
 }
 
 const GENRES_TIMEOUT_MS = 8000;      // manifest must stay fast; fall back to no filter

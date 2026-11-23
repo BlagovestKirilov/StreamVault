@@ -471,5 +471,5 @@ function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
 
 module.exports = {
   xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, forceRefresh, getXtreamMeta, incompleteMetas, guideCacheUntil,
-  getXtreamStreams,
+  getXtreamStreams, xtreamCacheKey,
 };
