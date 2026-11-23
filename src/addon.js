@@ -608,7 +608,7 @@ function configuredManifest(genres, type, config, picks) {
     // Says which other install to delete. Points at the live "Set up StreamVault
     // first" tile, not the empty install's description: apps keep the description
     // from install time, so older empty installs never show the new wording.
-    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}. Changed your setup? In Stremio press Uninstall, then Install to load it. If another StreamVault only shows “Set up StreamVault first”, delete that one.`,
     catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config, picks)],
     behaviorHints: { configurable: true },
   };
