@@ -782,7 +782,12 @@ void (async function prefillInstalledSetup() {
       document.getElementById('m3uUrl').value = cfg.m3uUrl || '';
     }
     selectedCategories = new Set((cfg.categories || []).map(String));
-    if (Number.isInteger(cfg.homeRows)) homeRows = cfg.homeRows;
+    // A saved number of rows that covered every category meant "all of them" (the
+    // first version of the choice saved e.g. 3 for 3 categories): read it as all, so
+    // a category added now gets its row too. Fewer than the categories was a choice.
+    if (Number.isInteger(cfg.homeRows)) {
+      homeRows = cfg.homeRows >= selectedCategories.size ? MAX_HOME_ROWS : cfg.homeRows;
+    }
     loadedSetup = setupKey();
     updateButtons();
     // Editing an installed StreamVault: saving updates it in place, nothing to install
