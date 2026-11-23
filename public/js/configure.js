@@ -99,22 +99,35 @@ function missingDetailsHint() {
   return 'Enter a valid playlist URL (http://...)';
 }
 
+// Editing an installed StreamVault: what was loaded, to tell whether anything
+// changed (Save changes stays off until something does). The same shape as what
+// a save would store: login, categories in order, home screen rows.
+let loadedSetup = '';
+function setupKey() {
+  const rows = selectedCategories.size >= 2 && homeRows < MAX_HOME_ROWS ? homeRows : MAX_HOME_ROWS;
+  return JSON.stringify({ login: getCheckBody(true), categories: [...selectedCategories], rows });
+}
+const nothingChanged = () => !!editingLink && !!loadedSetup && setupKey() === loadedSetup;
+
 function updateButtons() {
   const body = getCheckBody(true);
   const passed = !!body && lastCheckKey === JSON.stringify(body);
+  const unchanged = passed && nothingChanged();
   const btnTest = document.getElementById('btnTest');
   const btnInstall = document.getElementById('btnInstall');
   btnTest.style.display = passed ? 'none' : 'flex';
   btnInstall.style.display = passed ? 'flex' : 'none';
   btnTest.disabled = !body || checking;
   btnTest.classList.toggle('incomplete', !body && !checking);
-  btnInstall.disabled = checking;
+  btnInstall.disabled = checking || unchanged;
   const hint = document.getElementById('installHint');
   if (!body) {
     hint.textContent = missingDetailsHint();
   } else if (!passed) {
     // matches the button: "Save changes" once an installed setup has loaded
     hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test`;
+  } else if (unchanged) {
+    hint.textContent = 'Nothing changed yet — change your categories, rows or login to save';
   } else if (document.getElementById('btnInstallText').textContent === 'Save changes') {
     hint.textContent = 'Saving also reloads your channel list from your provider';
   } else {
@@ -387,6 +400,10 @@ async function install() {
     // and then Install replaces the copy it stored (same link, no duplicate;
     // savedHint says so). Not on phones (the hint says to open it).
     const updated = showInstallResult(encData, manifestUrl);
+    if (updated) {
+      loadedSetup = setupKey(); // what's saved now: Save changes off until the next change
+      updateButtons();
+    }
     if (!updated || !ON_PHONE) openInApp(manifestUrl);
   } catch (_) {
     showToast('Failed to generate install URL');
@@ -542,6 +559,7 @@ let homeRows = MAX_HOME_ROWS;
 const categoryName = (id) => (allCategories.find(c => c.id === id) || {}).name || id;
 
 function renderSelectedTags(focus) {
+  updateButtons(); // categories, order or rows changed: Save changes may turn on or off
   const container = document.getElementById('catSelected');
   container.innerHTML = '';
   document.getElementById('catCount').textContent = selectedCategories.size > 0
@@ -765,6 +783,7 @@ void (async function prefillInstalledSetup() {
     }
     selectedCategories = new Set((cfg.categories || []).map(String));
     if (Number.isInteger(cfg.homeRows)) homeRows = cfg.homeRows;
+    loadedSetup = setupKey();
     updateButtons();
     // Editing an installed StreamVault: saving updates it in place, nothing to install
     document.getElementById('btnInstallText').textContent = 'Save changes';

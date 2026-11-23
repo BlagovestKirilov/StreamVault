@@ -512,7 +512,9 @@ body {
   transform: translateY(0) scale(0.98);
 }
 .btn-test:disabled,
-.btn-test:disabled:hover {
+.btn-test:disabled:hover,
+.btn-install:disabled,
+.btn-install:disabled:hover {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
