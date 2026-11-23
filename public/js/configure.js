@@ -326,7 +326,7 @@ function savedHint() {
   const stremio = ON_PHONE
     ? 'In Stremio: tap Open in app, press Uninstall and then Install, then fully close and reopen Stremio.'
     : 'In Stremio (it opens StreamVault now): press Uninstall and then Install — without Uninstall Stremio keeps the old version. Then fully close and reopen Stremio.';
-  return `${stremio}\nIn Nuvio: fully close and reopen the app.`;
+  return `${stremio}\nIn Nuvio: fully close and reopen the app.\nOther apps: reinstall or restart the app.`;
 }
 
 // Phones: the Stremio app's dialog for an installed addon has no Upgrade (the
