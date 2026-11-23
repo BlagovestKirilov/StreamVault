@@ -610,7 +610,7 @@ function configuredManifest(genres, type, config, picks) {
     // from install time, so older empty installs never show the new wording.
     // One line each (apps that ignore line breaks show a space): what to do after
     // Save changes differs per app — Stremio keeps its copy until reinstalled
-    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}.\nChanged your setup?\nStremio: Uninstall, then Install.\nNuvio: close and reopen the app.\nIf another StreamVault only shows “Set up StreamVault first”, delete that one.`,
+    description: `✓ Connected to your ${type === "xtream" ? "Xtream account" : "M3U playlist"}.\nChanged your setup?\nStremio: Uninstall, then Install.\nNuvio: close and reopen the app.\nOther apps: reinstall or restart the app.\nIf another StreamVault only shows “Set up StreamVault first”, delete that one.`,
     catalogs: [...BASE_MANIFEST.catalogs.map(c => ({ ...c, extra })), ...categoryRows(genres, config, picks)],
     behaviorHints: { configurable: true },
   };
