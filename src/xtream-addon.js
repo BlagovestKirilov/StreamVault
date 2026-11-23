@@ -142,17 +142,41 @@ function forceRefresh(config) {
   return true;
 }
 
-// TV guide listings for one channel (see EPG_CACHE_TTL); failures aren't kept
+// TV guide listings for one channel; failures aren't kept. A guide is good until
+// the programme on now ends (then "Now" moves on): kept until then, at least a
+// minute and at most an hour; a channel with no usable guide is asked again after
+// 10 minutes. (It was 3 minutes for everything, so most guides were fetched again
+// while still right.)
+const GUIDE_MIN_MS = 60 * 1000;
+const GUIDE_MAX_MS = 60 * 60 * 1000;
+const NO_GUIDE_MS = 10 * 60 * 1000;
+function guideCacheUntil(listings, nowMs) {
+  if (!listings?.length) return nowMs + NO_GUIDE_MS;
+  const { now } = nowAndNext(listings, nowMs / 1000);
+  const endMs = Number(now?.stop_timestamp || now?.end_timestamp) * 1000;
+  if (!Number.isFinite(endMs) || endMs <= nowMs) return nowMs + NO_GUIDE_MS; // no end time: as "no guide"
+  return Math.min(nowMs + GUIDE_MAX_MS, Math.max(nowMs + GUIDE_MIN_MS, endMs));
+}
 async function getCachedEPG(config, streamId) {
   const key = `${trimTrailingSlashes(config.server)}_${streamId}`;
   const cached = touch(epgCache, key);
-  if (cached && Date.now() - cached.ts < EPG_CACHE_TTL) return cached.data;
+  if (cached && Date.now() < cached.until) return cached.data;
   return once(`epg:${key}`, async () => {
     const data = await xtream.getShortEPG(config, streamId);
-    setCapped(epgCache, key, { data, ts: Date.now() }, EPG_CACHE_MAX);
+    const ts = Date.now();
+    setCapped(epgCache, key, { data, ts, until: guideCacheUntil(data, ts) }, EPG_CACHE_MAX);
     return data;
   });
 }
+
+// A channel page never waits longer than this for the provider's TV guide or
+// account info: a slow provider held it for up to 15 s (apps also load channel
+// pages in the background for whole rows). The answers still arrive and are
+// cached, so the next open shows them. Pages answered without them are marked
+// (incompleteMetas) so apps aren't told to keep that version.
+const META_WAIT_MS = 1500;
+const WAITED_TOO_LONG = Symbol("waited too long");
+const incompleteMetas = new WeakSet();
 
 // "🗓 Subscription expires 2026-12-01" for the channel page, or "" when unknown
 function subscriptionLine(info) {
@@ -205,16 +229,12 @@ async function getXtreamMeta(config, type, id) {
   const poster = item ? channelPoster(item.logo, name) : makePosterUrl(name);
   let description = "📺 Live Channel — StreamVault IPTV";
 
-  // Subscription expiry (cached; fetched alongside the EPG)
-  const accountPromise = getXtreamAccount(config);
-
-  // Fetch EPG for live channels
-  try {
-    const guide = guideLines(await getCachedEPG(config, streamId), config.timezone);
-    if (guide) description = "📺 TV Guide:\n" + guide;
-  } catch (_) {
-    // No TV guide from the provider: the channel page just shows no guide
-  }
+  // Subscription expiry (cached; fetched alongside the guide); both waited for at
+  // most META_WAIT_MS. A failed guide just means no guide on the page.
+  const accountPromise = withinMs(getXtreamAccount(config), META_WAIT_MS, WAITED_TOO_LONG);
+  const listings = await withinMs(getCachedEPG(config, streamId), META_WAIT_MS, WAITED_TOO_LONG);
+  const guide = listings === WAITED_TOO_LONG ? "" : guideLines(listings, config.timezone);
+  if (guide) description = "📺 TV Guide:\n" + guide;
 
   const archived = archivedVersion(catalog, item, catalogView(catalog).versionsById.get(id) || []);
   if (archived) {
@@ -222,13 +242,15 @@ async function getXtreamMeta(config, type, id) {
     description += `\n\n⏪ Catch-up: past ${days} day${days === 1 ? "" : "s"} — in the play options`;
   }
 
-  const subscription = subscriptionLine(await accountPromise);
+  const account = await accountPromise;
+  const subscription = account === WAITED_TOO_LONG ? "" : subscriptionLine(account);
   if (subscription) description += `\n\n${subscription}`;
 
   // Not in the (just loaded) catalog → the provider doesn't list it in the
   // user's categories; refetching the full stream list would only spike memory
   const meta = { id, type, name, poster, posterShape: "square", description };
   if (item?.genres) meta.genres = item.genres;
+  if (listings === WAITED_TOO_LONG || account === WAITED_TOO_LONG) incompleteMetas.add(meta);
   return meta;
 }
 
@@ -448,6 +470,6 @@ function xtreamStreamPair(config, channel, { baseUrl, configPath }, formats) {
 }
 
 module.exports = {
-  xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, forceRefresh, getXtreamMeta,
+  xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, forceRefresh, getXtreamMeta, incompleteMetas, guideCacheUntil,
   getXtreamStreams,
 };

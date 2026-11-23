@@ -29,7 +29,7 @@ const {
   accountProblem,
 } = require("./notices");
 const {
-  xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, getXtreamMeta,
+  xtreamCategoryIds, getXtreamCatalog, epgTimeRange, getXtreamAccount, getXtreamMeta, incompleteMetas,
   getXtreamStreams,
 } = require("./xtream-addon");
 const { getM3UCatalog, getM3UMeta, getM3UStreams } = require("./m3u-addon");
@@ -743,7 +743,8 @@ async function catalogHandler(req, res) {
     metas = filterCatalog(metas, extra).slice(skip, skip + PAGE_SIZE).map(m => catalogMeta(m, keepTags));
     if (notice) metas.unshift(notice);
 
-    res.json({ metas });
+    // A provider-problem tile (expired account) shows until it's fixed: not kept
+    res.json(notice?.id === "iptv_notice_account" ? { metas } : reusable(res, { metas }, "catalog"));
   } catch (e) {
     handleProviderError("catalog", req, e);
     // Instead of an empty catalog, show one tile explaining what went wrong
@@ -846,6 +847,21 @@ function answerForeign(res, body) {
 }
 
 // Meta handler
+// --- How long apps may reuse an answer (Stremio protocol: cacheMaxAge etc.) ---
+// Without it apps asked again every time (Nuvio also loads channel pages for whole
+// rows in the background). Only real answers carry it — never error tiles, notices
+// about a provider problem, empty or partial answers — so a fixed problem shows at
+// once. Kept short: a channel list can change after Save changes, a guide when the
+// programme ends. staleRevalidate lets an app show the old answer while it asks
+// again; staleError lets it keep one if StreamVault can't be reached.
+const REUSE_SECONDS = { catalog: 300, meta: 120, stream: 600 };
+const STALE_ERROR_SECONDS = 24 * 60 * 60;
+function reusable(res, body, kind) {
+  const maxAge = REUSE_SECONDS[kind];
+  res.set("Cache-Control", `max-age=${maxAge}, stale-while-revalidate=${maxAge * 6}, stale-if-error=${STALE_ERROR_SECONDS}`);
+  return { ...body, cacheMaxAge: maxAge, staleRevalidate: maxAge * 6, staleError: STALE_ERROR_SECONDS };
+}
+
 app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, res) => {
   try {
     const config = req.userConfig;
@@ -865,7 +881,8 @@ app.get("/:config/meta/:type/:id.json", limitAddon, extractConfig, async (req, r
     }
 
     if (meta) {
-      res.json({ meta });
+      // Without the guide or account info (the provider was slow): not to be kept
+      res.json(incompleteMetas.has(meta) ? { meta } : reusable(res, { meta }, "meta"));
     } else {
       res.json({ meta: { id, type, name: "Unknown" } });
     }
@@ -910,7 +927,7 @@ app.get("/:config/stream/:type/:id.json", limitAddon, extractConfig, async (req,
         reason: "channel is no longer in the user's playlist / category selection",
       });
     }
-    res.json({ streams });
+    res.json(streams.length > 0 ? reusable(res, { streams }, "stream") : { streams });
   } catch (e) {
     handleProviderError("stream", req, e);
     res.json({ streams: [] });

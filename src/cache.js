@@ -239,7 +239,7 @@ setInterval(() => {
     if (now - val.ts > ACCOUNT_CACHE_TTL + ACCOUNT_STALE_MS) accountCache.delete(key);
   }
   for (const [key, val] of epgCache) {
-    if (now - val.ts > EPG_CACHE_TTL) epgCache.delete(key);
+    if (now > (val.until ?? val.ts + EPG_CACHE_TTL)) epgCache.delete(key); // guides carry their own end
   }
 }, 10 * 60 * 1000);
 

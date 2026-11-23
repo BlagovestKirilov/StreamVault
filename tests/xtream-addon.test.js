@@ -297,3 +297,80 @@ describe("Xtream stream links", () => {
     for (const s of catchup) expect(s.url).toMatch(/^http:\/\/example\.com:8080\/timeshift\/links-2\/pw\/60\/\d{4}-\d{2}-\d{2}:\d{2}-00\/41\.m3u8$/);
   });
 });
+
+// ─── Channel pages don't wait for slow providers; apps may reuse good answers ───
+
+describe("channel page speed and reuse", () => {
+  const xtream = require("../src/xtream");
+  const { guideCacheUntil } = require("../src/xtream-addon");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const nowSec = () => Math.floor(Date.now() / 1000);
+  const show = (startOffset, endOffset, title) => ({
+    start_timestamp: String(nowSec() + startOffset), stop_timestamp: String(nowSec() + endOffset), title: Buffer.from(title).toString("base64"),
+  });
+  const setup = (user) => {
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 5, name: "Delta" }]);
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    return enc({ t: "xtream", s: `http://${user}.example.com`, u: user, p: "p" });
+  };
+  afterEach(() => jest.restoreAllMocks());
+
+  test("a slow guide/account doesn't hold the page; the next open has them and may be reused", async () => {
+    const cfg = setup("slow-guide");
+    let releaseGuide;
+    let releaseAccount;
+    jest.spyOn(xtream, "getShortEPG").mockImplementation(() => new Promise(r => { releaseGuide = () => r([show(-600, 1200, "Evening news")]); }));
+    jest.spyOn(xtream, "getAccountInfo").mockImplementation(() => new Promise(r => { releaseAccount = () => r({ auth: 1, status: "Active" }); }));
+    const started = Date.now();
+    const first = await request(app).get(`/${cfg}/meta/tv/iptv_tv_5.json`);
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(first.body.meta.name).toBe("Delta");
+    expect(first.body.meta.description).not.toContain("TV Guide");
+    expect(first.body.cacheMaxAge).toBeUndefined(); // partial page: not to be kept
+    releaseGuide(); // the provider answers late: both land in the caches
+    releaseAccount();
+    await new Promise(r => setTimeout(r, 20));
+    const second = await request(app).get(`/${cfg}/meta/tv/iptv_tv_5.json`);
+    expect(second.body.meta.description).toContain("Evening news");
+    expect(second.body.cacheMaxAge).toBe(120);
+    expect(second.headers["cache-control"]).toMatch(/max-age=120/);
+  }, 15000);
+
+  test("a guide is kept until the programme on now ends (1 min to 1 h); none = 10 min", () => {
+    const now = Date.now();
+    expect(guideCacheUntil([show(-600, 1200, "a")], now)).toBe((nowSec() + 1200) * 1000);
+    expect(guideCacheUntil([show(-600, 20, "a")], now)).toBe(now + 60 * 1000);
+    expect(guideCacheUntil([show(-600, 5 * 3600, "a")], now)).toBe(now + 60 * 60 * 1000);
+    expect(guideCacheUntil([], now)).toBe(now + 10 * 60 * 1000);
+    expect(guideCacheUntil([{ title: "eA==" }], now)).toBe(now + 10 * 60 * 1000); // no times
+  });
+
+  test("the guide isn't fetched again while the programme is still on", async () => {
+    const cfg = setup("guide-kept");
+    const epg = jest.spyOn(xtream, "getShortEPG").mockResolvedValue([show(-600, 1200, "Film")]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active" });
+    await request(app).get(`/${cfg}/meta/tv/iptv_tv_5.json`);
+    const realNow = Date.now();
+    jest.spyOn(Date, "now").mockReturnValue(realNow + 5 * 60 * 1000); // 5 minutes later (was refetched after 3)
+    await request(app).get(`/${cfg}/meta/tv/iptv_tv_5.json`);
+    expect(epg).toHaveBeenCalledTimes(1);
+  });
+
+  test("channel lists and play options may be reused; error tiles may not", async () => {
+    const cfg = setup("reuse-lists");
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 1, status: "Active" });
+    jest.spyOn(xtream, "getShortEPG").mockResolvedValue([]);
+    const list = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(list.body.cacheMaxAge).toBe(300);
+    expect(list.body.staleError).toBe(86400);
+    const streams = await request(app).get(`/${cfg}/stream/tv/iptv_tv_5.json`);
+    expect(streams.body.cacheMaxAge).toBe(600);
+
+    const down = enc({ t: "xtream", s: "http://down-provider.example.com", u: "u", p: "p" });
+    xtream.getLiveStreams.mockRejectedValue(Object.assign(new Error("Request failed with status code 503"), { response: { status: 503 } }));
+    const failed = await request(app).get(`/${down}/catalog/tv/iptv_live.json`);
+    expect(failed.body.metas[0].id).toMatch(/^iptv_notice_/);
+    expect(failed.body.cacheMaxAge).toBeUndefined();
+    expect(failed.headers["cache-control"] || "").not.toMatch(/max-age/);
+  });
+});

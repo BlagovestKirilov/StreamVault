@@ -228,7 +228,7 @@ describe("speed", () => {
     expect(streams).toHaveBeenCalledTimes(2);
   });
 
-  test("the TV guide is reused for 3 minutes", async () => {
+  test("a TV guide without programme times is reused for 10 minutes", async () => {
     jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
     jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 7, name: "Seven" }]);
     jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
@@ -240,7 +240,10 @@ describe("speed", () => {
     expect(await open()).toContain("News");
     expect(await open()).toContain("News");
     expect(epg).toHaveBeenCalledTimes(1);
-    offset = 3.5 * 60 * 1000;
+    offset = 3.5 * 60 * 1000; // was the old limit: still reused now
+    await open();
+    expect(epg).toHaveBeenCalledTimes(1);
+    offset = 10.5 * 60 * 1000;
     await open();
     expect(epg).toHaveBeenCalledTimes(2);
   });
