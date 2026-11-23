@@ -152,9 +152,20 @@ const limitPages = rateLimit("pages", 120, MINUTE);
 // cost a tiny 304. With the 7-day cache below, a deploy could pair the new page
 // with yesterday's script and break it.
 const PAGE_FILES = new Set(["html/configure.html", "css/configure.css", "js/configure.js"]);
+// On Fly the files only change with a deploy (a new process): read and fingerprint
+// each once. Locally they are read every time, so editing the page needs no restart.
+const KEEP_PAGE_FILES = !!process.env.FLY_APP_NAME;
+const pageFiles = new Map(); // file -> { body, tag }
+function pageFile(file) {
+  const kept = pageFiles.get(file);
+  if (kept) return kept;
+  const body = fs.readFileSync(path.join(ROOT, "public", file)); // a few KB
+  const loaded = { body, tag: `"${crypto.createHash("sha256").update(body).digest("base64url").slice(0, 22)}"` };
+  if (KEEP_PAGE_FILES) pageFiles.set(file, loaded);
+  return loaded;
+}
 function sendPageFile(req, res, file) {
-  const body = fs.readFileSync(path.join(ROOT, "public", file)); // a few KB, a few hundred visits a day
-  const tag = `"${crypto.createHash("sha256").update(body).digest("base64url").slice(0, 22)}"`;
+  const { body, tag } = pageFile(file);
   res.set({ "Cache-Control": "no-cache", ETag: tag });
   const known = String(req.get("if-none-match") || "").split(",").map(t => t.trim().replace(/^W\//, ""));
   if (known.includes(tag)) return res.status(304).end();

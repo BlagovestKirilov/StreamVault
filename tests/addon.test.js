@@ -915,3 +915,27 @@ describe("play links follow the scheme a server answered on", () => {
     expect((await request(app).get(`/api/config/${xt}`)).body.server).toBe("http://learned-http.example.com:8080");
   });
 });
+
+describe("configure page files on Fly are read once per deploy", () => {
+  test("read once, same ETag and 304 as before", async () => {
+    const fs = require("fs");
+    const saved = { fly: process.env.FLY_APP_NAME, secret: process.env.CONFIG_SECRET };
+    process.env.FLY_APP_NAME = "streamvault-test";
+    process.env.CONFIG_SECRET = saved.secret || "test-secret-for-production-mode";
+    let prodApp;
+    jest.isolateModules(() => { prodApp = require("../src/addon").app; });
+    const reads = jest.spyOn(fs, "readFileSync");
+    try {
+      const first = await request(prodApp).get("/public/js/configure.js");
+      const second = await request(prodApp).get("/public/js/configure.js");
+      expect(first.status).toBe(200);
+      expect(second.headers.etag).toBe(first.headers.etag);
+      expect((await request(prodApp).get("/public/js/configure.js").set("If-None-Match", first.headers.etag)).status).toBe(304);
+      expect(reads.mock.calls.filter(([p]) => String(p).endsWith("configure.js"))).toHaveLength(1);
+    } finally {
+      reads.mockRestore();
+      if (saved.fly === undefined) delete process.env.FLY_APP_NAME; else process.env.FLY_APP_NAME = saved.fly;
+      if (saved.secret === undefined) delete process.env.CONFIG_SECRET; else process.env.CONFIG_SECRET = saved.secret;
+    }
+  });
+});
