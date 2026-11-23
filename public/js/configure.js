@@ -321,9 +321,11 @@ resultDialog.addEventListener('click', (event) => {
 // addon is installed again: the page opens it (same link → "Update", no second
 // StreamVault). Nuvio reads it again on a full restart.
 function savedHint() {
+  // Stremio keeps the version it installed: Install or Upgrade on top of it changes
+  // nothing (seen on desktop too), only Uninstall first and then Install does
   const stremio = ON_PHONE
-    ? 'The Stremio phone app has no Upgrade button: tap Open in app, press Uninstall and then Install, then fully close and reopen Stremio.'
-    : 'Stremio opens StreamVault — press Upgrade there to load the changes.';
+    ? 'In Stremio: tap Open in app, press Uninstall and then Install, then fully close and reopen Stremio.'
+    : 'In Stremio (it opens StreamVault now): press Uninstall and then Install — without Uninstall Stremio keeps the old version. Then fully close and reopen Stremio.';
   return `${stremio}\nIn Nuvio: fully close and reopen the app.`;
 }
 
@@ -381,9 +383,9 @@ async function install() {
     }
     rowsMoved = ''; // counted once; a second save counts only new moves
     const manifestUrl = `${window.location.origin}/${encData.config}/manifest.json`;
-    // Same link, new settings. Stremio on a PC still opens it: only a
-    // (re)install replaces the copy it stored (same link → Upgrade, no
-    // duplicate). Not on phones (no Upgrade there).
+    // Same link, new settings. Stremio on a PC still opens it: only Uninstall
+    // and then Install replaces the copy it stored (same link, no duplicate;
+    // savedHint says so). Not on phones (the hint says to open it).
     const updated = showInstallResult(encData, manifestUrl);
     if (!updated || !ON_PHONE) openInApp(manifestUrl);
   } catch (_) {
