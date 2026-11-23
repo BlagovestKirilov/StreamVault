@@ -165,3 +165,63 @@ describe("provider User-Agent", () => {
     expect(get.mock.calls[0][1].headers["User-Agent"]).toMatch(/^VLC\//);
   });
 });
+
+// ─── Wrong http/https in a saved address ───
+
+describe("a saved address with the wrong scheme is tried once with the other", () => {
+  const { withSchemeFallback, preferredUrl } = require("../src/urlguard");
+  const sslError = () => Object.assign(new Error("write EPROTO 1C0A0000:error:0A00010B:SSL routines:ssl3_get_record:wrong version number"), { code: "EPROTO" });
+  const httpStatus = (status) => Object.assign(new Error(`Request failed with status code ${status}`), { response: { status } });
+  const refused = () => Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" });
+
+  test("https on a plain-http server → http, remembered for that server", async () => {
+    const asked = [];
+    const result = await withSchemeFallback("https://plain-http.example.com:8080/player_api.php?a=1", async (u) => {
+      asked.push(u);
+      if (u.startsWith("https:")) throw sslError();
+      return "ok";
+    });
+    expect(result).toBe("ok");
+    expect(asked).toEqual(["https://plain-http.example.com:8080/player_api.php?a=1", "http://plain-http.example.com:8080/player_api.php?a=1"]);
+    expect(preferredUrl("https://plain-http.example.com:8080")).toBe("http://plain-http.example.com:8080");
+    // next time it goes straight to http
+    const again = [];
+    await withSchemeFallback("https://plain-http.example.com:8080/x", async (u) => { again.push(u); return "ok"; });
+    expect(again).toEqual(["http://plain-http.example.com:8080/x"]);
+  });
+
+  test.each([
+    ["400 plain HTTP to an HTTPS port", () => httpStatus(400), "http://only-https-a.example.com:8443/list.m3u"],
+    ["497", () => httpStatus(497), "http://only-https-b.example.com:8443/list.m3u"],
+    ["refused on port 80 (no port given)", refused, "http://only-https-c.example.com/list.m3u"],
+  ])("http on an https-only server (%s) → https", async (_, error, url) => {
+    const asked = [];
+    await withSchemeFallback(url, async (u) => {
+      asked.push(u);
+      if (u.startsWith("http:")) throw error();
+      return "ok";
+    });
+    expect(asked[1]).toBe(url.replace("http:", "https:"));
+    expect(preferredUrl(url)).toBe(url.replace("http:", "https:"));
+  });
+
+  test("other failures are not retried; both failing gives the first error; nothing remembered", async () => {
+    for (const [url, error] of [
+      ["http://down.example.com:8080/x", httpStatus(404)],
+      ["http://down.example.com:8080/x", refused()], // a port was given: refused means down, not wrong scheme
+      ["https://tls-ok.example.com/x", httpStatus(403)],
+    ]) {
+      let calls = 0;
+      await expect(withSchemeFallback(url, async () => { calls++; throw error; })).rejects.toBe(error);
+      expect(calls).toBe(1);
+    }
+    const first = sslError();
+    let calls = 0;
+    await expect(withSchemeFallback("https://broken.example.com/x", async () => {
+      calls++;
+      throw calls === 1 ? first : new Error("timeout of 15000ms exceeded");
+    })).rejects.toBe(first);
+    expect(calls).toBe(2);
+    expect(preferredUrl("https://broken.example.com/x")).toBe("https://broken.example.com/x");
+  });
+});

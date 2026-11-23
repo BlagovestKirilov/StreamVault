@@ -42,7 +42,7 @@ const {
 const STATS_SECRET = process.env.STATS_SECRET || "";
 
 const {
-  isPrivateIp, validateExternalUrl, isExternalUrlSyntax, trimTrailingSlashes,
+  isPrivateIp, validateExternalUrl, isExternalUrlSyntax, trimTrailingSlashes, preferredUrl,
 } = require("./urlguard");
 
 const compression = require("compression");
@@ -302,6 +302,11 @@ function extractConfig(req, res, next) {
     req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
     req.configRevision = saved ? saved.revision : 0;
     if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
+    // A server that answered on the other scheme (http ↔ https, urlguard.js): use that
+    // one for everything built from the settings, play links included — and the
+    // configure page shows it, so Save changes fixes the saved link for good
+    if (config.type === "xtream") config.server = preferredUrl(config.server);
+    if (config.type === "m3u") config.url = preferredUrl(config.url);
     if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
       return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
     }
@@ -960,6 +965,7 @@ app.get(RELATIVE_PART, limitAddon, (req, res, next) => {
   }
   if (config?.type !== "xtream") return next();
   Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
+  config.server = preferredUrl(config.server);
   if (!config.username || !config.password || !isExternalUrlSyntax(config.server)) return next();
   countToday("playRelativeParts");
   const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";

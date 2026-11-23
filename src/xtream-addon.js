@@ -10,7 +10,7 @@ const { ACCOUNT_WAIT_MS } = require("./notices");
 const {
   m3uCache, xtreamCache, XTREAM_CACHE_TTL, XTREAM_CACHE_MAX, ACCOUNT_CACHE_TTL, ACCOUNT_RETRY_MS,
   XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache, accountCache,
-  setCapped, touch, once, withDownloadSlot, failCache, withFailureCache, usableEntry, m3uCacheKey,
+  setCapped, setCappedList, touch, once, withDownloadSlot, failCache, withFailureCache, usableEntry, m3uCacheKey,
 } = require("./cache");
 const {
   makePosterUrl, channelPoster, cleanName, catalogView, channelTitle, sortChannels,
@@ -79,7 +79,7 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
   // Picked categories by name, in pick order (home rows come from the first ones)
   result.pickedCategories = pickedNames;
 
-  setCapped(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
+  setCappedList(xtreamCache, cacheKey, { data: result, ts: Date.now() }, XTREAM_CACHE_MAX);
   return result;
 }
 

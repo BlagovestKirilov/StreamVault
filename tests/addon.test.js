@@ -898,3 +898,20 @@ describe("installs badge", () => {
     expect(JSON.parse(run.stdout.split("\n").findLast(line => line.startsWith("[\"")))).toEqual(["999", "1k+", "2.7k+", "2.9k+", "3k+", "3k+", "12.3k+"]);
   });
 });
+
+describe("play links follow the scheme a server answered on", () => {
+  const { withSchemeFallback } = require("../src/urlguard");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  test("saved https, server speaks http: /play redirects to http once learned", async () => {
+    const xt = enc({ t: "xtream", s: "https://learned-http.example.com:8080", u: "user", p: "pass" });
+    expect((await request(app).get(`/play/${xt}/live/5/ts/x`)).headers.location).toBe("https://learned-http.example.com:8080/live/user/pass/5.ts");
+    await withSchemeFallback("https://learned-http.example.com:8080/player_api.php", async (u) => {
+      if (u.startsWith("https:")) throw Object.assign(new Error("wrong version number"), { code: "EPROTO" });
+      return "ok";
+    });
+    expect((await request(app).get(`/play/${xt}/live/5/ts/x`)).headers.location).toBe("http://learned-http.example.com:8080/live/user/pass/5.ts");
+    // and the configure page shows the working address, so Save changes fixes the link
+    expect((await request(app).get(`/api/config/${xt}`)).body.server).toBe("http://learned-http.example.com:8080");
+  });
+});

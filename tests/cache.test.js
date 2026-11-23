@@ -528,3 +528,36 @@ describe("big downloads wait while memory is high", () => {
     expect(dayRow().memoryWaits).toBe(before + 1);
   });
 });
+
+// ─── Channel budget across the M3U and Xtream caches ───
+
+describe("cached channel lists share a channel budget", () => {
+  const { setCappedList, CHANNEL_BUDGET, m3uCache, xtreamCache } = require("../src/cache");
+  const xtList = (n) => ({ data: new Array(n).fill({ id: "x" }), ts: Date.now() });
+  const m3uList = (n) => ({ data: { channels: new Array(n).fill({}) }, ts: Date.now() });
+  beforeEach(() => { m3uCache.clear(); xtreamCache.clear(); });
+
+  test("many small lists all stay", () => {
+    for (let i = 0; i < 25; i++) setCappedList(xtreamCache, `x${i}`, xtList(2000), 25);
+    for (let i = 0; i < 15; i++) setCappedList(m3uCache, `m${i}`, m3uList(2000), 15);
+    expect(xtreamCache.size).toBe(25);
+    expect(m3uCache.size).toBe(15);
+  });
+
+  test("over the budget the least recently used lists go first, never the new one", () => {
+    const big = Math.floor(CHANNEL_BUDGET / 3);
+    setCappedList(xtreamCache, "old", xtList(big), 25);
+    setCappedList(xtreamCache, "mid", xtList(big), 25);
+    setCappedList(m3uCache, "m", m3uList(Math.floor(big / 2)), 15); // counts double
+    expect([...xtreamCache.keys()]).toEqual(["old", "mid"]);
+    setCappedList(xtreamCache, "new", xtList(big), 25);
+    expect([...xtreamCache.keys()]).toEqual(["mid", "new"]);
+    expect(m3uCache.has("m")).toBe(true);
+  });
+
+  test("a single list bigger than the budget is still kept", () => {
+    setCappedList(xtreamCache, "small", xtList(10), 25);
+    setCappedList(xtreamCache, "huge", xtList(CHANNEL_BUDGET + 1), 25);
+    expect([...xtreamCache.keys()]).toEqual(["huge"]);
+  });
+});

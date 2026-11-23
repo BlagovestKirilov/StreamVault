@@ -7,7 +7,7 @@
 
 const axios = require("axios");
 const readline = require("node:readline");
-const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, withSchemeFallback } = require("./urlguard");
 
 // Memory safety cap on live channels per playlist
 const MAX_LIVE_CHANNELS = 10_000;
@@ -158,15 +158,18 @@ function parseM3UContent(content, groups) {
 }
 
 async function fetchPlaylistStream(url) {
-  // Playlist URL comes from the user's config — block internal targets
-  await assertExternalUrl(url);
-  const response = await retryOnClosedConnection(() => axios.get(url, {
-    timeout: 30000,
-    responseType: "stream",
-    headers: { "User-Agent": PROVIDER_USER_AGENT },
-    beforeRedirect: blockPrivateRedirects,
-    ...guardedAgents, // re-checks the address at connect time (DNS rebinding, redirects)
-  }));
+  // Playlist URL comes from the user's config — block internal targets (each
+  // scheme tried is checked); a wrong http/https is retried once with the other
+  const response = await withSchemeFallback(url, async (u) => {
+    await assertExternalUrl(u);
+    return retryOnClosedConnection(() => axios.get(u, {
+      timeout: 30000,
+      responseType: "stream",
+      headers: { "User-Agent": PROVIDER_USER_AGENT },
+      beforeRedirect: blockPrivateRedirects,
+      ...guardedAgents, // re-checks the address at connect time (DNS rebinding, redirects)
+    }));
+  });
   return response.data;
 }
 

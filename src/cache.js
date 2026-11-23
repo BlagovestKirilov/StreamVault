@@ -48,6 +48,44 @@ function setCapped(cache, key, value, max) {
   }
 }
 
+// --- Channel budget across the two channel-list caches ---
+// The caps above count lists, but one list can be 50× another: 25 Xtream lists are
+// anywhere from 20 MB to 400+ MB. Full caches sat at ~300-350 MB, a download on top
+// crossed the watchdog's 450 MB several times a day and dropped half of everything
+// (530 MB on 2026-11-22). So the lists also share a budget of channels — about what
+// they cost in memory: when a new list pushes the total over it, the least recently
+// used lists go first (from whichever cache holds more), never the one just stored.
+// A single list bigger than the budget is still kept (it's what the user asked for).
+const CHANNEL_BUDGET = 500_000; // ≈ 150-200 MB of cached channels
+// M3U entries also keep the sorted catalog and merged view next to the playlist,
+// about as much again: they count double
+function listWeight(cache, entry) {
+  if (cache === m3uCache) return 2 * (entry?.data?.channels?.length || 0);
+  return Array.isArray(entry?.data) ? entry.data.length : 0;
+}
+function cacheWeight(cache) {
+  let total = 0;
+  for (const entry of cache.values()) total += listWeight(cache, entry);
+  return total;
+}
+function oldestKeyExcept(cache, keep) {
+  for (const [key, entry] of cache) if (entry !== keep) return key;
+  return undefined;
+}
+function setCappedList(cache, key, value, max) {
+  setCapped(cache, key, value, max);
+  const weight = new Map([[m3uCache, cacheWeight(m3uCache)], [xtreamCache, cacheWeight(xtreamCache)]]);
+  while (weight.get(m3uCache) + weight.get(xtreamCache) > CHANNEL_BUDGET) {
+    const byWeight = [m3uCache, xtreamCache].sort((a, b) => weight.get(b) - weight.get(a));
+    const from = byWeight.find(c => oldestKeyExcept(c, value) !== undefined);
+    if (!from) break; // only the new list is left
+    const victim = oldestKeyExcept(from, value);
+    weight.set(from, weight.get(from) - listWeight(from, from.get(victim)));
+    from.delete(victim);
+    countToday("budgetEvictions");
+  }
+}
+
 // A cache read that counts as a use (moves the entry to the end)
 function touch(cache, key) {
   const entry = cache.get(key);
@@ -180,7 +218,7 @@ async function getCachedM3U(config) {
   const key = m3uCacheKey(config);
   const load = () => once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
     const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
-    setCapped(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
+    setCappedList(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   }));
   const cached = usableEntry(touch(m3uCache, key), M3U_CACHE_TTL, M3U_STALE_MS, load);
@@ -294,5 +332,5 @@ module.exports = {
   ACCOUNT_RETRY_MS, XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache,
   accountCache, setCapped, touch, inflight, once, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow,
   downloadQueue, withDownloadSlot, failCache, withFailureCache, handleProviderError, usableEntry,
-  m3uCacheKey, getCachedM3U, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory, waitForMemory,
+  m3uCacheKey, getCachedM3U, setCappedList, CHANNEL_BUDGET, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory, waitForMemory,
 };

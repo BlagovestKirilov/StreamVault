@@ -7,7 +7,7 @@
 
 const { StringDecoder } = require("node:string_decoder");
 const axios = require("axios");
-const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes } = require("./urlguard");
+const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes, withSchemeFallback } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
 // in Node. Live-only responses are small, but the cap stays as a safety net.
@@ -23,9 +23,11 @@ const client = axios.create({
 
 // Server URL comes from the user's config, so every call is SSRF-checked
 const http = {
-  async get(url) {
-    await assertExternalUrl(url);
-    return retryOnClosedConnection(() => client.get(url));
+  get(url) {
+    return withSchemeFallback(url, async (u) => {
+      await assertExternalUrl(u);
+      return retryOnClosedConnection(() => client.get(u));
+    });
   },
 };
 
@@ -57,8 +59,10 @@ async function getLiveCategories(config) {
 async function getLiveStreams(config, categoryId) {
   let url = `${baseUrl(config)}&action=get_live_streams`;
   if (categoryId) url += `&category_id=${categoryId}`;
-  await assertExternalUrl(url);
-  const response = await retryOnClosedConnection(() => client.get(url, { responseType: "stream" }));
+  const response = await withSchemeFallback(url, async (u) => {
+    await assertExternalUrl(u);
+    return retryOnClosedConnection(() => client.get(u, { responseType: "stream" }));
+  });
   return readLiveStreamList(response.data);
 }
 

@@ -147,6 +147,77 @@ async function retryOnClosedConnection(request) {
   }
 }
 
+// --- Wrong scheme in a saved address (http ↔ https) ---
+// Test Connection tries both schemes and saves the one that works, but setups saved
+// before that (2026-11-14), or providers that switched since, still carry the wrong
+// one — and every channel list then failed until the user saved again. Now a
+// request that fails in a way that means "wrong scheme" is tried once with the
+// other one; if that works, the scheme is remembered for that server (in memory,
+// until restart) so later requests — and the play links built from the address
+// (extractConfig applies preferredUrl) — go straight to it.
+//   https:// on a plain-http server → TLS "wrong version number" (EPROTO)
+//   http:// on an https-only server → 400 "plain HTTP request sent to HTTPS port",
+//   497, or connection refused on port 80 (no port in the address)
+const SCHEME_MEMORY_MAX = 2000;
+const schemeMemory = new Map(); // "host:port" (port as typed, "" if none) -> "http:" | "https:"
+const schemeKey = (u) => `${u.hostname}:${u.port}`;
+
+function otherScheme(url) {
+  const u = new URL(url);
+  u.protocol = u.protocol === "https:" ? "http:" : "https:";
+  return u.toString();
+}
+
+// The address with the scheme that worked last time for its server, if one is known
+function preferredUrl(url) {
+  try {
+    const u = new URL(url);
+    const known = schemeMemory.get(schemeKey(u));
+    if (!known || known === u.protocol) return url;
+    const swapped = otherScheme(url);
+    // URL() adds a "/" to a bare origin; keep the address as it was written
+    return url.endsWith("/") ? swapped : swapped.replace(/\/$/, "");
+  } catch (_) {
+    return url; // not a URL: left as it is
+  }
+}
+
+function looksLikeWrongScheme(e, url) {
+  const isHttps = /^https:/i.test(url);
+  if (isHttps) return /EPROTO|wrong version number|SSL routines/i.test(String(e?.message)) || e?.code === "EPROTO";
+  const status = e?.response?.status;
+  if (status === 400 || status === 497) return true;
+  return e?.code === "ECONNREFUSED" && !new URL(url).port;
+}
+
+function rememberScheme(url) {
+  const u = new URL(url);
+  schemeMemory.delete(schemeKey(u));
+  schemeMemory.set(schemeKey(u), u.protocol);
+  if (schemeMemory.size > SCHEME_MEMORY_MAX) schemeMemory.delete(schemeMemory.keys().next().value);
+}
+
+// request(url) → promise. Tries the remembered (or given) scheme, then once the other
+// one on a wrong-scheme failure. Both fail → the first error, as before.
+async function withSchemeFallback(url, request) {
+  const first = preferredUrl(url);
+  try {
+    return await request(first);
+  } catch (e) {
+    if (!looksLikeWrongScheme(e, first)) throw e;
+    const second = otherScheme(first);
+    let result;
+    try {
+      result = await request(second);
+    } catch (_) {
+      throw e;
+    }
+    rememberScheme(second);
+    require("./stats").countToday("schemeSwitches");
+    return result;
+  }
+}
+
 // axios (follow-redirects) hook: reject redirects that jump to an internal host
 function blockPrivateRedirects(options) {
   if (isBlockedHostname(options.hostname || "")) {
@@ -170,4 +241,5 @@ function trimTrailingSlashes(url) {
 module.exports = {
   isPrivateIp, checkExternalUrl, validateExternalUrl, isExternalUrlSyntax, assertExternalUrl, blockPrivateRedirects,
   guardedLookup, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes,
+  withSchemeFallback, preferredUrl,
 };
