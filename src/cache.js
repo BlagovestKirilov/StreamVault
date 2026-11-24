@@ -249,7 +249,7 @@ setInterval(() => {
 const HEAP_WARN_MB = 450;
 const HEAP_CRIT_MB = 550;
 // Surfaced in /stats so cache sizes can be tuned from real numbers (since last restart)
-const memStats = { heapPeakMB: 0, rssPeakMB: 0, warnEvictions: 0, critEvictions: 0, lastEviction: null };
+const memStats = { heapPeakMB: 0, rssPeakMB: 0, warnEvictions: 0, critEvictions: 0, gcRecoveries: 0, lastEviction: null };
 // After evicting, collect garbage at once so the next check sees the real heap:
 // without it heapUsed stays high until V8 collects on its own, and the watchdog
 // kept clearing every cache every 10 s for minutes. Enabled at runtime (no
@@ -304,26 +304,38 @@ function waitForMemory() {
 }
 
 // Watchdog step for a measured heap size (MB)
-function checkMemory(mb) {
+// Over the warning level, garbage is collected first and memory measured again:
+// most readings over 450 MB were used-up data V8 hadn't freed yet (the heap may
+// grow to 640 MB before it collects) — 494 MB fell to 26 MB, the caches were a few
+// MB. Caches are only dropped if memory is still high after that; otherwise the
+// users keep their cached lists (gcRecoveries). measureAfter is for the tests.
+function checkMemory(mb, measureAfter = memoryInUseMB) {
   memStats.heapPeakMB = Math.max(memStats.heapPeakMB, Math.round(mb));
-  if (mb > HEAP_CRIT_MB) {
+  if (mb <= HEAP_WARN_MB) return;
+  collectGarbage?.();
+  const collected = measureAfter();
+  if (collected <= HEAP_WARN_MB) {
+    memStats.gcRecoveries++;
+    countToday("gcRecoveries");
+    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — garbage collected, ${collected.toFixed(0)} MB after; caches kept`);
+    return;
+  }
+  if (collected > HEAP_CRIT_MB) {
     m3uCache.clear();
     xtreamCache.clear();
     accountCache.clear();
     epgCache.clear();
     memStats.critEvictions++;
-  } else if (mb > HEAP_WARN_MB) {
+  } else {
     // Both big caches: Xtream lists are uncapped and can be the larger part
     evictOldestHalf(m3uCache);
     evictOldestHalf(xtreamCache);
     memStats.warnEvictions++;
-  } else {
-    return;
   }
   memStats.lastEviction = new Date().toISOString();
   collectGarbage?.();
-  const after = process.memoryUsage().heapUsed / 1024 / 1024;
-  const what = mb > HEAP_CRIT_MB ? "cleared all caches" : "evicted the oldest half of the M3U and Xtream caches";
+  const after = measureAfter();
+  const what = collected > HEAP_CRIT_MB ? "cleared all caches" : "evicted the oldest half of the M3U and Xtream caches";
   console.warn(`[MEM] heap ${mb.toFixed(0)} MB — ${what}; ${after.toFixed(0)} MB after collection`);
 }
 

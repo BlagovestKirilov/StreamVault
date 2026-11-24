@@ -36,6 +36,7 @@ function buildMetricsText({ linkStore, genresCache, GENRES_CACHE_MAX }) {
   g("memory_threshold_bytes", "Heap watchdog thresholds", HEAP_CRIT_MB * 1024 * 1024, { level: "crit" });
   c("memory_evictions_total", "Cache evictions by the heap watchdog", memStats.warnEvictions, { level: "warn" });
   c("memory_evictions_total", "Cache evictions by the heap watchdog", memStats.critEvictions, { level: "crit" });
+  c("memory_gc_recoveries_total", "Times the watchdog freed enough by collecting garbage, keeping the caches", memStats.gcRecoveries);
   const cpu = process.cpuUsage();
   c("cpu_seconds_total", "CPU time used by the process", cpu.user / 1e6, { mode: "user" });
   c("cpu_seconds_total", "CPU time used by the process", cpu.system / 1e6, { mode: "system" });

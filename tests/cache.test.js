@@ -82,13 +82,13 @@ describe("memory watchdog", () => {
     expect(used(full.m3u)).toBeGreaterThanOrEqual(6);
     expect(used(full.xtream)).toBeGreaterThanOrEqual(6);
 
-    checkMemory(460); // above warn (450), below crit (550)
+    checkMemory(460, () => 460); // above warn (450), below crit (550), still after collecting
     const half = await caches();
     expect(used(half.m3u)).toBe(Math.floor(used(full.m3u) / 2));
     expect(used(half.xtream)).toBe(Math.floor(used(full.xtream) / 2));
     expect(warn.mock.calls.at(-1)[0]).toMatch(/^\[MEM\] heap 460 MB — evicted the oldest half of the M3U and Xtream caches; \d+ MB after collection$/);
 
-    checkMemory(560);
+    checkMemory(560, () => 560);
     const none = await caches();
     expect([used(none.m3u), used(none.xtream), used(none.accounts), used(none.epg)]).toEqual([0, 0, 0, 0]);
     expect(warn.mock.calls.at(-1)[0]).toMatch(/cleared all caches; \d+ MB after collection$/);
@@ -96,6 +96,20 @@ describe("memory watchdog", () => {
     const before = warn.mock.calls.length;
     checkMemory(300); // healthy: nothing happens, nothing logged
     expect(warn.mock.calls).toHaveLength(before);
+  });
+
+  test("over the warning level but mostly garbage: collected, caches kept", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getLiveStreams").mockResolvedValue([{ stream_id: 1, name: "One" }]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    for (let i = 0; i < 4; i++) {
+      await request(app).get(`/${enc({ t: "xtream", s: `http://gc-${i}.example.com`, u: "u", p: "p" })}/catalog/tv/iptv_live.json`);
+    }
+    const before = used((await caches()).xtream);
+    checkMemory(494, () => 26); // the 2026-11-24 readings: 494 MB, 26 MB after collecting
+    expect(used((await caches()).xtream)).toBe(before);
+    expect(warn.mock.calls.at(-1)[0]).toBe("[MEM] heap 494 MB — garbage collected, 26 MB after; caches kept");
   });
 
   test("a full cache drops the least recently USED list, not the first one added", async () => {
