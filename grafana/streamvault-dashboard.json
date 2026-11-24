@@ -3749,7 +3749,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Big provider downloads",
+      "title": "Big provider downloads and memory clean-ups",
       "id": 40,
       "datasource": {
         "type": "prometheus",
@@ -3806,6 +3806,24 @@
           "expr": "sum(streamvault_today{counter=\"memoryWaits\"}) or vector(0)",
           "refId": "E",
           "legendFormat": "waited for memory (today)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "F",
+          "expr": "sum(streamvault_today{counter=\"gcRecoveries\"}) or vector(0)",
+          "legendFormat": "garbage collected, caches kept (today)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "refId": "G",
+          "expr": "sum(increase(streamvault_memory_evictions_total[24h])) or vector(0)",
+          "legendFormat": "caches dropped (24 h)"
         }
       ],
       "fieldConfig": {
@@ -3828,7 +3846,8 @@
         "tooltip": {
           "mode": "multi"
         }
-      }
+      },
+      "description": "Memory clean-ups: \"garbage collected, caches kept\" = memory went over 450 MB but was mostly unused data (harmless); \"caches dropped\" = still high after collecting, so cached channel lists were dropped (real pressure)."
     },
     {
       "type": "row",
