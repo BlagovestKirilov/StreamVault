@@ -130,9 +130,23 @@ function guardedLookup(hostname, options, callback) {
 // 16 per provider. Every new connection still goes through guardedLookup.
 const AGENT_OPTIONS = { lookup: guardedLookup, keepAlive: true, timeout: 4000, maxSockets: 16, maxFreeSockets: 4 };
 const guardedAgents = {
-  httpAgent: new http.Agent(AGENT_OPTIONS),
-  httpsAgent: new https.Agent(AGENT_OPTIONS),
+  httpAgent: markConnects(new http.Agent(AGENT_OPTIONS)),
+  httpsAgent: markConnects(new https.Agent(AGENT_OPTIONS)),
 };
+
+// Marks each socket once the provider's server accepted the connection, so a
+// timeout can be told apart afterwards (stats.timeoutKind, logs only): never
+// connected = blocked or down; connected = the provider was just too slow.
+// axios keeps the socket on its timeout error (error.request.socket).
+function markConnects(agent) {
+  const create = agent.createConnection.bind(agent);
+  agent.createConnection = (...args) => {
+    const socket = create(...args);
+    socket?.once?.("connect", () => { socket.providerConnected = true; });
+    return socket;
+  };
+  return agent;
+}
 
 // A kept-alive connection the provider had already closed fails at once with
 // ECONNRESET/EPIPE before the request reaches it; GETs are safe to send again,

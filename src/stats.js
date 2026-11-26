@@ -338,10 +338,36 @@ function providerErrorKey(e) {
   return "other";
 }
 
+// A "timeout" provider error, split by what happened (for logs and stats only,
+// users see the same message): the connection never opened (provider down, or
+// blocking StreamVault's server), it opened but no full answer came in time (slow
+// provider), or it was cut off (reset / hang up). Decides whether a longer wait
+// would help. Sockets are marked by urlguard's agents (markConnects).
+function timeoutKind(e) {
+  const msg = String(e?.message || "");
+  if (/ECONNRESET|socket hang up/i.test(msg)) return "dropped";
+  if (e?.providerConnected) return "slow";
+  if (/ETIMEDOUT/.test(msg) || e?.code === "ETIMEDOUT") return "no_connection";
+  const socket = e?.request?.socket;
+  if (!socket) return "unknown";
+  return socket.providerConnected ? "slow" : "no_connection";
+}
+
+// Counted per day (history timeoutKinds[where][kind]) and logged as one line:
+// "[TIMEOUT] test (xtream): no_connection"
+function noteTimeout(where, e) {
+  const kind = timeoutKind(e);
+  countCode("timeoutKinds", where, kind);
+  console.warn(`[TIMEOUT] ${where}: ${kind}`);
+}
+
 // where = "catalog" | "meta" | "stream"
 function recordError(where, config, e) {
   countToday(`${where}Errors`);
-  countCode("providerErrors", `${where} (${config?.type || "unknown"})`, providerErrorKey(e));
+  const place = `${where} (${config?.type || "unknown"})`;
+  const key = providerErrorKey(e);
+  countCode("providerErrors", place, key);
+  if (key === "timeout") noteTimeout(place, e);
   noteRecent(recentErrors, { where, source: config?.type, error: safeError(e) });
 }
 
@@ -382,7 +408,7 @@ setInterval(saveStats, 60000);
 
 module.exports = {
   STATS_DIR, stats, userKey, setupKey, knownUser, userNetwork, uniqueCounts, addDailyUser, noteBareUser, noteSetupStep, noteNewInstall, reusedSetups, noteSetupDone, todayKey,
-  dayRow, countToday, countCode, countKey, primaryLanguage, providerErrorKey, recordError, noteRecent, saveStats,
+  dayRow, countToday, countCode, countKey, primaryLanguage, providerErrorKey, timeoutKind, noteTimeout, recordError, noteRecent, saveStats,
   saveStatsSync, recentErrors, recentUnknownPaths, recentEmptyStreams, recentUnconfigured,
   recentPlayRejects, recentBadLinks, recentTestFailures,
 };

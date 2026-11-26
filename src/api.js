@@ -24,7 +24,7 @@ function cleanLoginFields(req, _res, next) {
   next();
 }
 const {
-  stats, countToday, countCode, countKey, providerErrorKey, noteRecent, recentTestFailures, noteNewInstall,
+  stats, countToday, countCode, countKey, providerErrorKey, noteTimeout, noteRecent, recentTestFailures, noteNewInstall,
 } = require("./stats");
 const { once, withDownloadSlot } = require("./cache");
 const { accountProblem } = require("./notices");
@@ -289,6 +289,7 @@ function answerTestFailure(body, res, e) {
   const key = providerErrorKey(e);
   const source = body.type === "xtream" ? "xtream" : "m3u";
   countCode("providerErrors", `test (${source})`, key);
+  if (key === "timeout") noteTimeout(`test (${source})`, e);
   // What kind of address failed (host/path/query hidden) — e.g. to tell a
   // wrong port from a path pasted into the Xtream server field
   const entered = source === "xtream"

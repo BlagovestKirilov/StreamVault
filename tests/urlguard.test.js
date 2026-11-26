@@ -225,3 +225,48 @@ describe("a saved address with the wrong scheme is tried once with the other", (
     expect(preferredUrl("https://broken.example.com/x")).toBe("https://broken.example.com/x");
   });
 });
+
+// ─── Timeouts: blocked/down vs slow (logs and stats only) ───
+
+describe("timeout kinds", () => {
+  const http = require("http");
+  const axios = require("axios");
+  const { guardedAgents } = require("../src/urlguard");
+  const { timeoutKind, noteTimeout, dayRow } = require("../src/stats");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("a server that accepts the connection but never answers is 'slow'", async () => {
+    const server = http.createServer(() => {}).listen(0);
+    await new Promise(r => server.once("listening", r));
+    try {
+      const e = await axios.get(`http://127.0.0.1:${server.address().port}/`, { timeout: 300, ...guardedAgents }).catch(err => err);
+      expect(e.message).toBe("timeout of 300ms exceeded");
+      expect(timeoutKind(e)).toBe("slow");
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  test.each([
+    ["never connected", Object.assign(new Error("timeout of 15000ms exceeded"), { request: { socket: {} } }), "no_connection"],
+    ["connected", Object.assign(new Error("timeout of 15000ms exceeded"), { request: { socket: { providerConnected: true } } }), "slow"],
+    ["the whole-list limit (list had started)", Object.assign(new Error("timeout of 60000ms exceeded"), { providerConnected: true }), "slow"],
+    ["OS connect timeout", new Error("connect ETIMEDOUT 1.2.3.x:80"), "no_connection"],
+    ["reset", new Error("read ECONNRESET"), "dropped"],
+    ["hang up", new Error("socket hang up"), "dropped"],
+    ["no socket info", new Error("timeout of 15000ms exceeded"), "unknown"],
+  ])("%s", (_name, error, kind) => {
+    expect(timeoutKind(error)).toBe(kind);
+  });
+
+  test("noteTimeout counts per day and logs one line", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const before = dayRow().timeoutKinds?.["test (xtream)"]?.no_connection || 0;
+    noteTimeout("test (xtream)", Object.assign(new Error("timeout of 15000ms exceeded"), { request: { socket: {} } }));
+    expect(dayRow().timeoutKinds["test (xtream)"].no_connection).toBe(before + 1);
+    expect(warn).toHaveBeenCalledWith("[TIMEOUT] test (xtream): no_connection");
+    const { buildMetricsText } = require("../src/addon");
+    expect(buildMetricsText()).toContain(`streamvault_today_timeouts{where="test (xtream)",kind="no_connection"} ${before + 1}`);
+  });
+});

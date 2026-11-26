@@ -163,7 +163,11 @@ function readLiveStreamList(stream) {
       stream.destroy();
       finish(reject, new Error(message));
     };
-    const timer = setTimeout(() => fail(`timeout of ${LIST_TIME_LIMIT_MS}ms exceeded`), LIST_TIME_LIMIT_MS);
+    // The list had started arriving, so the provider was reachable, just too slow
+    const timer = setTimeout(() => {
+      stream.destroy();
+      finish(reject, Object.assign(new Error(`timeout of ${LIST_TIME_LIMIT_MS}ms exceeded`), { providerConnected: true }));
+    }, LIST_TIME_LIMIT_MS);
 
     stream.on("data", (chunk) => {
       bytes += chunk.length;

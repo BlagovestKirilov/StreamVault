@@ -522,6 +522,16 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(res.body.error).toBe("Your provider didn't answer. Try again later, or ask your provider if they block StreamVault.");
   });
 
+  test("a Test Connection timeout is logged and counted by kind", async () => {
+    const { dayRow } = require("../src/stats");
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error("timeout of 15000ms exceeded"));
+    const before = dayRow().timeoutKinds?.["test (xtream)"]?.unknown || 0;
+    await send("http://example.com");
+    expect(warn).toHaveBeenCalledWith("[TIMEOUT] test (xtream): unknown");
+    expect(dayRow().timeoutKinds["test (xtream)"].unknown).toBe(before + 1);
+  });
+
   test("both schemes fail: the first try's error is answered, refused has a plain hint", async () => {
     jest.spyOn(xtream, "getLiveCategories")
       .mockRejectedValueOnce(new Error(REFUSED))

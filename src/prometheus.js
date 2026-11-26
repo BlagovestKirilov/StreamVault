@@ -122,6 +122,11 @@ function writeTodayMetrics(g) {
       g("today_provider_errors", "Today's provider failures by where and status/kind", n, { where, code });
     }
   }
+  for (const [where, kinds] of Object.entries(row.timeoutKinds || {})) {
+    for (const [kind, n] of Object.entries(kinds)) {
+      g("today_timeouts", "Today's provider timeouts by where and kind (no_connection / slow / dropped / unknown)", n, { where, kind });
+    }
+  }
   for (const [endpoint, codes] of Object.entries(row.responseErrors || {})) {
     for (const [status, n] of Object.entries(codes)) {
       g("today_response_errors", "Today's error responses we sent, by endpoint and status", n, { endpoint, status });
