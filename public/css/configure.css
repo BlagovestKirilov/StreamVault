@@ -788,6 +788,14 @@ body {
   border-radius: 10px;
   font-size: 0.85rem;
   font-weight: 600;
+  /* Without a width a fixed box at left: 50% is limited to half the screen: long
+     hints were a narrow 10-line column covering the form on phones. Lined up
+     with the inputs: 16px page margin + 20px card padding on phones, 432px wide
+     (the 480px card minus its 24px padding) on bigger screens */
+  width: max-content;
+  max-width: min(432px, calc(100vw - 72px));
+  text-align: center;
+  line-height: 1.4;
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
