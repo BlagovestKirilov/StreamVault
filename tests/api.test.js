@@ -522,6 +522,18 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(res.body.error).toBe("Your provider didn't answer. Try again later, or ask your provider if they block StreamVault.");
   });
 
+  test.each([
+    ["401", "Your provider refused this login. Check the username and password, and that your subscription is active."],
+    ["500", "Your provider's server has a problem right now. Try again later."],
+    ["503", "Your provider's server has a problem right now. Try again later."],
+    ["512", "Your provider's server has a problem right now. Try again later."],
+  ])("provider status %s: a plain hint, not the raw status text", async (status, hint) => {
+    jest.spyOn(xtream, "getLiveCategories").mockRejectedValue(new Error(`Request failed with status code ${status}`));
+    const res = await send("http://example.com");
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toBe(hint);
+  });
+
   test("a Test Connection timeout is logged and counted by kind", async () => {
     const { dayRow } = require("../src/stats");
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});

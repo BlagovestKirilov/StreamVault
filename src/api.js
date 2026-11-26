@@ -104,7 +104,15 @@ const TEST_ERROR_HINTS = {
   // a panel that answers home connections in 0.4 s timed out from Fly). Short on purpose
   timeout: "Your provider didn't answer. Try again later, or ask your provider if they block StreamVault.",
   "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
+  // 401 = the provider rejected the login itself (wrong username/password, or the
+  // line is blocked/expired). Users saw the raw "Request failed with status code 401".
+  "401": "Your provider refused this login. Check the username and password, and that your subscription is active.",
 };
+
+// Any 5xx (500, 502, 503, 504, 512 …): the provider's own server failed, nothing
+// the user typed is wrong. Usually temporary; users saw the raw "status code 503".
+const SERVER_PROBLEM_HINT = "Your provider's server has a problem right now. Try again later.";
+const testErrorHint = (key) => TEST_ERROR_HINTS[key] || (/^5\d\d$/.test(key) ? SERVER_PROBLEM_HINT : undefined);
 
 // A playlist link that works but has no live TV: say which of the usual causes
 // it is (from what the parser saw), so users know what to fix
@@ -302,7 +310,7 @@ function answerTestFailure(body, res, e) {
   const sslOnHttp = key === "https_mismatch" && !/^https:/i.test(String(entered || ""));
   const hint = sslOnHttp
     ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider"
-    : TEST_ERROR_HINTS[key];
+    : testErrorHint(key);
   res.json({ ok: false, error: hint || safeError(e) });
 }
 
