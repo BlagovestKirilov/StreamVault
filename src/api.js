@@ -102,7 +102,7 @@ const TEST_ERROR_HINTS = {
   too_big: "Your provider's list is too big for StreamVault (over 50 MB). If you used a playlist link, try your Xtream login (server, username, password) instead, or ask your provider for a smaller playlist",
   // No answer at all: provider down, or blocking StreamVault's server (seen 2026-11-26:
   // a panel that answers home connections in 0.4 s timed out from Fly). Short on purpose
-  timeout: "Your provider didn't answer. Try again later, or ask your provider if they block StreamVault",
+  timeout: "Your provider didn't answer. Try again later, or ask your provider if they block StreamVault.",
   "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
 };
 
