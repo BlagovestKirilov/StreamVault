@@ -800,7 +800,7 @@ body {
 
 /* Responsive */
 @media (prefers-reduced-motion: reduce) {
-  .result[open] { animation: none; }
+  .wrapper, .panel, .result[open] { animation: none; }
 }
 
 @media (max-width: 480px) {
