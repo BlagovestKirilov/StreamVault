@@ -98,7 +98,7 @@ app.use(express.json({ limit: "16kb" }));
 // far below 16 KB; the usual cause is playlist text pasted instead of its link.
 app.use((err, _req, res, next) => {
   if (err.type === "entity.too.large") {
-    return res.status(413).json({ ok: false, error: "Too much text sent — paste the playlist link (http://…), not the playlist itself" });
+    return res.status(413).json({ ok: false, error: "Too much text sent — paste the playlist link (http://…), not the playlist itself." });
   }
   if (err.type === "entity.parse.failed") {
     return res.status(400).json({ ok: false, error: "Invalid request" });

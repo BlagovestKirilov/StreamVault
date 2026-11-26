@@ -37,7 +37,7 @@ const ALLOWED_CONFIG_KEYS = new Set(["t", "s", "u", "p", "m", "c", "z", "g", "r"
 function sanitizeConfig(configObj) {
   const type = configObj?.t;
   if (type !== "xtream" && type !== "m3u") {
-    return { error: "Invalid config" };
+    return { error: "Invalid config." };
   }
   const sanitized = {};
   for (const key of Object.keys(configObj)) {
@@ -47,8 +47,8 @@ function sanitizeConfig(configObj) {
   }
   // A truncated selection would silently fall back to "all groups" (M3U) or
   // keep a cut-off list of category ids (Xtream)
-  if (sanitized.g && String(configObj.g).length > 2048) return { error: "Too many groups selected — pick fewer" };
-  if (sanitized.c && String(configObj.c).length > 2048) return { error: "Too many categories selected — pick fewer" };
+  if (sanitized.g && String(configObj.g).length > 2048) return { error: "Too many groups selected — pick fewer." };
+  if (sanitized.c && String(configObj.c).length > 2048) return { error: "Too many categories selected — pick fewer." };
   // Home rows 0–8; 8 (the default) or anything odd isn't stored
   if (!/^[0-7]$/.test(sanitized.r ?? "")) delete sanitized.r;
   return { sanitized };
@@ -92,18 +92,18 @@ function formatAccountInfo(info) {
 // Plain-language Test Connection errors for cases whose raw message means nothing
 // to users (keys from providerErrorKey)
 const TEST_ERROR_HINTS = {
-  https_mismatch: "Your server address should probably start with http:// instead of https://",
-  "429": "Your provider is limiting requests — try again in a few minutes",
-  "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider",
+  https_mismatch: "Your server address should probably start with http:// instead of https://.",
+  "429": "Your provider is limiting requests — try again in a few minutes.",
+  "403": "Your provider refused the connection from StreamVault's server. Check the link/login; some providers block servers — if it works in your player app, contact your provider.",
   // Many panels answer a wrong login / expired line with 404 (seen in GitHub issue #1)
-  "404": "Your provider doesn't recognise this login or link (404). Check the username and password (or the link) and that your subscription is active",
+  "404": "Your provider doesn't recognise this login or link (404). Check the username and password (or the link) and that your subscription is active.",
   // Connection refused (nothing listening on that port) or an address that leads nowhere
-  bad_address: "Can't connect to this server. Check the address and the port (e.g. :8080) with your provider",
-  too_big: "Your provider's list is too big for StreamVault (over 50 MB). If you used a playlist link, try your Xtream login (server, username, password) instead, or ask your provider for a smaller playlist",
+  bad_address: "Can't connect to this server. Check the address and the port (e.g. :8080) with your provider.",
+  too_big: "Your provider's list is too big for StreamVault (over 50 MB). If you used a playlist link, try your Xtream login (server, username, password) instead, or ask your provider for a smaller playlist.",
   // No answer at all: provider down, or blocking StreamVault's server (seen 2026-11-26:
   // a panel that answers home connections in 0.4 s timed out from Fly). Short on purpose
   timeout: "Your provider didn't answer. Try again later, or ask your provider if they block StreamVault.",
-  "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider",
+  "451": "Your provider blocks StreamVault's server (some block servers in certain countries or data centres) — if it works in your player app, contact your provider.",
   // 401 = the provider rejected the login itself (wrong username/password, or the
   // line is blocked/expired). Users saw the raw "Request failed with status code 401".
   "401": "Your provider refused this login. Check the username and password, and that your subscription is active.",
@@ -119,18 +119,18 @@ const testErrorHint = (key) => TEST_ERROR_HINTS[key] || (/^5\d\d$/.test(key) ? S
 function whyNoLiveChannels(shape) {
   const s = shape || {};
   if (s.html) {
-    return { kind: "no_channels_web_page", message: "This link returned a web page, not a playlist — check the link (it may have expired or need a login)" };
+    return { kind: "no_channels_web_page", message: "This link returned a web page, not a playlist — check the link (it may have expired or need a login)." };
   }
   if (s.vod > 0) {
-    return { kind: "no_channels_vod_only", message: `This playlist only has movies/series (${s.vod}) — StreamVault shows live TV channels only` };
+    return { kind: "no_channels_vod_only", message: `This playlist only has movies/series (${s.vod}) — StreamVault shows live TV channels only.` };
   }
   if (s.lines === 0) {
-    return { kind: "no_channels_empty", message: "This playlist is empty — check the link with your provider" };
+    return { kind: "no_channels_empty", message: "This playlist is empty — check the link with your provider." };
   }
   if (s.extinf === 0) {
-    return { kind: "no_channels_not_m3u", message: "This link doesn't look like an M3U playlist — check that you copied the playlist link" };
+    return { kind: "no_channels_not_m3u", message: "This link doesn't look like an M3U playlist — check that you copied the playlist link." };
   }
-  return { kind: "no_channels", message: "No live channels found in this playlist" };
+  return { kind: "no_channels", message: "No live channels found in this playlist." };
 }
 
 // Address with everything private hidden: scheme + port + path structure only.
@@ -155,19 +155,20 @@ function xtreamTestProblem(cats, account) {
   // Many panels answer a bad login with an empty list instead of an error, so
   // the account status is what tells a wrong password / expired account apart
   const problem = accountProblem(account);
-  if (problem) return ["account", problem];
-  if (!Array.isArray(cats)) return ["invalid_response", "This address doesn't answer like an Xtream server. Check the server address (only http://name:port, without /get.php or other paths) — or use the M3U tab if you have a playlist link"];
-  if (cats.length === 0) return ["no_channels", "No live channels on this account"];
+  // the same text is a tile title in the apps (no full stop there)
+  if (problem) return ["account", `${problem}.`];
+  if (!Array.isArray(cats)) return ["invalid_response", "This address doesn't answer like an Xtream server. Check the server address (only http://name:port, without /get.php or other paths) — or use the M3U tab if you have a playlist link."];
+  if (cats.length === 0) return ["no_channels", "No live channels on this account."];
   return null;
 }
 
 // An address copied from a guide with its placeholder left in ("…/<FILENAME>.m3u")
 const PLACEHOLDER_RE = /<[^<>]{1,40}>|%3C[^%]{1,40}%3E/i;
-const PLACEHOLDER_HINT = "The address still contains a placeholder like <FILENAME> — replace it with your real playlist link";
+const PLACEHOLDER_HINT = "The address still contains a placeholder like <FILENAME> — replace it with your real playlist link.";
 
 // StreamVault's own address or install link entered as the provider: without this
 // the server asks itself and the user sees a meaningless 404
-const OWN_ADDRESS_HINT = "This is a StreamVault link — enter your IPTV provider's server address or playlist link";
+const OWN_ADDRESS_HINT = "This is a StreamVault link — enter your IPTV provider's server address or playlist link.";
 function isOwnAddress(address, req) {
   try {
     return new URL(String(address).trim()).host === String(req.get("host")).toLowerCase();
@@ -180,11 +181,11 @@ function isOwnAddress(address, req) {
 // be one "Invalid or blocked … URL" for all of them (54 a day): mostly server names
 // that don't exist — a typo or a provider domain that's gone.
 function urlProblemHint(problem, source) {
-  if (problem === "not_found") return "Can't find this server: check the spelling, or ask your provider for the current address";
-  if (problem === "private") return "This is a local network address: StreamVault runs on the internet and can't reach it";
+  if (problem === "not_found") return "Can't find this server: check the spelling, or ask your provider for the current address.";
+  if (problem === "private") return "This is a local network address: StreamVault runs on the internet and can't reach it.";
   return source === "xtream"
-    ? "Check the server address, for example http://provider.com:8080"
-    : "Check the playlist link: it should start with http:// or https://";
+    ? "Check the server address, for example http://provider.com:8080."
+    : "Check the playlist link: it should start with http:// or https://.";
 }
 
 // Test Connection input rejected before the provider is contacted (400): counted by
@@ -241,10 +242,10 @@ async function testXtream(body, res) {
     return rejectTest(res, "xtream", "placeholder", PLACEHOLDER_HINT.replace("playlist link", "server address"));
   }
   if (isPlaylistLink(server)) {
-    return rejectTest(res, "xtream", "playlist_link", "This is a playlist link — use the M3U tab instead");
+    return rejectTest(res, "xtream", "playlist_link", "This is a playlist link — use the M3U tab instead.");
   }
   if (!server || !username || !password) {
-    return rejectTest(res, "xtream", "missing", "Missing credentials");
+    return rejectTest(res, "xtream", "missing", "Missing credentials.");
   }
   const serverProblem = await checkExternalUrl(server);
   if (serverProblem !== "ok") {
@@ -271,7 +272,7 @@ async function testXtream(body, res) {
 // Test Connection, M3U: playlist groups with channel counts
 async function testM3u(m3uUrl, res) {
   if (!m3uUrl) {
-    return rejectTest(res, "m3u", "missing", "Missing M3U URL");
+    return rejectTest(res, "m3u", "missing", "Missing M3U URL.");
   }
   if (PLACEHOLDER_RE.test(m3uUrl)) {
     return rejectTest(res, "m3u", "placeholder", PLACEHOLDER_HINT);
@@ -309,7 +310,7 @@ function answerTestFailure(body, res, e) {
   // port without a certificate)
   const sslOnHttp = key === "https_mismatch" && !/^https:/i.test(String(entered || ""));
   const hint = sslOnHttp
-    ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider"
+    ? "Your provider's server had a secure-connection (SSL) problem. Try again later, or check the address with your provider."
     : testErrorHint(key);
   res.json({ ok: false, error: hint || safeError(e) });
 }
@@ -323,10 +324,10 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
     try {
       const { server, username, password } = normalizeXtreamLogin(req.body.server, req.body.username, req.body.password);
       if (!server || !username || !password) {
-        return res.status(400).json({ error: "Missing credentials" });
+        return res.status(400).json({ error: "Missing credentials." });
       }
       if (!(await validateExternalUrl(server))) {
-        return res.status(400).json({ error: "Invalid or blocked server URL" });
+        return res.status(400).json({ error: "Invalid or blocked server URL." });
       }
       const config = { server: trimTrailingSlashes(server), username, password };
       const live = await xtream.getLiveCategories(config).catch(() => []);
@@ -342,10 +343,10 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
     try {
       const { m3uUrl } = req.body;
       if (!m3uUrl) {
-        return res.status(400).json({ error: "Missing M3U URL" });
+        return res.status(400).json({ error: "Missing M3U URL." });
       }
       if (!(await validateExternalUrl(m3uUrl))) {
-        return res.status(400).json({ error: "Invalid or blocked M3U URL" });
+        return res.status(400).json({ error: "Invalid or blocked M3U URL." });
       }
       const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
       res.json({ groups });
@@ -374,7 +375,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
       res.json({ config: "e-" + encryptConfig(sanitized) });
     } catch (e) {
       console.error("[ENCRYPT] failed:", e.message);
-      res.status(500).json({ error: "Encryption failed" });
+      res.status(500).json({ error: "Encryption failed." });
     }
   });
 
@@ -410,7 +411,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
       res.json({ config: link, updated: false });
     } catch (e) {
       console.error("[LINK] save failed:", e.message);
-      res.status(500).json({ error: "Couldn't save your settings" });
+      res.status(500).json({ error: "Couldn't save your settings." });
     }
   });
 
@@ -437,7 +438,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
       }
       if (body.type === "xtream") return await testXtream(body, res);
       if (body.type === "m3u") return await testM3u(body.m3uUrl, res);
-      rejectTest(res, "unknown", "unknown_type", "Unknown source type");
+      rejectTest(res, "unknown", "unknown_type", "Unknown source type.");
     } catch (e) {
       answerTestFailure(body, res, e);
     }

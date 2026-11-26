@@ -534,6 +534,13 @@ describe("Test Connection: Xtream server without a scheme", () => {
     expect(res.body.error).toBe(hint);
   });
 
+  test("a wrong login ends with a full stop on the page (the app tile title has none)", async () => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue({ auth: 0 });
+    const res = await send("http://example.com");
+    expect(res.body).toEqual({ ok: false, error: "Wrong username or password." });
+  });
+
   test("a Test Connection timeout is logged and counted by kind", async () => {
     const { dayRow } = require("../src/stats");
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
@@ -603,7 +610,7 @@ describe("API calls without a body or with broken JSON", () => {
   test("are answered like a missing field, never with a crash or a stack trace", async () => {
     const noBody = await request(app).post("/api/categories");
     expect(noBody.status).toBe(400);
-    expect(noBody.body.error).toBe("Missing credentials");
+    expect(noBody.body.error).toBe("Missing credentials.");
     expect((await request(app).post("/api/m3u-groups")).status).toBe(400);
     expect((await request(app).post("/api/link")).status).toBe(400);
     expect((await request(app).post("/api/test")).status).toBe(400);

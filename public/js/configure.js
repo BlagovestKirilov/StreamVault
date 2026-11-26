@@ -94,9 +94,9 @@ function getCheckBody(quiet) {
 // Test back. Test needs valid details.
 // What's missing in the form, for the hint under the button
 function missingDetailsHint() {
-  if (source === 'xtream') return 'Enter a valid server URL (http://...), username and password';
+  if (source === 'xtream') return 'Enter a valid server URL (http://...), username and password.';
   if (looksLikePlaylistText(fieldValue('m3uUrl'))) return PASTED_PLAYLIST_TEXT;
-  return 'Enter a valid playlist URL (http://...)';
+  return 'Enter a valid playlist URL (http://...).';
 }
 
 // Editing an installed StreamVault: what was loaded, to tell whether anything
@@ -125,11 +125,11 @@ function updateButtons() {
     hint.textContent = missingDetailsHint();
   } else if (!passed) {
     // matches the button: "Save changes" once an installed setup has loaded
-    hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test`;
+    hint.textContent = `${document.getElementById('btnInstallText').textContent === 'Save changes' ? 'Save' : 'Install'} becomes available after a successful test.`;
   } else if (unchanged) {
-    hint.textContent = 'Nothing changed yet — change your categories, rows or login to save';
+    hint.textContent = 'Nothing changed yet — change your categories, rows or login to save.';
   } else if (document.getElementById('btnInstallText').textContent === 'Save changes') {
-    hint.textContent = 'Saving also reloads your channel list from your provider';
+    hint.textContent = 'Saving also reloads your channel list from your provider.';
   } else {
     hint.textContent = '';
   }
@@ -154,7 +154,7 @@ function splitXtreamLink() {
     setTab('m3u');
     document.getElementById('m3uUrl').value = link;
     updateButtons();
-    showToast('This is a playlist link — moved it to the M3U tab', true);
+    showToast('This is a playlist link — moved it to the M3U tab.', true);
     return;
   }
   const isFullLink = /\/(get|player_api|xmltv|panel_api)\.php$/i.test(u.pathname) || u.searchParams.has('username');
@@ -164,7 +164,7 @@ function splitXtreamLink() {
   if (!fieldValue('username') && u.searchParams.get('username')) userEl.value = u.searchParams.get('username');
   if (!fieldValue('password') && u.searchParams.get('password')) passEl.value = u.searchParams.get('password');
   serverEl.value = u.origin;
-  showToast('Filled in server, username and password from your link', true);
+  showToast('Filled in server, username and password from your link.', true);
 }
 // On paste (value is updated right after the event) and when leaving the field,
 // not on every keystroke — a link typed by hand would be split halfway through
@@ -191,7 +191,7 @@ function m3uLinkToXtream() {
   document.getElementById('username').value = username;
   document.getElementById('password').value = password;
   updateButtons();
-  showToast('This is an Xtream link — filled in the Xtream tab (adds the TV guide). To use it as a playlist, tap M3U', true);
+  showToast('This is an Xtream link — filled in the Xtream tab (adds the TV guide). To use it as a playlist, tap M3U.', true);
 }
 document.getElementById('m3uUrl').addEventListener('paste', () => setTimeout(m3uLinkToXtream, 0));
 document.getElementById('m3uUrl').addEventListener('change', m3uLinkToXtream);
@@ -226,7 +226,7 @@ async function runCheck(body) {
     return data;
   } catch (_) {
     lastCheckKey = null;
-    return { ok: false, error: "Couldn't reach StreamVault — check your internet connection" };
+    return { ok: false, error: "Couldn't reach StreamVault — check your internet connection." };
   }
 }
 
@@ -250,14 +250,14 @@ function applyCategories(data) {
 function buildInstallSettings(body) {
   if (source === 'xtream') {
     const categoryIds = [...selectedCategories].join(',');
-    if (categoryIds.length > 2048) return { error: 'Too many categories selected — pick fewer' };
+    if (categoryIds.length > 2048) return { error: 'Too many categories selected — pick fewer.' };
     return { settings: withHomeRows({ t: 'xtream', s: body.server, u: body.username, p: body.password, c: categoryIds }) };
   }
   const settings = { t: 'm3u', m: body.m3uUrl, c: '' };
   // Selected group-titles (empty = whole playlist)
   if (selectedCategories.size > 0) {
     const g = JSON.stringify([...selectedCategories]);
-    if (g.length > 2048) return { error: 'Too many groups selected — pick fewer' };
+    if (g.length > 2048) return { error: 'Too many groups selected — pick fewer.' };
     settings.g = g;
   }
   return { settings: withHomeRows(settings) };
@@ -368,7 +368,7 @@ async function install() {
   // Install is only enabled after these exact details passed the test
   if (lastCheckKey !== JSON.stringify(body)) {
     updateButtons();
-    showToast('Test the connection first');
+    showToast('Test the connection first.');
     return;
   }
   const { settings, error } = buildInstallSettings(body);
@@ -406,7 +406,7 @@ async function install() {
     }
     if (!updated || !ON_PHONE) openInApp(manifestUrl);
   } catch (_) {
-    showToast('Failed to generate install URL');
+    showToast('Failed to generate install URL.');
   } finally {
     btn.classList.remove('loading');
   }
@@ -463,7 +463,7 @@ async function loadCategories() {
   updateButtons();
   try {
     const data = await runCheck(body);
-    if (!data.ok) showToast(data.error || "Couldn't load your categories");
+    if (!data.ok) showToast(data.error || "Couldn't load your categories.");
   } finally {
     checking = false;
     updateButtons();
@@ -736,7 +736,7 @@ async function testConnection() {
     } else {
       btn.classList.add('error');
       btnText.textContent = 'Connection failed';
-      showToast(data.error || 'Connection failed');
+      showToast(data.error || 'Connection failed.');
     }
   } catch (e) {
     document.getElementById('reportHint').hidden = false;
@@ -792,7 +792,7 @@ void (async function prefillInstalledSetup() {
     updateButtons();
     // Editing an installed StreamVault: saving updates it in place, nothing to install
     document.getElementById('btnInstallText').textContent = 'Save changes';
-    showToast('Your installed setup is loaded — change it and press Save changes', true);
+    showToast('Your installed setup is loaded — change it and press Save changes.', true);
     // Test right away: loads the category list (saved choices ticked) and unlocks Install.
     // Not awaited on purpose (the page stays usable); runCheck catches its own errors
     void loadCategories();

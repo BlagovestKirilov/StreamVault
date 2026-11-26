@@ -191,9 +191,9 @@ http://example.com/2.m3u8`));
       .mockRejectedValueOnce(new Error("write EPROTO ...:SSL routines:tls_validate_record_header:wrong version number"))
       .mockRejectedValueOnce(new Error("Request failed with status code 429"));
     const a = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "https://example.com/test-tls.m3u" });
-    expect(a.body.error).toBe("Your server address should probably start with http:// instead of https://");
+    expect(a.body.error).toBe("Your server address should probably start with http:// instead of https://.");
     const b = await request(app).post("/api/test").send({ type: "m3u", m3uUrl: "http://example.com/test-429.m3u" });
-    expect(b.body.error).toBe("Your provider is limiting requests — try again in a few minutes");
+    expect(b.body.error).toBe("Your provider is limiting requests — try again in a few minutes.");
   });
 
   test("unknown paths are listed with install links hidden", async () => {
