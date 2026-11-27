@@ -109,7 +109,7 @@ describe("memory watchdog", () => {
     const before = used((await caches()).xtream);
     checkMemory(494, () => 26); // the 2026-11-24 readings: 494 MB, 26 MB after collecting
     expect(used((await caches()).xtream)).toBe(before);
-    expect(warn.mock.calls.at(-1)[0]).toBe("[MEM] heap 494 MB — garbage collected, 26 MB after; caches kept");
+    expect(warn.mock.calls.at(-1)[0]).toMatch(/^\[MEM\] heap 494 MB — garbage collected, 26 MB after; caches kept \(collection took \d+ ms\)$/);
   });
 
   test("a full cache drops the least recently USED list, not the first one added", async () => {
@@ -576,5 +576,36 @@ describe("cached channel lists share a channel budget", () => {
     setCappedList(xtreamCache, "small", xtList(10), 25);
     setCappedList(xtreamCache, "huge", xtList(CHANNEL_BUDGET + 1), 25);
     expect([...xtreamCache.keys()]).toEqual(["huge"]);
+  });
+});
+
+// ─── Freeze diagnostics: what was loading when the server was blocked ───
+
+describe("freeze diagnostics", () => {
+  const { withDownloadSlot, noteFreeze } = require("../src/cache");
+  const { dayRow } = require("../src/stats");
+  afterEach(() => jest.restoreAllMocks());
+
+  test("short pauses are not logged", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(noteFreeze(1500)).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("a long block is logged with the running and just-finished downloads, and counted", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    await withDownloadSlot(async () => ({ channels: [1, 2, 3] }), "m3u");
+    let finish;
+    const running = withDownloadSlot(() => new Promise(r => { finish = r; }), "xtream");
+    await new Promise(r => setImmediate(r)); // the slot is taken (memory check passed)
+    const before = dayRow().freezes || 0;
+    expect(noteFreeze(8200)).toBe(true);
+    const line = warn.mock.calls.at(-1)[0];
+    expect(line).toMatch(/^\[FREEZE\] server blocked 8\.2 s — heap \d+ MB; loading: xtream \(\d+ s so far\); finished: .*m3u 3 channels in \d+\.\d s, \d+ s ago/);
+    expect(dayRow().freezes).toBe(before + 1);
+    finish([{}, {}]);
+    await running;
+    noteFreeze(3000);
+    expect(warn.mock.calls.at(-1)[0]).toMatch(/loading: nothing; finished: .*xtream 2 channels/);
   });
 });

@@ -283,7 +283,7 @@ async function testM3u(m3uUrl, res) {
   }
   // Group counts only (no channel list in memory); shared with /api/m3u-groups,
   // so test + group picker cost one download
-  const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
+  const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl), "m3u test"));
   const total = groups.reduce((sum, g) => sum + g.count, 0);
   if (total === 0) {
     const { kind, message } = whyNoLiveChannels(groups.shape);
@@ -348,7 +348,7 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
       if (!(await validateExternalUrl(m3uUrl))) {
         return res.status(400).json({ error: "Invalid or blocked M3U URL." });
       }
-      const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl)));
+      const groups = await once(`groups:${m3uUrl}`, () => withDownloadSlot(() => m3u.parseM3UGroups(m3uUrl), "m3u test"));
       res.json({ groups });
     } catch (e) {
       res.status(500).json({ error: safeError(e) });

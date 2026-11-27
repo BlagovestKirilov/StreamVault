@@ -115,7 +115,40 @@ let downloadsRunning = 0;
 const downloadsRunningNow = () => downloadsRunning; // live value for /stats and /metrics
 const downloadQueue = []; // resolve callbacks of waiting downloads, in order
 
-async function withDownloadSlot(download) {
+// --- Freeze diagnostics (logs only) ---
+// 2026-11-26/27 the server was blocked ~8 s at a time (event loop), every ~10 min,
+// failing Fly's health check, while heap jumped to ~450 MB during a big download.
+// To find the culprit: every big download records its source, channel count and
+// duration, and a ticker logs one [FREEZE] line when the server was blocked
+// longer than FREEZE_LOG_MS, with what was loading then / had just finished.
+// Counts and timings only (no addresses, no logins).
+const FREEZE_TICK_MS = 500;
+const FREEZE_LOG_MS = 2000;
+const RECENT_LOAD_MS = 60 * 1000;
+const activeLoads = new Set();  // { source, startedAt }
+const recentLoads = [];         // { source, channels, ms, endedAt }, newest last
+const channelCount = (r) => (Array.isArray(r) ? r.length : r?.channels?.length ?? 0);
+function describeLoads(now = Date.now()) {
+  const active = [...activeLoads].map(l => `${l.source} (${((now - l.startedAt) / 1000).toFixed(0)} s so far)`);
+  const done = recentLoads.filter(l => now - l.endedAt < RECENT_LOAD_MS)
+    .map(l => `${l.source} ${l.channels} channels in ${(l.ms / 1000).toFixed(1)} s, ${((now - l.endedAt) / 1000).toFixed(0)} s ago`);
+  return `loading: ${active.join(", ") || "nothing"}; finished: ${done.join(", ") || "nothing"}`;
+}
+function noteFreeze(blockedMs, now = Date.now()) {
+  if (blockedMs <= FREEZE_LOG_MS) return false;
+  countToday("freezes");
+  console.warn(`[FREEZE] server blocked ${(blockedMs / 1000).toFixed(1)} s — heap ${memoryInUseMB().toFixed(0)} MB; ${describeLoads(now)}`);
+  return true;
+}
+let lastTick = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  noteFreeze(now - lastTick - FREEZE_TICK_MS, now);
+  lastTick = now;
+}, FREEZE_TICK_MS).unref();
+
+// source: what is downloaded ("m3u", "xtream", "m3u test"), for [FREEZE] lines
+async function withDownloadSlot(download, source = "list") {
   countToday("downloads");
   if (downloadsRunning >= MAX_PARALLEL_DOWNLOADS) {
     // All slots busy: count it and how long this one waited (stats history)
@@ -127,10 +160,18 @@ async function withDownloadSlot(download) {
   } else {
     downloadsRunning++;
   }
+  const load = { source, startedAt: Date.now() };
+  let result;
   try {
     await waitForMemory();
-    return await download();
+    activeLoads.add(load);
+    result = await download();
+    return result;
   } finally {
+    activeLoads.delete(load);
+    const endedAt = Date.now();
+    recentLoads.push({ source, channels: channelCount(result), ms: endedAt - load.startedAt, endedAt });
+    if (recentLoads.length > 10) recentLoads.shift();
     // Hand the slot straight to the next waiter (running count unchanged), or free it
     const next = downloadQueue.shift();
     if (next) next();
@@ -217,7 +258,7 @@ async function getCachedM3U(config) {
   const groups = config.groups || [];
   const key = m3uCacheKey(config);
   const load = () => once(`m3u:${key}`, () => withFailureCache(`m3u:${key}`, async () => {
-    const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups));
+    const data = await withDownloadSlot(() => m3u.parseM3U(config.url, groups), "m3u");
     setCappedList(m3uCache, key, { data, ts: Date.now() }, M3U_CACHE_MAX);
     return data;
   }));
@@ -312,12 +353,16 @@ function waitForMemory() {
 function checkMemory(mb, measureAfter = memoryInUseMB) {
   memStats.heapPeakMB = Math.max(memStats.heapPeakMB, Math.round(mb));
   if (mb <= HEAP_WARN_MB) return;
+  // Timed: a full collection blocks the server, and on a big heap it may be part
+  // of the [FREEZE] lines (logged with the line, diagnostics only)
+  const gcStart = Date.now();
   collectGarbage?.();
+  const gcMs = Date.now() - gcStart;
   const collected = measureAfter();
   if (collected <= HEAP_WARN_MB) {
     memStats.gcRecoveries++;
     countToday("gcRecoveries");
-    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — garbage collected, ${collected.toFixed(0)} MB after; caches kept`);
+    console.warn(`[MEM] heap ${mb.toFixed(0)} MB — garbage collected, ${collected.toFixed(0)} MB after; caches kept (collection took ${gcMs} ms)`);
     return;
   }
   if (collected > HEAP_CRIT_MB) {
@@ -345,4 +390,5 @@ module.exports = {
   accountCache, setCapped, touch, inflight, once, MAX_PARALLEL_DOWNLOADS, downloadsRunningNow,
   downloadQueue, withDownloadSlot, failCache, withFailureCache, handleProviderError, usableEntry,
   m3uCacheKey, getCachedM3U, setCappedList, CHANNEL_BUDGET, HEAP_WARN_MB, HEAP_CRIT_MB, memStats, checkMemory, waitForMemory,
+  noteFreeze, describeLoads,
 };

@@ -46,7 +46,7 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     if (categoryIds.length === 0) return xtream.getLiveStreams(config);
     const results = await Promise.all(categoryIds.map(catId => xtream.getLiveStreams(config, catId)));
     return results.filter(Array.isArray).flat();
-  });
+  }, categoryIds.length === 0 ? "xtream" : `xtream ${categoryIds.length} categories`);
   const categories = await categoriesPromise;
 
   // Guard: API may return an object/error instead of an array
