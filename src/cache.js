@@ -7,6 +7,7 @@
 const m3u = require("./m3u");
 const { safeError } = require("./util");
 const { countToday, dayRow, recordError } = require("./stats");
+const { alert } = require("./alerts");
 
 // --- In-memory caches ---
 const m3uCache = new Map();
@@ -137,7 +138,12 @@ function describeLoads(now = Date.now()) {
 function noteFreeze(blockedMs, now = Date.now()) {
   if (blockedMs <= FREEZE_LOG_MS) return false;
   countToday("freezes");
-  console.warn(`[FREEZE] server blocked ${(blockedMs / 1000).toFixed(1)} s — heap ${memoryInUseMB().toFixed(0)} MB; ${describeLoads(now)}`);
+  const text = `server blocked ${(blockedMs / 1000).toFixed(1)} s — heap ${memoryInUseMB().toFixed(0)} MB; ${describeLoads(now)}`;
+  console.warn(`[FREEZE] ${text}`);
+  // Same as the daily report's NEEDS FIX: one freeze over 30 s, or more than 20 a day
+  const today = dayRow().freezes;
+  if (blockedMs > 30000) alert("freeze", `StreamVault ${text}`);
+  else if (today === 21) alert("freeze", `StreamVault froze 21 times today; latest: ${text}`);
   return true;
 }
 let lastTick = Date.now();
@@ -371,11 +377,15 @@ function checkMemory(mb, measureAfter = memoryInUseMB) {
     accountCache.clear();
     epgCache.clear();
     memStats.critEvictions++;
+    alert("memory", `StreamVault memory critical: ${collected.toFixed(0)} MB after collecting garbage — cleared all caches`);
   } else {
     // Both big caches: Xtream lists are uncapped and can be the larger part
     evictOldestHalf(m3uCache);
     evictOldestHalf(xtreamCache);
     memStats.warnEvictions++;
+    countToday("cacheCleanups");
+    // The daily report's NEEDS FIX: more than 3 of these a day
+    if (dayRow().cacheCleanups === 4) alert("memory", `StreamVault memory high: dropped half the cached lists for the 4th time today (${collected.toFixed(0)} MB after collecting garbage)`);
   }
   memStats.lastEviction = new Date().toISOString();
   collectGarbage?.();

@@ -91,7 +91,9 @@ describe("stats file saving", () => {
     const dir = tmpDir();
     const r = run(dir, "require('./addon'); process.emit('SIGTERM');");
     expect(r.status).toBe(0);
-    expect(fs.readdirSync(dir)).toEqual(["stats.json"]);
+    // run-state.json: the normal-shutdown marker (alerts.js); no temp files
+    expect(fs.readdirSync(dir).sort()).toEqual(["run-state.json", "stats.json"]);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, "run-state.json"), "utf8")).state).toBe("clean");
     const saved = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8"));
     expect(saved).toHaveProperty("history");
   });

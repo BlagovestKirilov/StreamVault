@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { ROOT, safeError, userAgent, parseExtra, maskPath, trimPathSpaces, withinMs } = require("./util");
+const alerts = require("./alerts");
 const {
   encryptConfig, decryptConfig, configFromSettings, settingsFromEncrypted, settingsFromBase64,
   configFromQueryString, normalizeXtreamLogin, MAX_HOME_ROWS,
@@ -195,13 +196,17 @@ app.get(["/favicon.ico", "/favicon.png", /^\/apple-touch-icon[\w-]*\.png$/], lim
 const linkStore = require("./links").createStore(STATS_DIR);
 const PROCESS_START = new Date().toISOString();
 
-process.on("SIGTERM", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
-process.on("SIGINT", () => { saveStatsSync(); linkStore.saveSync(); process.exit(0); });
+// A normal stop (deploy, Fly restart) is marked "clean"; the next start alerts if
+// the previous run ended any other way (crash, out-of-memory kill) — alerts.js
+process.on("SIGTERM", () => { saveStatsSync(); linkStore.saveSync(); alerts.markClean(STATS_DIR); process.exit(0); });
+process.on("SIGINT", () => { saveStatsSync(); linkStore.saveSync(); alerts.markClean(STATS_DIR); process.exit(0); });
 process.on("unhandledRejection", (err) => {
   console.error("[FATAL] Unhandled rejection:", err);
+  alerts.alert("fatal", `Unhandled error (server kept running): ${safeError(err)}`);
 });
 process.on("uncaughtException", (err) => {
   console.error("[FATAL] Uncaught exception:", err);
+  alerts.markCrashed(STATS_DIR, err); // reported by the next start (no time to send now)
   saveStatsSync();
   linkStore.saveSync();
   process.exit(1);
@@ -1156,6 +1161,7 @@ app.use(limitPages, (req, res) => {
 // (4 parameters: that is how Express tells an error handler apart)
 app.use((err, req, res, _next) => {
   console.error(`[ERROR] ${req.method} ${req.route?.path || "unmatched"}: ${safeError(err)}`);
+  alerts.alert("error", `Unexpected error in ${req.method} ${req.route?.path || "unmatched"}: ${safeError(err)}`);
   if (res.headersSent) return res.end();
   res.status(500).json({ error: "Something went wrong" });
 });
@@ -1179,6 +1185,7 @@ function applyServerLimits(server) {
 
 // --- Start server ---
 if (require.main === module) {
+  alerts.checkPreviousRun(STATS_DIR);
   applyServerLimits(app.listen(PORT, "0.0.0.0", () => {
     console.log(`StreamVault IPTV running on 0.0.0.0:${PORT}`);
   }));

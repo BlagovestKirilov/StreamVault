@@ -68,6 +68,9 @@ errors, with install links and logins hidden. All of this disappears when the se
 - **Your IPTV provider:** StreamVault's server asks it for your channel list, account details and TV guide.
   The **video goes directly** from your provider to your player — it never passes through StreamVault.
 - **Fly.io** hosts the server and its data.
+- **Discord:** when the server has a serious problem (a crash, a long freeze, memory running out, an
+  unexpected error) it sends a short alert to the developer's private Discord channel. Alerts contain only
+  what went wrong, counts and timings — never install links, logins, playlist links or your IP address.
 - **Channel pictures** are loaded by your app from [wsrv.nl](https://wsrv.nl) (fits channel logos into
   squares) and [ui-avatars.com](https://ui-avatars.com) (pictures with the channel name). They receive the
   logo link or channel name, and — like any website — your IP address.
