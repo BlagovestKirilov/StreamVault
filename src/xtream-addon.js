@@ -38,14 +38,60 @@ async function getXtreamCatalog(config, type) {
   return cached ? cached.data : load();
 }
 
+// The user's categories, one request each — unless the provider ignores the
+// category: some panels answer every `category_id=` request with their WHOLE list
+// (2026-11-27: 37 categories x 15,802 channels = 584,674 channels, the server
+// blocked 8-9 s and the heap went to ~460 MB on every reload). So the first
+// category is asked alone; if most of its answer belongs to other categories, that
+// answer is the whole list: keep the chosen categories from it (in the user's
+// order) and skip the other requests. Otherwise the rest are asked as before.
+async function streamsForCategories(config, categoryIds) {
+  const [first, ...rest] = categoryIds;
+  const firstList = await xtream.getLiveStreams(config, first);
+  if (ignoresCategory(firstList, first)) return pickCategories(firstList, categoryIds);
+  const others = await Promise.all(rest.map(catId => xtream.getLiveStreams(config, catId)));
+  return [firstList, ...others].filter(Array.isArray).flat();
+}
+
+// More than half of the channels name another category: not a filtered answer.
+// (A few are normal: a channel can be in several categories but names one.)
+// Channels that name no category don't count — without that, such a provider
+// would look like it ignores the filter and every channel would be dropped.
+function ignoresCategory(list, categoryId) {
+  if (!Array.isArray(list) || list.length === 0) return false;
+  const others = list.filter(item => {
+    const cat = item?.category_id;
+    return cat !== undefined && cat !== null && cat !== "" && String(cat) !== String(categoryId);
+  }).length;
+  return others > list.length / 2;
+}
+
+function pickCategories(list, categoryIds) {
+  const buckets = new Map(categoryIds.map(id => [String(id), []]));
+  for (const item of list) buckets.get(String(item?.category_id))?.push(item);
+  return [...buckets.values()].flat();
+}
+
+// The same channel twice (in two chosen categories, or a provider repeating it)
+// would show twice with the same id; keep the first
+function uniqueStreams(items) {
+  const seen = new Set();
+  return items.filter(item => {
+    const id = item?.stream_id;
+    if (id === undefined || id === null) return true;
+    if (seen.has(String(id))) return false;
+    seen.add(String(id));
+    return true;
+  });
+}
+
 async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
   // Category names (for the genre filter) are fetched alongside; failure just means no genres
   const categoriesPromise = xtream.getLiveCategories(config).catch(() => []);
   // One download slot per catalog load (a user's selected categories together)
   let items = await withDownloadSlot(async () => {
     if (categoryIds.length === 0) return xtream.getLiveStreams(config);
-    const results = await Promise.all(categoryIds.map(catId => xtream.getLiveStreams(config, catId)));
-    return results.filter(Array.isArray).flat();
+    return uniqueStreams(await streamsForCategories(config, categoryIds));
   }, categoryIds.length === 0 ? "xtream" : `xtream ${categoryIds.length} categories`);
   const categories = await categoriesPromise;
 

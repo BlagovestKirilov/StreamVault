@@ -303,9 +303,11 @@ describe("home rows, merged versions, clean names", () => {
   test("cold app start with a slow channel list: quick category names, the list keeps loading", async () => {
     const cfg = xtreamSetup("2,1");
     let release;
+    let released = false; // after release(), later requests (other categories) answer at once
     xtream.getLiveStreams.mockImplementation((_cfg, catId) => new Promise(r => {
+      if (released) return r(STREAMS[catId]);
       const prev = release;
-      release = () => { prev?.(); r(STREAMS[catId]); };
+      release = () => { released = true; prev?.(); r(STREAMS[catId]); };
     }));
     const started = Date.now();
     const { catalogs } = (await request(app).get(`/${cfg}/manifest.json`)).body;

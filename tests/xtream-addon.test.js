@@ -374,3 +374,58 @@ describe("channel page speed and reuse", () => {
     expect(failed.headers["cache-control"] || "").not.toMatch(/max-age/);
   });
 });
+
+// ─── Providers that ignore the category in get_live_streams ───
+
+describe("Xtream categories: provider ignores category_id", () => {
+  const xtream = require("../src/xtream");
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  afterEach(() => jest.restoreAllMocks());
+  const ids = (res) => res.body.metas.map(m => m.id);
+  const setup = (server, cats) => {
+    jest.spyOn(xtream, "getLiveCategories").mockResolvedValue([
+      { category_id: "1", category_name: "One" }, { category_id: "2", category_name: "Two" }, { category_id: "3", category_name: "Three" },
+    ]);
+    jest.spyOn(xtream, "getAccountInfo").mockResolvedValue(null);
+    return enc({ t: "xtream", s: server, u: "u", p: "p", c: cats });
+  };
+  const whole = [
+    { stream_id: 1, name: "A1", category_id: "1" }, { stream_id: 2, name: "B2", category_id: "2" },
+    { stream_id: 3, name: "C3", category_id: "3" }, { stream_id: 4, name: "D2", category_id: "2" },
+    { stream_id: 5, name: "E3", category_id: "3" }, { stream_id: 6, name: "F3", category_id: "3" },
+  ];
+
+  test("the whole list for every category: one request, only the chosen categories, no copies", async () => {
+    const cfg = setup("http://ignores.example.com", "2,1");
+    const live = jest.spyOn(xtream, "getLiveStreams").mockResolvedValue(whole);
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(live).toHaveBeenCalledTimes(1);
+    expect(ids(res).sort()).toEqual(["iptv_tv_1", "iptv_tv_2", "iptv_tv_4"]);
+  });
+
+  test("a provider that filters: one request per category, as before", async () => {
+    const cfg = setup("http://filters.example.com", "1,2");
+    const live = jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, cat) => whole.filter(i => i.category_id === cat));
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(live).toHaveBeenCalledTimes(2);
+    expect(ids(res).sort()).toEqual(["iptv_tv_1", "iptv_tv_2", "iptv_tv_4"]);
+  });
+
+  test("a channel in two chosen categories shows once; channels without a category are kept", async () => {
+    const cfg = setup("http://nocat.example.com", "1,2");
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, cat) =>
+      cat === "1" ? [{ stream_id: 9, name: "Shared" }, { stream_id: 10, name: "Only1" }] : [{ stream_id: 9, name: "Shared" }]);
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(ids(res).sort()).toEqual(["iptv_tv_10", "iptv_tv_9"]);
+  });
+
+  test("a few channels naming another category is normal (not treated as the whole list)", async () => {
+    const cfg = setup("http://fewothers.example.com", "1,2");
+    const live = jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, cat) => cat === "1"
+      ? [{ stream_id: 1, name: "A", category_id: "1" }, { stream_id: 5, name: "E", category_id: "1" }, { stream_id: 6, name: "Multi", category_id: "3" }]
+      : [{ stream_id: 2, name: "B", category_id: "2" }]);
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(live).toHaveBeenCalledTimes(2);
+    expect(ids(res)).toContain("iptv_tv_6"); // kept, as before
+  });
+});
