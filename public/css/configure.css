@@ -106,7 +106,9 @@ body {
   font-weight: 600;
   cursor: pointer;
   border-radius: 9px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-property: background-color, color, box-shadow;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   z-index: 1;
   display: flex;
@@ -209,7 +211,8 @@ body {
   color: var(--text);
   font-size: 0.95rem;
   outline: none;
-  transition: all 0.2s;
+  transition-property: border-color, background-color, box-shadow, color;
+  transition-duration: 0.2s;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
@@ -263,7 +266,8 @@ body {
   color: var(--text);
   font-size: 16px;
   outline: none;
-  transition: all 0.2s;
+  transition-property: border-color, background-color, box-shadow, color;
+  transition-duration: 0.2s;
   -webkit-appearance: none;
 }
 .cat-search-wrap input:focus {
@@ -312,7 +316,8 @@ body {
   cursor: pointer;
   background: var(--card);
   border-bottom: 1px solid rgba(255,255,255,0.04);
-  transition: all 0.15s;
+  transition-property: background-color, color;
+  transition-duration: 0.15s;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -338,7 +343,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition-property: background-color, border-color;
+  transition-duration: 0.15s;
 }
 .cat-item.selected .cat-check {
   background: var(--accent);
@@ -497,7 +503,8 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition-property: transform, box-shadow, opacity, background-color, color, border-color;
+  transition-duration: 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -596,7 +603,8 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition-property: transform, box-shadow, opacity;
+  transition-duration: 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -713,7 +721,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.15s;
+  transition-property: background-color, opacity;
+  transition-duration: 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 .btn-sm svg { width: 15px; height: 15px; }
@@ -797,7 +806,9 @@ body {
   text-align: center;
   line-height: 1.4;
   opacity: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition-property: opacity, transform, background-color, color;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   pointer-events: none;
 }
@@ -855,7 +866,8 @@ html.light .toast { background: #1a1a2e; }
   justify-content: center;
   cursor: pointer;
   color: var(--muted);
-  transition: all 0.2s;
+  transition-property: color, border-color, background-color;
+  transition-duration: 0.2s;
   z-index: 100;
 }
 .theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
