@@ -508,7 +508,7 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition-property: box-shadow, opacity, background-color, color, border-color;
+  transition-property: box-shadow, opacity, background-color, color, border-color, border-width;
   transition-duration: 0.2s;
   display: flex;
   align-items: center;
@@ -619,7 +619,7 @@ body {
 /* The buttons lift on hover and shrink when pressed — not for people who turned on
    "reduce motion" (they still get the glow) */
 @media (prefers-reduced-motion: no-preference) {
-  .btn-test { transition-property: transform, box-shadow, opacity, background-color, color, border-color; }
+  .btn-test { transition-property: transform, box-shadow, opacity, background-color, color, border-color, border-width; }
   .btn-install { transition-property: transform, box-shadow, opacity; }
   .btn-test:not(:disabled):hover,
   .btn-install:not(:disabled):hover { transform: translateY(-2px); }
@@ -728,7 +728,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition-property: background-color, opacity;
+  transition-property: background-color, color, opacity;
   transition-duration: 0.15s;
   -webkit-tap-highlight-color: transparent;
 }

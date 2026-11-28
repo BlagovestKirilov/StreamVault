@@ -39,19 +39,41 @@ async function getXtreamCatalog(config, type) {
   return cached ? cached.data : load();
 }
 
-// The user's categories, one request each — unless the provider ignores the
-// category: some panels answer every `category_id=` request with their WHOLE list
-// (2026-11-27: 37 categories x 15,802 channels = 584,674 channels, the server
-// blocked 8-9 s and the heap went to ~460 MB on every reload). So the first
-// category is asked alone; if most of its answer belongs to other categories, that
-// answer is the whole list: keep the chosen categories from it (in the user's
-// order) and skip the other requests. Otherwise the rest are asked as before.
+// The user's categories, one request each, all at once (as always) — unless the
+// provider ignores the category: some panels answer every `category_id=` request
+// with their WHOLE list (2026-11-27: 37 categories x 15,802 channels = 584,674
+// channels, the server blocked 8-9 s and the heap went to ~460 MB on every reload).
+// That is only assumed when the first two categories come back as the same list
+// AND it is mostly other categories' channels: two different categories never give
+// the same list on a provider that filters, and a "Favourites"-type category (its
+// channels' main category is elsewhere) is not mistaken for it. Then the other
+// downloads are cancelled and the chosen categories are kept from that one list,
+// in the user's order. One category: nothing to compare, the answer is used as is.
 async function streamsForCategories(config, categoryIds) {
-  const [first, ...rest] = categoryIds;
-  const firstList = await xtream.getLiveStreams(config, first);
-  if (ignoresCategory(firstList, first)) return pickCategories(firstList, categoryIds);
-  const others = await Promise.all(rest.map(catId => xtream.getLiveStreams(config, catId)));
-  return [firstList, ...others].filter(Array.isArray).flat();
+  if (categoryIds.length === 1) return xtream.getLiveStreams(config, categoryIds[0]);
+  const controller = new AbortController();
+  const requests = categoryIds.map(catId => xtream.getLiveStreams(config, catId, { signal: controller.signal }));
+  // Each failure is still seen by the awaits below; this only keeps the ones nobody
+  // waits for (cancelled, or after an earlier failure) from being "unhandled"
+  for (const request of requests) request.catch(() => {});
+  try {
+    const [first, second] = await Promise.all(requests.slice(0, 2));
+    if (sameList(first, second) && ignoresCategory(first, categoryIds[0])) {
+      controller.abort();
+      return pickCategories(first, categoryIds);
+    }
+    const rest = await Promise.all(requests.slice(2));
+    return [first, second, ...rest].filter(Array.isArray).flat();
+  } catch (e) {
+    controller.abort(); // one failed: the load fails as before; stop the others
+    throw e;
+  }
+}
+
+// The same channels in the same order (by id)
+function sameList(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length > 0 && a.length === b.length
+    && a.every((item, i) => String(item?.stream_id) === String(b[i]?.stream_id));
 }
 
 // More than half of the channels name another category: not a filtered answer.

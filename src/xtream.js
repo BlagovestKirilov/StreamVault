@@ -56,15 +56,17 @@ async function getLiveCategories(config) {
  * Fetch live streams for a given category.
  * @param {Object} config
  * @param {string|number} categoryId
+ * @param {{signal?: AbortSignal}} [options] - signal: cancels the download (the
+ *   other categories once a provider is known to send its whole list for each)
  */
-async function getLiveStreams(config, categoryId) {
+async function getLiveStreams(config, categoryId, { signal } = {}) {
   let url = `${baseUrl(config)}&action=get_live_streams`;
   if (categoryId) url += `&category_id=${categoryId}`;
   const response = await withSchemeFallback(url, async (u) => {
     await assertExternalUrl(u);
-    return retryOnClosedConnection(() => client.get(u, { responseType: "stream" }));
+    return retryOnClosedConnection(() => client.get(u, { responseType: "stream", signal }));
   });
-  return readLiveStreamList(response.data);
+  return readLiveStreamList(response.data, signal);
 }
 
 // A provider's full channel list can be a 50 MB JSON array. Parsed in one go it
@@ -140,7 +142,7 @@ function createArraySplitter(onItem) {
   };
 }
 
-function readLiveStreamList(stream) {
+function readLiveStreamList(stream, signal) {
   return new Promise((resolve, reject) => {
     const decoder = new StringDecoder("utf8");
     const items = [];
@@ -179,6 +181,11 @@ function readLiveStreamList(stream) {
       stream.destroy();
       finish(reject, Object.assign(new Error(`timeout of ${LIST_TIME_LIMIT_MS}ms exceeded`), { providerConnected: true }));
     }, LIST_TIME_LIMIT_MS);
+    // Cancelled by the caller (no longer needed): stop reading, free the memory
+    if (signal) {
+      if (signal.aborted) fail("canceled");
+      else signal.addEventListener("abort", () => fail("canceled"), { once: true });
+    }
 
     stream.on("data", (chunk) => {
       bytes += chunk.length;

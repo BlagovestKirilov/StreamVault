@@ -395,12 +395,34 @@ describe("Xtream categories: provider ignores category_id", () => {
     { stream_id: 5, name: "E3", category_id: "3" }, { stream_id: 6, name: "F3", category_id: "3" },
   ];
 
-  test("the whole list for every category: one request, only the chosen categories, no copies", async () => {
-    const cfg = setup("http://ignores.example.com", "2,1");
+  test("the whole list for every category: the rest are cancelled, only the chosen categories, no copies", async () => {
+    const cfg = setup("http://ignores.example.com", "2,1,3");
+    const signals = [];
+    const live = jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, cat, opts) => {
+      signals.push([cat, opts?.signal]);
+      if (cat === "3") return new Promise(() => {}); // still downloading when the first two match
+      return whole;
+    });
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(live).toHaveBeenCalledTimes(3); // all at once, as always
+    expect(signals.find(([cat]) => cat === "3")[1].aborted).toBe(true); // the third is cancelled
+    expect(ids(res).sort()).toEqual(["iptv_tv_1", "iptv_tv_2", "iptv_tv_3", "iptv_tv_4", "iptv_tv_5", "iptv_tv_6"]);
+  });
+
+  test("a Favourites-type category (channels whose main category is elsewhere) keeps all its channels", async () => {
+    const cfg = setup("http://favourites.example.com", "1,2");
+    const favourites = [{ stream_id: 7, name: "Fav A", category_id: "3" }, { stream_id: 8, name: "Fav B", category_id: "2" }, { stream_id: 9, name: "Fav C", category_id: "3" }];
+    jest.spyOn(xtream, "getLiveStreams").mockImplementation(async (_c, cat) => (cat === "1" ? favourites : [{ stream_id: 2, name: "B2", category_id: "2" }]));
+    const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
+    expect(ids(res).sort()).toEqual(["iptv_tv_2", "iptv_tv_7", "iptv_tv_8", "iptv_tv_9"]); // as before this change
+  });
+
+  test("one category: the answer is used as it comes (nothing to compare)", async () => {
+    const cfg = setup("http://single.example.com", "2");
     const live = jest.spyOn(xtream, "getLiveStreams").mockResolvedValue(whole);
     const res = await request(app).get(`/${cfg}/catalog/tv/iptv_live.json`);
     expect(live).toHaveBeenCalledTimes(1);
-    expect(ids(res).sort()).toEqual(["iptv_tv_1", "iptv_tv_2", "iptv_tv_4"]);
+    expect(ids(res)).toHaveLength(6);
   });
 
   test("a provider that filters: one request per category, as before", async () => {

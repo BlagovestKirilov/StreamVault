@@ -494,6 +494,21 @@ describe("Xtream channel lists are read channel by channel", () => {
     }
   });
 
+  test("a cancelled download stops reading and rejects; without a signal nothing changes", async () => {
+    const { PassThrough } = require("node:stream");
+    const body = new PassThrough();
+    const controller = new AbortController();
+    const reading = readLiveStreamList(body, controller.signal);
+    body.write('[{"stream_id":1,"name":"A"},');
+    controller.abort();
+    await expect(reading).rejects.toThrow("canceled");
+    expect(body.destroyed).toBe(true); // the download is closed, not left running
+    const already = new AbortController();
+    already.abort();
+    await expect(readLiveStreamList(new PassThrough(), already.signal)).rejects.toThrow("canceled");
+    expect(await readLiveStreamList(chunked('[{"stream_id":2,"name":"B"}]'))).toEqual([{ stream_id: 2, name: "B" }]);
+  });
+
   test("whatever isn't a JSON array is answered as before", async () => {
     expect(await readLiveStreamList(chunked(""))).toEqual([]);
     expect(await readLiveStreamList(chunked(" [ ] "))).toEqual([]);
