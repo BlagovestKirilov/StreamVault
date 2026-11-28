@@ -28,15 +28,20 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 100vh; /* 100dvh below where supported (phone address bars) */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 40px 16px 80px 16px;
-  padding: 40px env(safe-area-inset-right, 16px) 80px env(safe-area-inset-left, 16px);
+  padding: 40px 16px 80px 16px; /* notch-aware sides below where supported */
   overflow-y: auto;
+}
+/* Newer values only where the browser knows them; older ones keep the lines above */
+@supports (min-height: 100dvh) {
+  body { min-height: 100dvh; }
+}
+@supports (padding: env(safe-area-inset-left)) {
+  body { padding: 40px env(safe-area-inset-right, 16px) 80px env(safe-area-inset-left, 16px); }
 }
 
 .wrapper {
@@ -503,7 +508,7 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition-property: transform, box-shadow, opacity, background-color, color, border-color;
+  transition-property: box-shadow, opacity, background-color, color, border-color;
   transition-duration: 0.2s;
   display: flex;
   align-items: center;
@@ -512,11 +517,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .btn-test:hover {
-  transform: translateY(-2px);
   box-shadow: 0 6px 16px var(--accent-glow);
-}
-.btn-test:active {
-  transform: translateY(0) scale(0.98);
 }
 .btn-test:disabled,
 .btn-test:disabled:hover,
@@ -603,7 +604,7 @@ body {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition-property: transform, box-shadow, opacity;
+  transition-property: box-shadow, opacity;
   transition-duration: 0.2s;
   display: flex;
   align-items: center;
@@ -613,11 +614,17 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .btn-install:hover {
-  transform: translateY(-2px);
   box-shadow: 0 6px 16px var(--accent-glow);
 }
-.btn-install:active {
-  transform: translateY(0) scale(0.98);
+/* The buttons lift on hover and shrink when pressed — not for people who turned on
+   "reduce motion" (they still get the glow) */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-test { transition-property: transform, box-shadow, opacity, background-color, color, border-color; }
+  .btn-install { transition-property: transform, box-shadow, opacity; }
+  .btn-test:not(:disabled):hover,
+  .btn-install:not(:disabled):hover { transform: translateY(-2px); }
+  .btn-test:not(:disabled):active,
+  .btn-install:not(:disabled):active { transform: translateY(0) scale(0.98); }
 }
 .btn-install svg {
   width: 20px;
