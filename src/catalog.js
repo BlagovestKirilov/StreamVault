@@ -281,6 +281,23 @@ function channelTitle(list, item) {
 const STEP_SIZE = 5000;
 const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 
+// Runs a step generator to the end, one step per turn of the event loop (other
+// requests are answered in between); resolves with the generator's return value
+function runInSteps(steps) {
+  return new Promise((resolve, reject) => {
+    const next = () => {
+      try {
+        const step = steps.next();
+        if (step.done) resolve(step.value);
+        else setImmediate(next);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    next();
+  });
+}
+
 // Distinct values sorted once → value -> rank; values the comparison calls equal share one
 function ranksOf(values, compare) {
   const sorted = [...new Set(values)].sort(compare);
@@ -328,8 +345,7 @@ function sortChannels(metas, picked = []) {
 
 async function sortChannelsAsync(metas, picked = []) {
   const keyed = [];
-  const steps = keySteps(metas, keyed);
-  while (!steps.next().done) await nextTurn();
+  await runInSteps(keySteps(metas, keyed));
   await nextTurn();
   sortKeyed(keyed, picked);
   keyed.forEach((k, i) => { metas[i] = k.meta; });
@@ -339,14 +355,9 @@ async function sortChannelsAsync(metas, picked = []) {
 // Builds the tile view during the load (in steps) instead of on the first request
 async function prepareCatalogView(list) {
   if (catalogViews.has(list)) return catalogViews.get(list);
-  const steps = catalogViewSteps(list);
-  let step = steps.next();
-  while (!step.done) {
-    await nextTurn();
-    step = steps.next();
-  }
-  catalogViews.set(list, step.value);
-  return step.value;
+  const view = await runInSteps(catalogViewSteps(list));
+  catalogViews.set(list, view);
+  return view;
 }
 
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called

@@ -430,8 +430,12 @@ function copyUrl() {
     clearTimeout(copyUrl.timer);
     copyUrl.timer = setTimeout(() => { label.textContent = 'Copy'; }, 2000);
   };
-  navigator.clipboard.writeText(input.value).then(done).catch(() => {
-    document.execCommand('copy');
+  // Modern clipboard API first. It can be missing (older/TV browsers, a page opened
+  // over http — then calling it threw and Copy did nothing) or refuse; the text is
+  // already selected, so the old copy command still works as the last resort.
+  const copied = navigator.clipboard?.writeText(input.value) ?? Promise.reject(new Error('no clipboard API'));
+  copied.then(done).catch(() => {
+    document.execCommand('copy'); // NOSONAR — deprecated but still supported everywhere; the only fallback without the clipboard API
     done();
   });
 }
@@ -567,7 +571,7 @@ function toggleCategory(id) {
 // homeRows = how many the user wants (0–8; 0 = only StreamVault Live)
 const MAX_HOME_ROWS = 8;
 let homeRows = MAX_HOME_ROWS;
-const categoryName = (id) => (allCategories.find(c => c.id === id) || {}).name || id;
+const categoryName = (id) => allCategories.find(c => c.id === id)?.name || id;
 
 function renderSelectedTags(focus) {
   updateButtons(); // categories, order or rows changed: Save changes may turn on or off
@@ -624,7 +628,7 @@ function renderSelectedTags(focus) {
   // Keep keyboard focus on the moved category's button so it can be pressed again
   if (focus) {
     const item = [...list.querySelectorAll('.row-item')].find(el => el.dataset.id === focus.id);
-    const btn = item && item.querySelector(`[data-dir="${focus.dir}"]`);
+    const btn = item?.querySelector(`[data-dir="${focus.dir}"]`);
     if (btn && !btn.disabled) btn.focus();
   }
 }
@@ -779,7 +783,7 @@ function isValidUrl(str) {
 // fill in the saved details and categories so nothing has to be retyped
 // (runs once on load; `void`: nothing waits for it, it handles its own errors)
 void (async function prefillInstalledSetup() {
-  const match = window.location.pathname.match(/^\/([^/]+)\/configure\/?$/);
+  const match = /^\/([^/]+)\/configure\/?$/.exec(window.location.pathname);
   if (!match) return;
   editingLink = decodeURIComponent(match[1]);
   try {
