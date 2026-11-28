@@ -153,6 +153,22 @@ setInterval(() => {
   lastTick = now;
 }, FREEZE_TICK_MS).unref();
 
+// --- List sizes (to choose a channel limit from real numbers) ---
+// Per day: the largest channel list loaded per source (largestXtreamList /
+// largestM3uList) and how many Xtream lists had over BIG_LIST channels
+// (bigXtreamLists). Shown in the daily report; M3U is capped at 10,000 already.
+// "m3u test" (Test Connection) counts groups, not channels: not recorded.
+const BIG_LIST = 20000;
+function noteListSize(source, channels) {
+  let field = null;
+  if (source.startsWith("xtream")) field = "largestXtreamList";
+  else if (source === "m3u") field = "largestM3uList";
+  if (!field) return;
+  const row = dayRow();
+  row[field] = Math.max(row[field] || 0, channels);
+  if (field === "largestXtreamList" && channels > BIG_LIST) countToday("bigXtreamLists");
+}
+
 // source: what is downloaded ("m3u", "xtream", "m3u test"), for [FREEZE] lines
 async function withDownloadSlot(download, source = "list") {
   countToday("downloads");
@@ -176,8 +192,10 @@ async function withDownloadSlot(download, source = "list") {
   } finally {
     activeLoads.delete(load);
     const endedAt = Date.now();
-    recentLoads.push({ source, channels: channelCount(result), ms: endedAt - load.startedAt, endedAt });
+    const channels = channelCount(result);
+    recentLoads.push({ source, channels, ms: endedAt - load.startedAt, endedAt });
     if (recentLoads.length > 10) recentLoads.shift();
+    noteListSize(source, channels);
     // Hand the slot straight to the next waiter (running count unchanged), or free it
     const next = downloadQueue.shift();
     if (next) next();

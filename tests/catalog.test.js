@@ -463,3 +463,76 @@ describe("cleanName", () => {
     expect(cleanName("[X1] - Practice")).toBe("[X1] - Practice");
   });
 });
+
+// ─── Big lists: same order as before, without blocking ───
+
+describe("sorting big lists in steps", () => {
+  const { sortChannels, sortChannelsAsync, nameKey, catalogView, prepareCatalogView } = require("../src/catalog");
+  // The sort before 2026-11-28, comparing with the collator on every comparison
+  const nameOrder = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+  const byName = (a, b) => {
+    const ca = a === "Uncategorized" ? "" : a, cb = b === "Uncategorized" ? "" : b;
+    if (ca === cb) return 0;
+    if (!ca || !cb) return ca ? -1 : 1;
+    return nameOrder.compare(ca, cb);
+  };
+  const oldSort = (metas, picked) => {
+    const rank = new Map(picked.map((n, i) => [n, i]));
+    const keyed = metas.map(meta => ({ meta, category: meta.genres?.[0] || "", ...nameKey(meta.name) }));
+    keyed.sort((a, b) => {
+      const ra = rank.get(a.category) ?? Infinity, rb = rank.get(b.category) ?? Infinity;
+      if (ra !== rb) return ra < rb ? -1 : 1;
+      return byName(a.category, b.category) || nameOrder.compare(a.base, b.base) || a.quality - b.quality || nameOrder.compare(a.meta.name, b.meta.name);
+    });
+    return keyed.map(k => k.meta.id);
+  };
+  // Tricky names: case/accent variants the collator calls equal, numbers, quality tags, no category
+  const names = ["Alpha", "ALPHA", "alpha HD", "Álpha", "Sport 2", "Sport 10", "sport 1", "North TV", "North",
+    "North UHD", "Zeta", "zeta 4K", "Écho", "echo", "Beta FHD", "beta", "Новости", "Novosti", "Sport 2 HD"];
+  const cats = ["News", "news", "Sport", "Uncategorized", "", "Kids", "Ånimals"];
+  const make = (n) => Array.from({ length: n }, (_, i) => ({
+    id: `iptv_tv_${i}`, type: "tv", name: names[(i * 7) % names.length], genres: cats[(i * 3) % cats.length] ? [cats[(i * 3) % cats.length]] : undefined,
+  }));
+
+  test.each([[[]], [["Sport", "Kids"]], [["Uncategorized"]]])("same order as the old sort (picked %j)", (picked) => {
+    const list = make(400);
+    const expected = oldSort(list, picked);
+    expect(sortChannels([...list], picked).map(m => m.id)).toEqual(expected);
+  });
+
+  test("the async sort and view give the same result as the sync ones", async () => {
+    const list = make(12000); // more than two steps
+    const syncSorted = sortChannels([...list], ["Sport"]);
+    const asyncSorted = await sortChannelsAsync([...list], ["Sport"]);
+    expect(asyncSorted.map(m => m.id)).toEqual(syncSorted.map(m => m.id));
+    const view = await prepareCatalogView(asyncSorted);
+    expect(catalogView(asyncSorted)).toBe(view); // built once, reused
+    const fresh = catalogView([...syncSorted]);
+    expect(view.display.map(m => [m.id, m.name])).toEqual(fresh.display.map(m => [m.id, m.name]));
+  });
+
+  test("the async sort lets other work run between steps", async () => {
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 0);
+    await sortChannelsAsync(make(60000));
+    clearInterval(timer);
+    expect(ticks).toBeGreaterThan(3);
+  });
+});
+
+describe("largest list per day", () => {
+  const { withDownloadSlot } = require("../src/cache");
+  const { dayRow } = require("../src/stats");
+
+  test("Xtream and M3U sizes are kept as the day's maximum; big Xtream lists counted; tests not", async () => {
+    const row = dayRow();
+    const before = { x: row.largestXtreamList || 0, m: row.largestM3uList || 0, big: row.bigXtreamLists || 0 };
+    await withDownloadSlot(async () => new Array(25000).fill({}), "xtream 3 categories");
+    await withDownloadSlot(async () => new Array(10).fill({}), "xtream");
+    await withDownloadSlot(async () => ({ channels: new Array(700).fill({}) }), "m3u");
+    await withDownloadSlot(async () => new Array(99999).fill({}), "m3u test");
+    expect(row.largestXtreamList).toBe(Math.max(before.x, 25000));
+    expect(row.largestM3uList).toBe(Math.max(before.m, 700));
+    expect(row.bigXtreamLists).toBe(before.big + 1);
+  });
+});

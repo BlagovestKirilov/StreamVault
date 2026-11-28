@@ -225,18 +225,32 @@ const catalogViews = new WeakMap();
 function catalogView(list) {
   let view = catalogViews.get(list);
   if (view) return view;
+  const steps = catalogViewSteps(list);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  view = step.value;
+  catalogViews.set(list, view);
+  return view;
+}
+
+// The view's work, pausing (yield) every STEP_SIZE channels; returns the view
+function* catalogViewSteps(list) {
   const byKey = new Map(); // first appearance keeps the sorted order
-  for (const meta of list) {
+  for (let i = 0; i < list.length; i++) {
+    const meta = list[i];
     const { mergeBase, quality } = nameKey(meta.name);
     // A name of only symbols/emoji normalizes to "": key it by itself, not with all such names
     const key = JSON.stringify([meta.genres?.[0] || "", mergeBase || meta.name]);
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push({ meta, quality });
+    if ((i + 1) % STEP_SIZE === 0) yield;
   }
   const display = [];
   const versionsById = new Map(); // channel id -> its channel's versions, best first
   const titles = new Map();       // merged tile id -> its name
+  let done = 0;
   for (const members of byKey.values()) {
+    if (++done % STEP_SIZE === 0) yield;
     const ordered = members.toSorted((a, b) => b.quality - a.quality).slice(0, MAX_VERSIONS);
     const versions = ordered.map(m => m.meta);
     if (versions.length === 1) {
@@ -249,9 +263,7 @@ function catalogView(list) {
     titles.set(versions[0].id, title);
     for (const m of members) versionsById.set(m.meta.id, versions);
   }
-  view = { display, versionsById, titles };
-  catalogViews.set(list, view);
-  return view;
+  return { display, versionsById, titles };
 }
 
 // A channel's name as its tile shows it (a merged tile: its group's name)
@@ -259,17 +271,82 @@ function channelTitle(list, item) {
   return catalogView(list).titles.get(item.id) ?? item.name;
 }
 
-function compareChannels(a, b) {
-  return nameOrder.compare(a.base, b.base) || a.quality - b.quality || nameOrder.compare(a.meta.name, b.meta.name);
+// --- Big lists without blocking the server ---
+// A 585k-channel Xtream list blocked the server 8-9 s (2026-11-27): the sort ran
+// the Intl collator on every comparison (~10M of them) and the tile merge ran on
+// the first request. Now each distinct category / base name / name is compared
+// once (ranks: numbers, equal ranks where the collator says equal, so the order is
+// exactly as before) and the per-channel work runs in steps of STEP_SIZE channels;
+// the async versions (Xtream loads) let other requests through between steps.
+const STEP_SIZE = 5000;
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+
+// Distinct values sorted once → value -> rank; values the comparison calls equal share one
+function ranksOf(values, compare) {
+  const sorted = [...new Set(values)].sort(compare);
+  const ranks = new Map();
+  let rank = 0;
+  sorted.forEach((value, i) => {
+    if (i > 0 && compare(sorted[i - 1], value) !== 0) rank++;
+    ranks.set(value, rank);
+  });
+  return ranks;
+}
+
+// Same order as before (category, then base name, quality, full name — each by
+// nameOrder), compared as numbers
+function sortKeyed(keyed, picked) {
+  const pickRank = new Map(picked.map((name, i) => [name, i]));
+  const catRank = ranksOf(keyed.map(k => k.category), (a, b) => compareCategories(a, b, pickRank));
+  const baseRank = ranksOf(keyed.map(k => k.base), (a, b) => nameOrder.compare(a, b));
+  const nameRank = ranksOf(keyed.map(k => k.meta.name), (a, b) => nameOrder.compare(a, b));
+  for (const k of keyed) {
+    k.c = catRank.get(k.category);
+    k.b = baseRank.get(k.base);
+    k.n = nameRank.get(k.meta.name);
+  }
+  keyed.sort((x, y) => x.c - y.c || x.b - y.b || x.quality - y.quality || x.n - y.n);
+}
+
+function* keySteps(metas, keyed) {
+  for (let i = 0; i < metas.length; i++) {
+    const meta = metas[i];
+    keyed.push({ meta, category: sortCategory(meta), ...nameKey(meta.name) });
+    if ((i + 1) % STEP_SIZE === 0) yield;
+  }
 }
 
 // Keys computed once per channel (not per comparison), then written back in order
 function sortChannels(metas, picked = []) {
-  const rank = new Map(picked.map((name, i) => [name, i]));
-  const keyed = metas.map(meta => ({ meta, category: sortCategory(meta), ...nameKey(meta.name) }));
-  keyed.sort((a, b) => compareCategories(a.category, b.category, rank) || compareChannels(a, b));
+  const keyed = [];
+  const steps = keySteps(metas, keyed);
+  while (!steps.next().done) { /* every step at once */ }
+  sortKeyed(keyed, picked);
   keyed.forEach((k, i) => { metas[i] = k.meta; });
   return metas;
+}
+
+async function sortChannelsAsync(metas, picked = []) {
+  const keyed = [];
+  const steps = keySteps(metas, keyed);
+  while (!steps.next().done) await nextTurn();
+  await nextTurn();
+  sortKeyed(keyed, picked);
+  keyed.forEach((k, i) => { metas[i] = k.meta; });
+  return metas;
+}
+
+// Builds the tile view during the load (in steps) instead of on the first request
+async function prepareCatalogView(list) {
+  if (catalogViews.has(list)) return catalogViews.get(list);
+  const steps = catalogViewSteps(list);
+  let step = steps.next();
+  while (!step.done) {
+    await nextTurn();
+    step = steps.next();
+  }
+  catalogViews.set(list, step.value);
+  return step.value;
 }
 
 // Catalog channel { id, type, name, logo, genres? } → what Stremio gets. Called
@@ -282,5 +359,6 @@ function catalogMeta({ logo, ...item }, keepTags = false) {
 
 module.exports = {
   makePosterUrl, channelPoster, nameKey, cleanName, keepsTags, catalogView, channelTitle, sortChannels,
+  sortChannelsAsync, prepareCatalogView,
   searchKey, channelSearchKey, catalogMeta,
 };

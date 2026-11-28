@@ -13,7 +13,7 @@ const {
   setCapped, setCappedList, touch, once, withDownloadSlot, failCache, withFailureCache, usableEntry, m3uCacheKey,
 } = require("./cache");
 const {
-  makePosterUrl, channelPoster, cleanName, catalogView, channelTitle, sortChannels,
+  makePosterUrl, channelPoster, cleanName, catalogView, channelTitle, sortChannelsAsync, prepareCatalogView,
 } = require("./catalog");
 
 // --- Xtream Codes handlers ---
@@ -121,7 +121,10 @@ async function loadXtreamCatalog(config, type, categoryIds, cacheKey) {
     return meta;
   });
   const pickedNames = categoryIds.map(id => categoryNames.get(id)).filter(Boolean);
-  sortChannels(result, pickedNames);
+  // In steps, letting other requests through (a big list blocked the server 8-9 s);
+  // the tile view too, so the first request doesn't build it
+  await sortChannelsAsync(result, pickedNames);
+  await prepareCatalogView(result);
   // Picked categories by name, in pick order (home rows come from the first ones)
   result.pickedCategories = pickedNames;
 
