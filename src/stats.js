@@ -10,6 +10,7 @@ const crypto = require("node:crypto");
 const net = require("node:net");
 const { ROOT, safeError } = require("./util");
 const { CONFIG_SECRET } = require("./configlink");
+const { alert, reportBug } = require("./alerts");
 
 // STATS_DIR env only for tests (a throwaway folder); production uses the /data volume
 const STATS_DIR = process.env.STATS_DIR || (fs.existsSync("/data") ? "/data" : ROOT);
@@ -87,40 +88,86 @@ function toUserKeys(list) {
   return new Set((list || []).map(v => (USER_KEY_RE.test(v) ? v : userKey(v))));
 }
 
-try {
-  const saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
-  const loaded = { ...saved, users: toUserKeys(saved.users) };
-  // Other modules hold this same object: replace its contents, not the object
-  for (const key of Object.keys(stats)) delete stats[key];
-  Object.assign(stats, loaded);
-  if (!stats.streamsByType) stats.streamsByType = { tv: 0, movie: 0, series: 0 };
-  if (!stats.configType) stats.configType = { xtream: 0, m3u: 0 };
-  if (!stats.installsByType) stats.installsByType = { xtream: 0, m3u: 0 };
-  if (!stats.kofiClicks) stats.kofiClicks = { dialog: 0, footer: 0, other: 0 };
-  if (!stats.dailyActive) stats.dailyActive = {};
-  if (!stats.dailyViewers) stats.dailyViewers = {};
-  if (!stats.dailyCatchup) stats.dailyCatchup = {};
-  if (typeof stats.catchupPlays !== "number") stats.catchupPlays = 0;
-  if (!stats.dailyBare) stats.dailyBare = {};
-  if (!stats.dailySetups) stats.dailySetups = {};
-  if (!stats.dailySetupMeta) stats.dailySetupMeta = {};
-  if (!stats.dailySetupStream) stats.dailySetupStream = {};
-  if (!stats.dailyNewSetups) stats.dailyNewSetups = {};
-  if (!stats.dailyFewerRows) stats.dailyFewerRows = {};
-  stats.bareUsers = toUserKeys(saved.bareUsers);
-  if (!stats.history) stats.history = {};
+// --- Loading stats.json at start ---
+// No file = first start. A file that can't be read (damaged) or can't be converted
+// (a bug in the code below) is kept aside as stats.json.corrupt-<time>, logged and
+// alerted — before, both silently restarted every counter from zero and the next
+// save (60 s later) overwrote the old file.
+function setStatsAside(e, what) {
+  const aside = `${STATS_FILE}.corrupt-${Date.now()}`;
+  let kept = true;
+  try {
+    fs.renameSync(STATS_FILE, aside);
+  } catch {
+    // Can't move it: the next save overwrites it — said in the log line below
+    kept = false;
+  }
+  const where = kept ? `moved to ${path.basename(aside)}` : "could NOT be moved aside (will be overwritten)";
+  console.error(`[STATS] stats.json ${what} (${safeError(e)}) — ${where}; statistics restart from zero`);
+  alert("stats", `StreamVault stats.json ${what} — ${where}; statistics restart from zero`);
+}
+
+function readSavedStats() {
+  if (!fs.existsSync(STATS_FILE)) return null; // first start
+  let saved;
+  try {
+    saved = JSON.parse(fs.readFileSync(STATS_FILE, "utf-8"));
+  } catch (e) {
+    setStatsAside(e, "could not be read");
+    return null;
+  }
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+    setStatsAside(new Error("not a stats object"), "could not be read");
+    return null;
+  }
+  return saved;
+}
+
+// Saved file → the stats object (fills fields added since, converts old formats).
+// Builds a new object: if it fails halfway, the running stats are untouched.
+// Fields added after the first stats.json: filled when missing
+const STATS_DEFAULTS = () => ({
+  streamsByType: { tv: 0, movie: 0, series: 0 },
+  configType: { xtream: 0, m3u: 0 },
+  installsByType: { xtream: 0, m3u: 0 },
+  kofiClicks: { dialog: 0, footer: 0, other: 0 },
+  dailyActive: {}, dailyViewers: {}, dailyCatchup: {}, dailyBare: {}, dailySetups: {},
+  dailySetupMeta: {}, dailySetupStream: {}, dailyNewSetups: {}, dailyFewerRows: {},
+  history: {},
+});
+const DAILY_SETS = ["dailyActive", "dailyViewers", "dailyCatchup", "dailyBare", "dailySetups", "dailySetupMeta", "dailySetupStream", "dailyNewSetups", "dailyFewerRows"];
+
+function statsFromSaved(saved) {
+  const loaded = { ...saved, users: toUserKeys(saved.users), bareUsers: toUserKeys(saved.bareUsers) };
+  for (const [key, value] of Object.entries(STATS_DEFAULTS())) {
+    if (!loaded[key]) loaded[key] = value;
+  }
+  if (typeof loaded.catchupPlays !== "number") loaded.catchupPlays = 0;
   // All-time totals started after the daily counters: seed them from the rows
   for (const counter of ["reconfigures", "reinstalls"]) {
-    if (typeof stats[counter] !== "number") {
-      stats[counter] = Object.values(stats.history).reduce((sum, row) => sum + (row[counter] || 0), 0);
+    if (typeof loaded[counter] !== "number") {
+      loaded[counter] = Object.values(loaded.history).reduce((sum, row) => sum + (row[counter] || 0), 0);
     }
   }
   // Restore the per-day Sets
-  for (const daily of [stats.dailyActive, stats.dailyViewers, stats.dailyCatchup, stats.dailyBare, stats.dailySetups, stats.dailySetupMeta, stats.dailySetupStream, stats.dailyNewSetups, stats.dailyFewerRows]) {
+  for (const name of DAILY_SETS) {
+    const daily = loaded[name];
     for (const day of Object.keys(daily)) daily[day] = toUserKeys(daily[day]);
   }
-} catch (_) {
-  // No stats.json yet (first start) or unreadable: start counting from zero
+  return loaded;
+}
+
+const savedStats = readSavedStats();
+if (savedStats) {
+  try {
+    const loaded = statsFromSaved(savedStats);
+    // Other modules hold this same object: replace its contents, not the object
+    for (const key of Object.keys(stats)) delete stats[key];
+    Object.assign(stats, loaded);
+  } catch (e) {
+    reportBug("loading stats.json", e);
+    setStatsAside(e, "could not be converted (a bug in stats.js)");
+  }
 }
 
 const MAX_TRACKED_USERS = 10000;
@@ -381,8 +428,9 @@ function saveStats() {
   let data;
   try {
     data = JSON.stringify(saveStatsData(), null, 2);
-  } catch (_) {
-    return; // nothing started, so the flag is never left stuck on
+  } catch {
+    // Nothing started, so the flag is never left stuck on
+    return;
   }
   saving = true;
   const tmp = `${STATS_FILE}.tmp`;
@@ -399,7 +447,7 @@ function saveStatsSync() {
     const tmp = `${STATS_FILE}.exit.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(saveStatsData(), null, 2));
     fs.renameSync(tmp, STATS_FILE);
-  } catch (_) {
+  } catch {
     // Shutting down anyway; at worst the last minute of stats is lost
   }
 }

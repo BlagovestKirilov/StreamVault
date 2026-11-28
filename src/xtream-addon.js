@@ -7,6 +7,7 @@ const xtream = require("./xtream");
 const { trimTrailingSlashes } = require("./urlguard");
 const { withinMs, safeError } = require("./util");
 const { ACCOUNT_WAIT_MS } = require("./notices");
+const { isCodeBug, reportBug } = require("./alerts");
 const {
   m3uCache, xtreamCache, XTREAM_CACHE_TTL, XTREAM_CACHE_MAX, ACCOUNT_CACHE_TTL, ACCOUNT_RETRY_MS,
   XTREAM_STALE_MS, ACCOUNT_STALE_MS, EPG_CACHE_TTL, EPG_CACHE_MAX, epgCache, accountCache,
@@ -141,8 +142,9 @@ function epgTimeRange(e, timezone) {
   try {
     const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: timezone });
     return `${fmt.format(startTs * 1000)} - ${fmt.format(endTs * 1000)}`;
-  } catch (_) {
-    return providerTimeRange(e); // invalid timezone: use the provider's own times
+  } catch {
+    // Invalid timezone: use the provider's own times
+    return providerTimeRange(e);
   }
 }
 
@@ -343,7 +345,8 @@ function catchupDay(ts, timezone) {
   const day = (sec) => {
     try {
       return new Intl.DateTimeFormat("en-CA", { timeZone: timezone || "UTC" }).format(sec * 1000);
-    } catch (_) {
+    } catch {
+      // Invalid timezone: fall back to the UTC date
       return new Date(sec * 1000).toISOString().slice(0, 10);
     }
   };
@@ -428,8 +431,10 @@ async function getXtreamStreams(config, type, id, play = {}) {
   let catalog = [];
   try {
     catalog = await getXtreamCatalog(config, type);
-  } catch (_) {
-    // Catalog unavailable: the stream still plays, titled "Channel <id>"
+  } catch (e) {
+    // Catalog unavailable (provider down; logged by the catalog request): the stream
+    // still plays, titled "Channel <id>". A bug in our code is reported, not hidden.
+    if (isCodeBug(e)) reportBug("loading the channel list for a stream", e);
   }
   // All versions of the channel (UHD/FHD/HD/…), best quality first — also when
   // an older saved id of a lower version is opened

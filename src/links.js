@@ -72,7 +72,7 @@ async function writeAtomically(file, bak, data) {
   await fs.promises.writeFile(tmp, data);
   try {
     await fs.promises.copyFile(file, bak);
-  } catch (_) {
+  } catch {
     // No main file yet (first save): nothing to back up
   }
   await fs.promises.rename(tmp, file);

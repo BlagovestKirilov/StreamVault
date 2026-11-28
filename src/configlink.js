@@ -46,8 +46,9 @@ function parseGroups(g) {
     const arr = JSON.parse(g);
     if (!Array.isArray(arr)) return [];
     return arr.filter(x => typeof x === "string" && x).slice(0, MAX_SELECTED_GROUPS);
-  } catch (_) {
-    return []; // not valid JSON: treat as "all groups"
+  } catch {
+    // Not valid JSON: treat as "all groups"
+    return [];
   }
 }
 
@@ -85,8 +86,9 @@ function settingsFromEncrypted(configStr) {
   if (!/^e-[0-9a-f]+$/i.test(configStr)) return null;
   try {
     return decryptConfig(configStr.slice(2));
-  } catch (_) {
-    return null; // tampered or not ours — try the other formats
+  } catch {
+    // Tampered or not ours — try the other formats
+    return null;
   }
 }
 
@@ -96,8 +98,9 @@ function settingsFromBase64(configStr) {
   try {
     const base64 = configStr.replaceAll("-", "+").replaceAll("_", "/");
     return JSON.parse(Buffer.from(base64, "base64").toString("utf-8"));
-  } catch (_) {
-    return null; // not JSON — fall through to the oldest format
+  } catch {
+    // Not JSON — fall through to the oldest format
+    return null;
   }
 }
 
@@ -131,8 +134,9 @@ function isPlaylistLink(url) {
   try {
     const u = new URL(url);
     return /\.m3u8?$/i.test(u.pathname === "/" ? u.hostname : u.pathname);
-  } catch (_) {
-    return false; // not a URL at all — validation reports that separately
+  } catch {
+    // Not a URL at all — validation reports that separately
+    return false;
   }
 }
 
@@ -173,8 +177,9 @@ function normalizeXtreamLogin(server, username, password) {
     } else if (u.protocol === "http:" || u.protocol === "https:") {
       out.server = trimTrailingSlashes(`${u.origin}${u.pathname}`);
     }
-  } catch (_) {
-    return out; // not a URL: left as typed — validation reports it
+  } catch {
+    // Not a URL: left as typed — validation reports it
+    return out;
   }
   return out;
 }

@@ -307,33 +307,39 @@ function extractConfig(req, res, next) {
     if (setupAnswer) return res.json(setupAnswer);
     res.status(400).json({ error });
   };
+  // Only reading the link may fail on purpose (bad base64/JSON, tampered or foreign
+  // encryption). Everything after it is our own code: a bug there must not turn
+  // every request into "Set up StreamVault first" silently — it goes to the error
+  // handler ([ERROR] log + alert) instead.
+  let config;
   try {
-    const config = parseConfigPath(req.params.config);
-    if (config.missing) {
-      return refuse("stable install link not found (saved settings missing)", "This StreamVault link no longer exists. Set it up again.");
-    }
-    // Cache key for things built from the settings (category list): a stable
-    // link's settings can change, so its key includes the revision
-    const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
-    req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
-    req.configRevision = saved ? saved.revision : 0;
-    if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
-    // A server that answered on the other scheme (http ↔ https, urlguard.js): use that
-    // one for everything built from the settings, play links included — and the
-    // configure page shows it, so Save changes fixes the saved link for good
-    if (config.type === "xtream") config.server = preferredUrl(config.server);
-    if (config.type === "m3u") config.url = preferredUrl(config.url);
-    if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
-      return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
-    }
-    if (config.type === "m3u" && !config.url) {
-      return refuse("install link has no playlist URL (not a valid StreamVault link)", "Missing M3U URL.");
-    }
-    req.userConfig = config;
-    next();
-  } catch (_) {
-    refuse("install link can't be read", "Invalid configuration.");
+    config = parseConfigPath(req.params.config);
+  } catch {
+    // Not a link StreamVault can read: refused like any other bad link (listed in recentBadLinks)
+    return refuse("install link can't be read", "Invalid configuration.");
   }
+  if (config.missing) {
+    return refuse("stable install link not found (saved settings missing)", "This StreamVault link no longer exists. Set it up again.");
+  }
+  // Cache key for things built from the settings (category list): a stable
+  // link's settings can change, so its key includes the revision
+  const saved = linkStore.get(req.params.config) || linkStore.getOverride(req.params.config);
+  req.configKey = saved ? `${req.params.config}@${saved.revision}` : req.params.config;
+  req.configRevision = saved ? saved.revision : 0;
+  if (config.type === "xtream") Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));
+  // A server that answered on the other scheme (http ↔ https, urlguard.js): use that
+  // one for everything built from the settings, play links included — and the
+  // configure page shows it, so Save changes fixes the saved link for good
+  if (config.type === "xtream") config.server = preferredUrl(config.server);
+  if (config.type === "m3u") config.url = preferredUrl(config.url);
+  if (config.type === "xtream" && (!config.server || !config.username || !config.password)) {
+    return refuse("install link has no Xtream server/login", "Missing Xtream credentials.");
+  }
+  if (config.type === "m3u" && !config.url) {
+    return refuse("install link has no playlist URL (not a valid StreamVault link)", "Missing M3U URL.");
+  }
+  req.userConfig = config;
+  next();
 }
 
 // The "Set up StreamVault first" tile for an install that can't show channels: only
@@ -479,7 +485,7 @@ app.use((req, _res, next) => {
     try {
       const second = new URL(req.path.slice(at + "/manifest.json".length));
       if (second.host === req.get("host")) req.url = second.pathname + second.search;
-    } catch (_) {
+    } catch {
       // not a link after all: the normal 404
     }
   }
@@ -1031,8 +1037,9 @@ app.get(RELATIVE_PART, limitAddon, (req, res, next) => {
   let config;
   try {
     config = parseConfigPath(configStr);
-  } catch (_) {
-    return next(); // not a valid link: the normal /play checks or 404 answer it
+  } catch {
+    // Not a valid link: the normal /play checks or 404 answer it
+    return next();
   }
   if (config?.type !== "xtream") return next();
   Object.assign(config, normalizeXtreamLogin(config.server, config.username, config.password));

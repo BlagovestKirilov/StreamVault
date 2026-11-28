@@ -143,8 +143,9 @@ function splitXtreamLink() {
   let u;
   try {
     u = new URL(fieldValue('server'));
-  } catch (_) {
-    return; // not a full URL yet: nothing to split
+  } catch {
+    // Not a full URL yet: nothing to split
+    return;
   }
   // A playlist link (".../index.m3u") belongs in the M3U tab
   // (checks the path, or the host when there's no path: "http://name.m3u")
@@ -180,7 +181,8 @@ function m3uLinkToXtream() {
   let u;
   try {
     u = new URL(fieldValue('m3uUrl'));
-  } catch (_) {
+  } catch {
+    // Not a full URL yet: nothing to move to the Xtream tab
     return;
   }
   const username = u.searchParams.get('username');
@@ -205,29 +207,33 @@ document.getElementById('m3uUrl').addEventListener('change', m3uLinkToXtream);
 
 // One request: checks the provider and returns its categories / playlist groups
 async function runCheck(body) {
+  // Only the request is guarded: no answer = the user's connection. A mistake in
+  // filling the page below is not reported as "check your internet connection".
+  let data;
   try {
     const res = await fetch('/api/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    const data = await res.json();
-    if (data.ok) {
-      // Server typed without http(s)://: show the address that worked
-      if (body.type === 'xtream' && data.server && data.server !== body.server) {
-        document.getElementById('server').value = data.server;
-        body = { ...body, server: data.server };
-      }
-      lastCheckKey = JSON.stringify(body);
-      applyCategories(data);
-    } else {
-      lastCheckKey = null;
-    }
-    return data;
-  } catch (_) {
+    data = await res.json();
+  } catch {
+    // No answer (offline, or not JSON from a proxy/captive page): say so
     lastCheckKey = null;
     return { ok: false, error: "Couldn't reach StreamVault — check your internet connection." };
   }
+  if (data.ok) {
+    // Server typed without http(s)://: show the address that worked
+    if (body.type === 'xtream' && data.server && data.server !== body.server) {
+      document.getElementById('server').value = data.server;
+      body = { ...body, server: data.server };
+    }
+    lastCheckKey = JSON.stringify(body);
+    applyCategories(data);
+  } else {
+    lastCheckKey = null;
+  }
+  return data;
 }
 
 function applyCategories(data) {
@@ -273,8 +279,9 @@ function withHomeRows(settings) {
 function viewerTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-  } catch (_) {
-    return ''; // old browser without Intl time zones: the guide uses the provider's times
+  } catch {
+    // Old browser without Intl time zones: the guide uses the provider's times
+    return '';
   }
 }
 
@@ -405,7 +412,8 @@ async function install() {
       updateButtons();
     }
     if (!updated || !ON_PHONE) openInApp(manifestUrl);
-  } catch (_) {
+  } catch (e) {
+    console.error('[StreamVault] install failed:', e); // the real reason, for debugging in the browser console
     showToast('Failed to generate install URL.');
   } finally {
     btn.classList.remove('loading');
@@ -464,6 +472,9 @@ async function loadCategories() {
   try {
     const data = await runCheck(body);
     if (!data.ok) showToast(data.error || "Couldn't load your categories.");
+  } catch (e) {
+    console.error('[StreamVault] loading categories failed:', e); // a page bug: visible in the browser console
+    showToast("Couldn't load your categories.");
   } finally {
     checking = false;
     updateButtons();
@@ -739,6 +750,7 @@ async function testConnection() {
       showToast(data.error || 'Connection failed.');
     }
   } catch (e) {
+    console.error('[StreamVault] Test Connection failed:', e); // a page bug: visible in the browser console
     document.getElementById('reportHint').hidden = false;
     btn.classList.add('error');
     btnText.textContent = 'Connection failed';
@@ -757,8 +769,9 @@ function isValidUrl(str) {
   try {
     const u = new URL(str);
     return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch (_) {
-    return false; // not parseable as a URL
+  } catch {
+    // Not parseable as a URL
+    return false;
   }
 }
 
@@ -796,7 +809,8 @@ void (async function prefillInstalledSetup() {
     // Test right away: loads the category list (saved choices ticked) and unlocks Install.
     // Not awaited on purpose (the page stays usable); runCheck catches its own errors
     void loadCategories();
-  } catch (_) {
+  } catch (e) {
+    console.error('[StreamVault] loading the installed setup failed:', e); // the real reason, in the browser console
     editingLink = ''; // couldn't load the installed setup: behave like a fresh setup
   }
 })();

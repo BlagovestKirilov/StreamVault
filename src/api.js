@@ -142,8 +142,9 @@ function addressShape(url) {
   let u;
   try {
     u = new URL(String(url || ""));
-  } catch (_) {
-    return "not a URL"; // that's the answer: the shape of what was entered
+  } catch {
+    // That's the answer: the shape of what was entered
+    return "not a URL";
   }
   const path = u.pathname.split("/").map(seg => (!seg || KNOWN_PATH_FILE.test(seg) ? seg : "<seg>")).join("/");
   return `${u.protocol}//<host>${u.port ? ":" + u.port : ""}${path}${u.search ? "?…" : ""}`;
@@ -172,8 +173,9 @@ const OWN_ADDRESS_HINT = "This is a StreamVault link — enter your IPTV provide
 function isOwnAddress(address, req) {
   try {
     return new URL(String(address).trim()).host === String(req.get("host")).toLowerCase();
-  } catch (_) {
-    return false; // not a URL: the normal validation reports it
+  } catch {
+    // Not a URL: the normal validation reports it
+    return false;
   }
 }
 
@@ -358,14 +360,16 @@ function registerApiRoutes(app, { linkStore, parseConfigPath, extractConfig, lim
   // An older install link that really is a StreamVault setup (so random strings
   // can't be used to fill the store with overrides)
   function isUsableOldLink(link) {
+    let c;
     try {
-      const c = parseConfigPath(link);
-      if (c.type === "m3u") return !!c.url;
-      if (c.type === "xtream") return !!(c.server && c.username && c.password);
+      c = parseConfigPath(link);
+    } catch {
+      // Can't be read, so it isn't a usable link (only the reading is guarded: a bug below is not hidden)
       return false;
-    } catch (_) {
-      return false; // can't be read, so it isn't a usable link
     }
+    if (c.type === "m3u") return !!c.url;
+    if (c.type === "xtream") return !!(c.server && c.username && c.password);
+    return false;
   }
 
   app.post("/api/encrypt", limitConfig, (req, res) => {

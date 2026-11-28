@@ -4,7 +4,7 @@ process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { alert, checkPreviousRun, markClean, markCrashed, ALERT_EVERY_MS, MARKER } = require("../src/alerts");
+const { alert, isCodeBug, reportBug, checkPreviousRun, markClean, markCrashed, ALERT_EVERY_MS, MARKER } = require("../src/alerts");
 
 const URL_KEY = "ALERT_WEBHOOK_URL";
 afterEach(() => {
@@ -94,5 +94,32 @@ describe("critical events send an alert", () => {
     expect(post).not.toHaveBeenCalled(); // logged and counted, not alerted
     noteFreeze(31000);
     expect(post.mock.calls.at(-1)[1].content).toMatch(/^🔴 StreamVault server blocked 31\.0 s — heap \d+ MB; loading: /);
+  });
+});
+
+describe("bugs are told apart from expected failures", () => {
+  test.each([
+    ["x is not a function", new TypeError("x is not a function"), true],
+    ["y is not defined", new ReferenceError("y is not defined"), true],
+    ["invalid array length", new RangeError("Invalid array length"), true],
+    ["bad URL (has a code)", Object.assign(new TypeError("Invalid URL"), { code: "ERR_INVALID_URL" }), false],
+    ["network error", Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }), false],
+    ["provider answer (axios)", Object.assign(new Error("Request failed with status code 503"), { isAxiosError: true }), false],
+    ["our own timeout", new Error("timeout of 60000ms exceeded"), false],
+    ["bad JSON from a provider", new SyntaxError("Unexpected token <"), false],
+    ["nothing", undefined, false],
+  ])("%s", (_name, error, bug) => {
+    expect(isCodeBug(error)).toBe(bug);
+  });
+
+  test("reportBug logs an [ERROR] line (masked) and alerts", () => {
+    process.env[URL_KEY] = "https://discord.example/webhook";
+    const axios = require("axios");
+    const post = jest.spyOn(axios, "post").mockResolvedValue({});
+    const err = jest.spyOn(console, "error").mockImplementation(() => {});
+    reportBug("doing something", new TypeError("cannot read properties of undefined (reading 'x') at http://203.0.113.9/live"));
+    expect(err.mock.calls[0][0]).toMatch(/^\[ERROR\] doing something: /);
+    expect(err.mock.calls[0][0]).not.toMatch(/203\.0\.113\.9/);
+    expect(post.mock.calls[0][1].content).toMatch(/^🔴 Unexpected error while doing something: /);
   });
 });

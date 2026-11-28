@@ -7,6 +7,7 @@
 
 const { StringDecoder } = require("node:string_decoder");
 const axios = require("axios");
+const { reportBug } = require("./alerts");
 const { assertExternalUrl, blockPrivateRedirects, guardedAgents, retryOnClosedConnection, PROVIDER_USER_AGENT, trimTrailingSlashes, withSchemeFallback } = require("./urlguard");
 
 // Shared client with a hard response-size ceiling. axios defaults to unlimited
@@ -145,10 +146,20 @@ function readLiveStreamList(stream) {
     const items = [];
     let broken = false; // a channel that isn't valid JSON: the list counts as unreadable
     const splitter = createArraySplitter((text) => {
+      let channel;
       try {
-        items.push(pickLiveFields(JSON.parse(text)));
-      } catch (_) {
+        channel = JSON.parse(text);
+      } catch {
+        // A channel that isn't valid JSON: the provider's list is unreadable (as before)
         broken = true;
+        return;
+      }
+      // Our own code, outside the guard: a bug here is reported, not taken for a broken list
+      try {
+        items.push(pickLiveFields(channel));
+      } catch (e) {
+        reportBug("reading an Xtream channel list", e);
+        fail(`StreamVault could not read the channel list: ${e.message}`);
       }
     });
     let bytes = 0;
@@ -179,8 +190,9 @@ function readLiveStreamList(stream) {
       if (splitter.isArray) return finish(resolve, broken ? [] : items);
       try {
         finish(resolve, JSON.parse(splitter.other) || []);
-      } catch (_) {
-        finish(resolve, splitter.other || []); // not JSON: as before, the raw text (callers treat it as no list)
+      } catch {
+        // Not JSON: as before, the raw text (callers treat it as no list)
+        finish(resolve, splitter.other || []);
       }
     });
     stream.on("error", (e) => finish(reject, e));

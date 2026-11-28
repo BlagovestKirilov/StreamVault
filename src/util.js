@@ -94,8 +94,9 @@ function parseExtra(extraStr) {
 function safeDecode(s) {
   try {
     return decodeURIComponent(s);
-  } catch (_) {
-    return s; // malformed %-encoding: keep the raw text
+  } catch {
+    // Malformed %-encoding: keep the raw text
+    return s;
   }
 }
 

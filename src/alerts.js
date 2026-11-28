@@ -43,6 +43,24 @@ function defaultPost(content) {
   return axios.post(alertUrl(), { content, allowed_mentions: { parse: [] } }, { timeout: 5000 });
 }
 
+// --- Bugs caught on purpose ---
+// Where a failure is expected (provider down, bad input) the code falls back
+// quietly; a mistake in our own code must not hide behind that fallback.
+// isCodeBug: errors JavaScript raises for code mistakes ("x is not a function",
+// "y is not defined"), as opposed to network/provider/input errors — those carry
+// a code (ECONNRESET, ERR_INVALID_URL, …) or come from axios.
+function isCodeBug(e) {
+  if (!e || e.isAxiosError || e.code) return false;
+  return e instanceof ReferenceError || e instanceof TypeError || e instanceof RangeError;
+}
+
+// Logged like the last-resort handler ([ERROR], counted by the daily report) + alert
+function reportBug(where, e) {
+  const text = `${where}: ${safeError(e)}`;
+  console.error(`[ERROR] ${text}`);
+  alert("error", `Unexpected error while ${text}`);
+}
+
 // --- Crash detection across restarts ---
 // The process can't report an out-of-memory kill or a crash at that moment, so a
 // marker file on the volume says "running" while it runs; a normal stop (deploy,
@@ -55,7 +73,8 @@ function readMarker(dir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(dir, MARKER), "utf8"));
   } catch {
-    return null; // first start, or unreadable: nothing to report
+    // First start, or unreadable: nothing to report
+    return null;
   }
 }
 
@@ -90,4 +109,4 @@ function markCrashed(dir, err) {
   writeMarker(dir, { state: "crashed", startedAt: prev?.startedAt || "unknown", reason: safeError(err) });
 }
 
-module.exports = { alert, checkPreviousRun, markClean, markCrashed, ALERT_EVERY_MS, MARKER };
+module.exports = { alert, isCodeBug, reportBug, checkPreviousRun, markClean, markCrashed, ALERT_EVERY_MS, MARKER };

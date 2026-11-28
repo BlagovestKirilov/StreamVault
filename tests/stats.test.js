@@ -71,6 +71,27 @@ describe("stats file saving", () => {
   });
   const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "sv-stats-"));
 
+  test.each([
+    ["damaged JSON", "{ \"history\": { broken"],
+    ["not a stats object", "[1, 2, 3]"],
+  ])("an unreadable stats.json (%s) is kept aside and reported, not overwritten", (_name, content) => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, "stats.json"), content);
+    const r = run(dir, "const { stats } = require('./stats'); console.log(JSON.stringify({ streams: stats.streams })); process.exit(0);");
+    expect(JSON.parse(r.stdout.trim().split(/\r?\n/).pop())).toEqual({ streams: 0 }); // counting from zero
+    const aside = fs.readdirSync(dir).filter(f => f.startsWith("stats.json.corrupt-"));
+    expect(aside).toHaveLength(1);
+    expect(fs.readFileSync(path.join(dir, aside[0]), "utf8")).toBe(content); // the old file is kept as it was
+    expect(r.stderr).toMatch(/\[STATS\] stats\.json could not be read \(.+\) — moved to stats\.json\.corrupt-\d+; statistics restart from zero/);
+  });
+
+  test("no stats.json (first start): nothing reported", () => {
+    const dir = tmpDir();
+    const r = run(dir, "require('./stats'); process.exit(0);");
+    expect(r.stderr).not.toMatch(/\[STATS\]/);
+    expect(fs.readdirSync(dir).filter(f => f.includes("corrupt"))).toEqual([]);
+  });
+
   test("all-time reconfigures / saves: seeded from the daily rows, then counted", () => {
     const dir = tmpDir();
     fs.writeFileSync(path.join(dir, "stats.json"), JSON.stringify({

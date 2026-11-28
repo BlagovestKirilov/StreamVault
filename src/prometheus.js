@@ -90,8 +90,9 @@ function writeVolumeMetrics(g) {
   let disk;
   try {
     disk = fs.statfsSync(STATS_DIR);
-  } catch (_) {
-    return; // no statfs on this system: the panel just stays empty
+  } catch {
+    // No statfs on this system: the panel just stays empty
+    return;
   }
   const help = "Disk space of the data folder (stats.json, links.json)";
   const total = disk.blocks * disk.bsize;

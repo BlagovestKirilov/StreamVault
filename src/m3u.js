@@ -298,8 +298,9 @@ function parseExtHttp(line, headers) {
   let obj;
   try {
     obj = JSON.parse(line.slice("#EXTHTTP:".length));
-  } catch (_) {
-    return headers; // malformed JSON: the line adds no headers
+  } catch {
+    // Malformed JSON: the line adds no headers
+    return headers;
   }
   for (const [k, v] of Object.entries(obj || {})) {
     if (typeof v === "string" && /^[A-Za-z0-9-]{1,64}$/.test(k)) headers = setHeader(headers, k, v);
@@ -311,8 +312,9 @@ function parseExtHttp(line, headers) {
 function decodeOrRaw(value) {
   try {
     return decodeURIComponent(value);
-  } catch (_) {
-    return value; // malformed %-encoding: keep it as written in the playlist
+  } catch {
+    // Malformed %-encoding: keep it as written in the playlist
+    return value;
   }
 }
 

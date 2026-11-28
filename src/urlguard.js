@@ -53,8 +53,9 @@ function parseExternalUrl(urlStr) {
   let parsed;
   try {
     parsed = new URL(urlStr);
-  } catch (_) {
-    return null; // not a URL: refused like any other bad address
+  } catch {
+    // Not a URL: refused like any other bad address
+    return null;
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
   return isBlockedHostname(parsed.hostname) ? null : parsed;
@@ -76,7 +77,8 @@ async function checkExternalUrl(urlStr) {
   let parsed;
   try {
     parsed = new URL(urlStr);
-  } catch (_) {
+  } catch {
+    // Not a URL: refused like any other bad address
     return "malformed";
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "malformed";
@@ -87,8 +89,9 @@ async function checkExternalUrl(urlStr) {
   let addresses;
   try {
     addresses = await dns.promises.lookup(hostname, { all: true });
-  } catch (_) {
-    return "not_found"; // name doesn't resolve: there's nothing to connect to
+  } catch {
+    // Name doesn't resolve: there's nothing to connect to
+    return "not_found";
   }
   if (addresses.length === 0) return "not_found";
   // Check every resolved address — one private A/AAAA record is enough to reject
@@ -191,8 +194,9 @@ function preferredUrl(url) {
     const swapped = otherScheme(url);
     // URL() adds a "/" to a bare origin; keep the address as it was written
     return url.endsWith("/") ? swapped : swapped.replace(/\/$/, "");
-  } catch (_) {
-    return url; // not a URL: left as it is
+  } catch {
+    // Not a URL: left as it is
+    return url;
   }
 }
 
@@ -223,7 +227,8 @@ async function withSchemeFallback(url, request) {
     let result;
     try {
       result = await request(second);
-    } catch (_) {
+    } catch {
+      // The other scheme failed too: report the first error (it is about the address as typed)
       throw e;
     }
     rememberScheme(second);
