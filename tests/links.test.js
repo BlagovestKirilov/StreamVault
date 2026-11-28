@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
 const { app, encryptConfig } = require("../src/addon");
@@ -8,10 +8,10 @@ const { app, encryptConfig } = require("../src/addon");
 
 describe("stable install links", () => {
   const m3u = require("../src/m3u");
-  const fs = require("fs");
-  const os = require("os");
-  const path = require("path");
-  const { spawnSync } = require("child_process");
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { spawnSync } = require("node:child_process");
   const stats = async () => (await request(app).get("/stats")).body;
   const playlist = [
     "#EXTM3U",

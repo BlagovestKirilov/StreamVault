@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const { isPrivateIp, validateExternalUrl } = require("../src/addon");
 
@@ -8,8 +8,8 @@ const { isPrivateIp, validateExternalUrl } = require("../src/addon");
 // ─── SSRF: the address is re-checked when connecting ───
 
 describe("connect-time address check (DNS rebinding)", () => {
-  const dns = require("dns");
-  const http = require("http");
+  const dns = require("node:dns");
+  const http = require("node:http");
   const { guardedLookup } = require("../src/urlguard");
   afterEach(() => jest.restoreAllMocks());
 
@@ -229,7 +229,7 @@ describe("a saved address with the wrong scheme is tried once with the other", (
 // ─── Timeouts: blocked/down vs slow (logs and stats only) ───
 
 describe("timeout kinds", () => {
-  const http = require("http");
+  const http = require("node:http");
   const axios = require("axios");
   const { guardedAgents } = require("../src/urlguard");
   const { timeoutKind, noteTimeout, dayRow } = require("../src/stats");

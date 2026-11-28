@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
 const { app, parseExtra } = require("../src/addon");
@@ -390,7 +390,7 @@ describe("IP masking, Xtream link paste, no-channel reasons, bad link log", () =
 
   test("the parser records what a playlist looked like", () => {
     const shapeOf = (content) => {
-      const { Readable } = require("stream");
+      const { Readable } = require("node:stream");
       const axios = require("axios");
       const urlguard = require("../src/urlguard");
       jest.spyOn(urlguard, "assertExternalUrl").mockResolvedValue();
@@ -918,7 +918,7 @@ describe("play links follow the scheme a server answered on", () => {
 
 describe("configure page files on Fly are read once per deploy", () => {
   test("read once, same ETag and 304 as before", async () => {
-    const fs = require("fs");
+    const fs = require("node:fs");
     const saved = { fly: process.env.FLY_APP_NAME, secret: process.env.CONFIG_SECRET };
     process.env.FLY_APP_NAME = "streamvault-test";
     process.env.CONFIG_SECRET = saved.secret || "test-secret-for-production-mode";

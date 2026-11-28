@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
 const { app } = require("../src/addon");
@@ -58,10 +58,10 @@ describe("per-day error codes", () => {
 // ─── Stats file saving (atomic, no overlap) ───
 
 describe("stats file saving", () => {
-  const fs = require("fs");
-  const os = require("os");
-  const path = require("path");
-  const { spawnSync } = require("child_process");
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { spawnSync } = require("node:child_process");
   const root = path.join(__dirname, "..", "src"); // child scripts require('./addon') from here
   // Runs a snippet in a fresh Node process whose stats live in a throwaway folder.
   // FORCE_COLOR=0: IDE test runners set FORCE_COLOR, and console.log(42) would
@@ -324,7 +324,7 @@ describe("stats history and failures", () => {
 // ─── Configure page visit counting ───
 
 describe("unique users by network", () => {
-  const crypto = require("crypto");
+  const crypto = require("node:crypto");
   const { userKey, userNetwork, knownUser, stats } = require("../src/stats");
   const { CONFIG_SECRET } = require("../src/configlink");
 

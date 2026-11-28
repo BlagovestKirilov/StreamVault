@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
 const { app, parseConfigPath } = require("../src/addon");

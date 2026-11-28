@@ -1,9 +1,9 @@
 // Stats and run state live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { alert, isCodeBug, reportBug, checkPreviousRun, markClean, markCrashed, ALERT_EVERY_MS, MARKER } = require("../src/alerts");
 
 const URL_KEY = "ALERT_WEBHOOK_URL";

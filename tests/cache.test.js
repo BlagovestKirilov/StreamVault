@@ -1,5 +1,5 @@
 // Stats and stable links live in a throwaway folder, never the repo
-process.env.STATS_DIR = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "sv-test-"));
+process.env.STATS_DIR = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "sv-test-"));
 
 const request = require("supertest");
 const { app } = require("../src/addon");
@@ -48,10 +48,10 @@ describe("memory safety", () => {
   });
 
   test("refuses to start on Fly without CONFIG_SECRET", () => {
-    const { spawnSync } = require("child_process");
+    const { spawnSync } = require("node:child_process");
     const env = { ...process.env, FLY_APP_NAME: "test" };
     delete env.CONFIG_SECRET;
-    const r = spawnSync(process.execPath, ["-e", "require('./addon')"], { cwd: require("path").join(__dirname, "..", "src"), env, encoding: "utf8", timeout: 10000 });
+    const r = spawnSync(process.execPath, ["-e", "require('./addon')"], { cwd: require("node:path").join(__dirname, "..", "src"), env, encoding: "utf8", timeout: 10000 });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("CONFIG_SECRET is not set");
   });
